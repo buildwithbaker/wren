@@ -157,7 +157,7 @@ export function createNoteEditor({ onSave, onDelete, onExport, onBack, showBack 
 
   function applyColor(id) {
     const bg = COLOR_BG[id] || COLOR_BG.default;
-    surface.style.setProperty('--sc-note-bg', bg);
+    surface.style.setProperty('--wr-note-bg', bg);
   }
 
   function teardownEditor() {

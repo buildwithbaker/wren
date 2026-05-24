@@ -1,5 +1,5 @@
-// service-worker.js - Scrybe extension background.
-// Required by the MV3 manifest, but intentionally near-empty: all of Scrybe's
+// service-worker.js - Wren extension background.
+// Required by the MV3 manifest, but intentionally near-empty: all of Wren's
 // logic runs in the popup (document context, where the File System Access API
 // and IndexedDB are available). The service worker only handles install.
 

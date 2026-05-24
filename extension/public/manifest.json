@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "Scrybe — Sticky Notes",
+  "name": "Wren — Sticky Notes",
   "version": "1.0.0",
   "description": "Local-first sticky notes. Rich-text notes saved as Markdown files in a folder you choose. No cloud, no account.",
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Scrybe",
+    "default_title": "Wren",
     "default_icon": {
       "16": "icon-16.png",
       "48": "icon-48.png",

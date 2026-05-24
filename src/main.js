@@ -1,5 +1,5 @@
 // main.js - PWA entry point.
-import '../style.css';
+import '@/styles/style.css';
 import { createApp } from './app-controller.js';
 
 createApp({

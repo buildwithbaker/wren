@@ -1,7 +1,7 @@
 // popup.js - Chrome extension popup entry point.
 // Single-panel UI: the <=640px layout in style.css applies at the 400px popup
 // width, so the shared controller's two-panel app collapses automatically.
-import '../style.css';
+import '@/styles/style.css';
 import './popup.css';
 import { createApp } from '@/app-controller.js';
 

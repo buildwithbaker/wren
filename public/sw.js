@@ -1,8 +1,8 @@
-// sw.js - Scrybe PWA service worker.
-// Caches the app shell so Scrybe loads offline. Notes themselves live on the
+// sw.js - Wren PWA service worker.
+// Caches the app shell so Wren loads offline. Notes themselves live on the
 // user's disk via the File System Access API and never touch this cache.
 
-const CACHE = 'scrybe-shell-v1';
+const CACHE = 'wren-shell-v1';
 const APP_SHELL = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', (event) => {

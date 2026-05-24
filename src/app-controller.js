@@ -61,9 +61,9 @@ export function createApp({ root, enableServiceWorker = false }) {
     const card = document.createElement('div');
     card.className = 'sc-screen-card';
     card.innerHTML = `
-      <img src="./icon.svg" alt="Scrybe" />
+      <img src="./icon.svg" alt="Wren" />
       <h1>Browser not supported</h1>
-      <p>Scrybe needs the <strong>File System Access API</strong> to read and write
+      <p>Wren needs the <strong>File System Access API</strong> to read and write
       notes on your PC. Use Chrome, Edge, or another Chromium browser on desktop.</p>`;
     screenShell(card);
   }
@@ -72,8 +72,8 @@ export function createApp({ root, enableServiceWorker = false }) {
     const card = document.createElement('div');
     card.className = 'sc-screen-card';
     card.innerHTML = `
-      <img src="./icon.svg" alt="Scrybe" />
-      <h1>Welcome to Scrybe</h1>
+      <img src="./icon.svg" alt="Wren" />
+      <h1>Welcome to Wren</h1>
       <p>Choose a folder where your notes will live as Markdown
       (<code>.md</code>) files. They stay on your computer and are never uploaded.</p>`;
     const btn = document.createElement('button');
@@ -95,7 +95,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     const card = document.createElement('div');
     card.className = 'sc-screen-card';
     card.innerHTML = `
-      <img src="./icon.svg" alt="Scrybe" />
+      <img src="./icon.svg" alt="Wren" />
       <h1>Reconnect your notes folder</h1>
       <p>Your browser needs you to confirm access to your notes folder again.</p>`;
     const grant = document.createElement('button');
@@ -227,7 +227,7 @@ export function createApp({ root, enableServiceWorker = false }) {
   function buildBrand() {
     const brand = document.createElement('div');
     brand.className = 'sc-brand';
-    brand.innerHTML = `<img src="./icon.svg" alt="" /><span class="sc-brand-name">Scrybe</span>`;
+    brand.innerHTML = `<img src="./icon.svg" alt="" /><span class="sc-brand-name">Wren</span>`;
     return brand;
   }
 

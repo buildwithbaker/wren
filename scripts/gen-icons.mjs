@@ -1,7 +1,7 @@
 // gen-icons.mjs
-// Rasterizes the Scrybe icon to PNG at the sizes the PWA, extension, and CWS
+// Rasterizes the Wren icon to PNG at the sizes the PWA, extension, and CWS
 // need. Pure Node (zlib only) - no native image deps so the build is portable.
-// Geometry mirrors public/icon.svg: amber rounded square + white note with a
+// Geometry mirrors public/icon.svg: indigo rounded square + white note with a
 // folded top-right corner.
 
 import { deflateSync } from 'node:zlib';
@@ -12,9 +12,9 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
 
-const AMBER = [0xa0, 0x70, 0x20];
+const INDIGO = [0x2b, 0x4a, 0x8b];
 const WHITE = [0xff, 0xff, 0xff];
-const FLAP = [0xe7, 0xd4, 0xae];
+const FLAP = [0xae, 0xc3, 0xea];
 
 // --- geometry helpers -------------------------------------------------------
 
@@ -70,9 +70,9 @@ function renderIcon(size, ss = 4) {
   const { pentagon, flap } = notePolys(box.x, box.y, box.w, box.h);
 
   const sample = (x, y) => {
-    // painter order: bg(transparent) -> amber tile -> white note -> tan flap
+    // painter order: bg(transparent) -> indigo tile -> white note -> light-indigo flap
     let c = null;
-    if (inRoundedRect(x, y, hi, hi, r)) c = AMBER;
+    if (inRoundedRect(x, y, hi, hi, r)) c = INDIGO;
     if (pointInPoly(x, y, pentagon)) c = WHITE;
     if (pointInPoly(x, y, flap)) c = FLAP;
     return c;
@@ -81,18 +81,18 @@ function renderIcon(size, ss = 4) {
   return downsample(size, ss, sample);
 }
 
-// Open Graph card: amber field with the white note mark centered. (No baked
+// Open Graph card: indigo field with the white note mark centered. (No baked
 // text - rendering a wordmark needs a font engine; see build report.)
 function renderOgCard(w, h, ss = 3) {
   const hiW = w * ss;
   const hiH = h * ss;
   const out = new Uint8Array(hiW * hiH * 4);
 
-  // fill amber field
+  // fill indigo field
   for (let i = 0; i < hiW * hiH; i++) {
-    out[i * 4] = AMBER[0];
-    out[i * 4 + 1] = AMBER[1];
-    out[i * 4 + 2] = AMBER[2];
+    out[i * 4] = INDIGO[0];
+    out[i * 4 + 1] = INDIGO[1];
+    out[i * 4 + 2] = INDIGO[2];
     out[i * 4 + 3] = 255;
   }
 
@@ -268,7 +268,7 @@ function main() {
   ensureDir(pub);
   ensureDir(extPub);
 
-  console.log('Generating Scrybe icons...');
+  console.log('Generating Wren icons...');
 
   const sizes = [16, 32, 48, 128, 192, 512];
   const cache = {};

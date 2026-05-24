@@ -1,5 +1,5 @@
 // notes-store.js
-// File System Access API read/write layer for Scrybe notes.
+// File System Access API read/write layer for Wren notes.
 // Notes are plain .md files (YAML frontmatter + markdown body) inside a folder
 // the user picks. The chosen FileSystemDirectoryHandle is persisted in
 // IndexedDB (it is NOT serializable into localStorage / chrome.storage).
