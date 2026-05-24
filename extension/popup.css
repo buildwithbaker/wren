@@ -1,0 +1,27 @@
+/* popup.css - fixed 400x560 popup window for the Chrome extension. */
+html,
+body {
+  width: 400px;
+  height: 560px;
+  margin: 0;
+  overflow: hidden;
+}
+#app {
+  width: 400px;
+  height: 560px;
+}
+
+/* Slightly tighter chrome for the small popup. */
+.sc-brand {
+  padding: 10px 12px 9px;
+}
+.sc-brand-name {
+  font-size: 16px;
+}
+.sc-footer {
+  padding: 6px 12px;
+  font-size: 11px;
+}
+.sc-editor-body {
+  padding: 14px 16px 32px;
+}
