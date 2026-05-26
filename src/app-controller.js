@@ -321,9 +321,9 @@ export function createApp({ root, enableServiceWorker = false }) {
     const footer = document.createElement('footer');
     footer.className = 'sc-footer';
     footer.innerHTML = `
-      <a href="${KOFI}" target="_blank" rel="noopener">Build with Baker</a>
+      <a href="${KOFI}" target="_blank" rel="noopener" class="sc-footer-bwb">Build with Baker</a>
       <span class="sc-footer-dot">·</span>
-      <a href="${KOFI}" target="_blank" rel="noopener">Support on Ko-fi ♥</a>`;
+      <a href="${KOFI}" target="_blank" rel="noopener" class="sc-footer-kofi">☕ Support on Ko-fi</a>`;
     return footer;
   }
 

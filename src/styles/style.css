@@ -41,14 +41,28 @@
   --wr-primary-soft: #E8EDF7;
 }
 
+/* ---- Wren brown (per-product accent, ties to app icon) ---------------- */
+:root {
+  --wr-brown: #8B5E3C;
+  --wr-brown-hover: #6F4A2D;
+  --wr-brown-soft: #F5EDE3;
+  --wr-brown-ring: rgba(139, 94, 60, 0.45);
+}
+
 /* ---- App accent (per-app override block, multi-app design system) ------ */
-/* Accent flows through these tokens; aliased to the indigo primary so all UI
-   chrome (buttons, rings, active toolbar, links) follows the brand color. */
+/* Accent flows through these tokens; aliased to brown so all UI chrome
+   (buttons, active states, swatch ring, links) follows the product icon.
+   Indigo stays defined and re-emerges in focus rings + the BwB footer link. */
 :root[data-app='wren'] {
-  --wr-accent: var(--wr-primary);
-  --wr-accent-tint: var(--wr-primary-soft);
-  --wr-accent-dark: var(--wr-primary-hover);
-  --wr-accent-ring: rgba(43, 74, 139, 0.45);
+  --wr-accent: var(--wr-brown);
+  --wr-accent-tint: var(--wr-brown-soft);
+  --wr-accent-dark: var(--wr-brown-hover);
+  --wr-accent-ring: var(--wr-brown-ring);
+
+  /* Indigo retained for focus rings (high-contrast accessibility) and
+     BwB umbrella surfaces (footer attribution link). */
+  --wr-focus-ring: var(--wr-primary);
+  --wr-bwb-link: var(--wr-primary);
 }
 
 /* ---- Light chrome ------------------------------------------------------ */
@@ -72,6 +86,10 @@
     --wr-primary: #7FA0E8;
     --wr-primary-hover: #96B3EE;
     --wr-primary-soft: #1A2644;
+    --wr-brown: #D4A87C;
+    --wr-brown-hover: #E0B98F;
+    --wr-brown-soft: #3D2E22;
+    --wr-brown-ring: rgba(212, 168, 124, 0.45);
     --wr-page-bg: #11151b;
     --wr-panel-bg: #1a212b;
     --wr-panel-2: #222b37;
@@ -97,6 +115,10 @@
   --wr-primary: #7FA0E8;
   --wr-primary-hover: #96B3EE;
   --wr-primary-soft: #1A2644;
+  --wr-brown: #D4A87C;
+  --wr-brown-hover: #E0B98F;
+  --wr-brown-soft: #3D2E22;
+  --wr-brown-ring: rgba(212, 168, 124, 0.45);
   --wr-page-bg: #11151b;
   --wr-panel-bg: #1a212b;
   --wr-panel-2: #222b37;
@@ -147,7 +169,7 @@ button {
   cursor: pointer;
 }
 :focus-visible {
-  outline: 2px solid var(--wr-accent);
+  outline: 2px solid var(--wr-focus-ring);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -200,12 +222,10 @@ button {
   border-radius: 6px;
 }
 .sc-brand-name {
+  color: var(--wr-brown);
   font-weight: 700;
   font-size: 17px;
   letter-spacing: -0.01em;
-}
-.sc-brand-name b {
-  color: var(--wr-accent);
 }
 
 /* =========================================================================
@@ -694,7 +714,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: 12px;
   flex-wrap: wrap;
   padding: 8px 16px;
   font-size: 12px;
@@ -702,16 +722,34 @@ button {
   background: var(--wr-panel-bg);
   border-top: 1px solid var(--wr-border);
 }
-.sc-footer a {
-  color: var(--wr-accent);
+.sc-footer-bwb {
+  color: var(--wr-bwb-link);
   text-decoration: none;
   font-weight: 600;
 }
-.sc-footer a:hover {
+.sc-footer-bwb:hover {
   text-decoration: underline;
 }
 .sc-footer-dot {
   opacity: 0.5;
+}
+/* Ko-fi support pill - matches the .kofi-button pattern on unistyle.io */
+.sc-footer-kofi {
+  display: inline-block;
+  background: #FF5E5B;
+  color: #ffffff;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+.sc-footer-kofi:hover {
+  background: #E54845;
+  color: #ffffff;
+  text-decoration: none;
 }
 
 /* =========================================================================
