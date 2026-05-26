@@ -77,7 +77,8 @@ export function createNotesList({ onSelect, onNew, compact = false }) {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'sc-card';
-    card.style.background = COLOR_BG[note.color] || COLOR_BG.default;
+    const safeId = COLOR_BG[note.color] ? note.color : 'default';
+    card.style.background = `var(--wr-note-${safeId})`;
     card.dataset.filename = note.filename;
     if (note.filename === activeFilename) card.classList.add('is-active');
 
