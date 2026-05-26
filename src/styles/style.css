@@ -711,6 +711,13 @@ button {
   margin-bottom: 16px;
   color: var(--wr-panel-text);
 }
+.sc-hint {
+  font-size: 13px;
+  color: #6b7280;
+  margin-top: 16px;
+  line-height: 1.4;
+  max-width: 36ch;
+}
 
 .sc-btn {
   border: 0;

@@ -27,8 +27,52 @@ export function createApp({ root, enableServiceWorker = false }) {
   let list = null;
   let noteEditor = null;
   let appEl = null;
+  let installPrompt = null;
+  let currentScreen = null;
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    installPrompt = e;
+  });
 
   boot();
+
+  function isInstalled() {
+    return (
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.matchMedia('(display-mode: minimal-ui)').matches ||
+      window.navigator.standalone === true
+    );
+  }
+
+  function canInstall() {
+    return !isInstalled() && installPrompt !== null;
+  }
+
+  function buildInstallSection() {
+    if (!canInstall()) return null;
+    const frag = document.createDocumentFragment();
+    const hint = document.createElement('p');
+    hint.className = 'sc-hint';
+    hint.textContent =
+      'Tip: install Wren as an app and your folder permission persists — no more re-granting every session.';
+    const btn = document.createElement('button');
+    btn.className = 'sc-btn sc-btn--ghost';
+    btn.textContent = 'Install Wren';
+    btn.addEventListener('click', async () => {
+      if (!installPrompt) return;
+      try {
+        await installPrompt.prompt();
+        await installPrompt.userChoice;
+      } catch (err) {
+        console.warn('Install prompt failed', err);
+      }
+      installPrompt = null;
+      if (currentScreen) currentScreen();
+    });
+    frag.append(hint, btn);
+    return frag;
+  }
 
   async function boot() {
     if (!isSupported()) return renderUnsupported();
@@ -69,6 +113,7 @@ export function createApp({ root, enableServiceWorker = false }) {
   }
 
   function renderOnboarding() {
+    currentScreen = renderOnboarding;
     const card = document.createElement('div');
     card.className = 'sc-screen-card';
     card.innerHTML = `
@@ -88,10 +133,13 @@ export function createApp({ root, enableServiceWorker = false }) {
       }
     });
     card.appendChild(btn);
+    const install = buildInstallSection();
+    if (install) card.appendChild(install);
     screenShell(card);
   }
 
   function renderReconnect(handle) {
+    currentScreen = () => renderReconnect(handle);
     const card = document.createElement('div');
     card.className = 'sc-screen-card';
     card.innerHTML = `
@@ -121,6 +169,8 @@ export function createApp({ root, enableServiceWorker = false }) {
       }
     });
     card.append(grant, choose);
+    const install = buildInstallSection();
+    if (install) card.appendChild(install);
     screenShell(card);
   }
 
