@@ -12,7 +12,7 @@
   --wr-radius-panel: 12px;
   --wr-radius-sm: 6px;
 
-  --wr-ink: #2a3540; /* text on note paper (constant in light & dark) */
+  --wr-ink: #2a3540; /* text on note paper (light mode) */
 
   /* note paper palette (full-card coloring) */
   --wr-note-default: #eff2f7;
@@ -78,6 +78,15 @@
     --wr-field-bg: #222b37;
     --wr-shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5);
     --wr-shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.6);
+    --wr-ink: #E6EBF2;
+    --wr-note-default: #1F252E;
+    --wr-note-slate: #1F2A3C;
+    --wr-note-amber: #3D3528;
+    --wr-note-red: #3A2422;
+    --wr-note-green: #1F2E22;
+    --wr-note-rose: #3A2530;
+    --wr-note-purple: #2A2238;
+    --wr-paper-muted: rgba(230, 235, 242, 0.55);
   }
 }
 :root[data-theme='dark'] {
@@ -94,6 +103,15 @@
   --wr-field-bg: #222b37;
   --wr-shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5);
   --wr-shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.6);
+  --wr-ink: #E6EBF2;
+  --wr-note-default: #1F252E;
+  --wr-note-slate: #1F2A3C;
+  --wr-note-amber: #3D3528;
+  --wr-note-red: #3A2422;
+  --wr-note-green: #1F2E22;
+  --wr-note-rose: #3A2530;
+  --wr-note-purple: #2A2238;
+  --wr-paper-muted: rgba(230, 235, 242, 0.55);
 }
 
 /* ---- Reset ------------------------------------------------------------- */
