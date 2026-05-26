@@ -1,8 +1,12 @@
 // gen-icons.mjs
 // Rasterizes the Wren icon to PNG at the sizes the PWA, extension, and CWS
 // need. Pure Node (zlib only) - no native image deps so the build is portable.
-// Geometry mirrors public/icon.svg: indigo rounded square + white note with a
-// folded top-right corner.
+// Geometry mirrors public/icon.svg: chestnut gradient rounded tile with a
+// white sticky-note glyph (pentagon body + folded corner flap), a 2px black
+// outline, and a compact bold "W" lettermark (indigo fill, 2-unit black
+// outline) centered inside the note body. Two canvas variants:
+//   - standard: 12.5% transparent padding, rounded tile (favicons, PWA "any")
+//   - maskable: full-bleed tile, no corner radius (Android adaptive + apple-touch)
 
 import { deflateSync } from 'node:zlib';
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -12,148 +16,176 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
 
-const INDIGO = [0x2b, 0x4a, 0x8b];
+// --- color tokens (see wren-sow.md)
+const TOP_STOP = [0xa8, 0x78, 0x52]; // #A87852 lifted chestnut
+const BOTTOM_STOP = [0x8b, 0x5e, 0x3c]; // #8B5E3C --wr-accent
 const WHITE = [0xff, 0xff, 0xff];
-const FLAP = [0xae, 0xc3, 0xea];
+const FLAP_FILL = [0xf7, 0xf0, 0xea]; // #F7F0EA --wr-accent-soft
+const STROKE = [0x0f, 0x16, 0x26]; // #0F1626 near-black
+const W_FILL = [0x2b, 0x4a, 0x8b]; // #2B4A8B BwB umbrella indigo (W lettermark)
 
-// --- geometry helpers -------------------------------------------------------
+// --- SVG-space geometry (192-unit inner group, mirrors public/icon.svg)
+const SVG_UNIT = 192;
+const TILE_RADIUS_UNIT = 42;
+const STROKE_WIDTH_UNIT = 2;
+
+const PENTAGON_UNIT = [
+  [54, 50],
+  [111, 50],
+  [142, 81],
+  [142, 146],
+  [54, 146],
+];
+const FLAP_UNIT = [
+  [111, 50],
+  [142, 81],
+  [111, 81],
+];
+
+// Compact bold W lettermark, centered at x=98 (note body visual center).
+// Rendered as two stacked stroked polylines: black underlay + indigo overlay.
+const W_POLYLINE_UNIT = [
+  [76, 96],
+  [87, 130],
+  [98, 110],
+  [109, 130],
+  [120, 96],
+];
+const W_OUTER_STROKE_UNIT = 17;
+const W_INNER_STROKE_UNIT = 13;
 
 function pointInPoly(x, y, poly) {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const xi = poly[i][0],
-      yi = poly[i][1];
-    const xj = poly[j][0],
-      yj = poly[j][1];
+    const xi = poly[i][0];
+    const yi = poly[i][1];
+    const xj = poly[j][0];
+    const yj = poly[j][1];
     const intersect = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
     if (intersect) inside = !inside;
   }
   return inside;
 }
 
-function inRoundedRect(x, y, w, h, r) {
-  if (x < 0 || y < 0 || x > w || y > h) return false;
-  const cx = Math.min(Math.max(x, r), w - r);
-  const cy = Math.min(Math.max(y, r), h - r);
+function inRoundedRect(x, y, rx, ry, rw, rh, r) {
+  if (x < rx || y < ry || x > rx + rw || y > ry + rh) return false;
+  const cx = Math.min(Math.max(x, rx + r), rx + rw - r);
+  const cy = Math.min(Math.max(y, ry + r), ry + rh - r);
   const dx = x - cx;
   const dy = y - cy;
   return dx * dx + dy * dy <= r * r;
 }
 
-// Note polygons (pentagon body + folded-corner flap) inside a box.
-function notePolys(x, y, w, h) {
-  const f = 0.28; // fold size as fraction of the box
-  const foldX = x + (1 - f) * w;
-  const foldY = y + f * h;
-  const pentagon = [
-    [x, y],
-    [foldX, y],
-    [x + w, foldY],
-    [x + w, y + h],
-    [x, y + h],
-  ];
-  const flap = [
-    [foldX, y],
-    [x + w, foldY],
-    [foldX, foldY],
-  ];
-  return { pentagon, flap };
+function distToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return Math.hypot(px - ax, py - ay);
+  let t = ((px - ax) * dx + (py - ay) * dy) / len2;
+  if (t < 0) t = 0;
+  else if (t > 1) t = 1;
+  const cx = ax + t * dx;
+  const cy = ay + t * dy;
+  return Math.hypot(px - cx, py - cy);
 }
 
-// --- renderers (supersampled for anti-aliasing) ----------------------------
+function distToPolygonOutline(x, y, poly) {
+  let minD = Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const j = (i + 1) % poly.length;
+    const d = distToSegment(x, y, poly[i][0], poly[i][1], poly[j][0], poly[j][1]);
+    if (d < minD) minD = d;
+  }
+  return minD;
+}
 
-// Returns straight-alpha RGBA Uint8Array of size*size.
-function renderIcon(size, ss = 4) {
-  const hi = size * ss;
-  const r = 0.22 * hi;
-  const box = { x: 0.28 * hi, y: 0.26 * hi, w: 0.46 * hi, h: 0.5 * hi };
-  const { pentagon, flap } = notePolys(box.x, box.y, box.w, box.h);
+function distToPolyline(x, y, poly) {
+  let minD = Infinity;
+  for (let i = 0; i < poly.length - 1; i++) {
+    const d = distToSegment(x, y, poly[i][0], poly[i][1], poly[i + 1][0], poly[i + 1][1]);
+    if (d < minD) minD = d;
+  }
+  return minD;
+}
 
-  const sample = (x, y) => {
-    // painter order: bg(transparent) -> indigo tile -> white note -> light-indigo flap
-    let c = null;
-    if (inRoundedRect(x, y, hi, hi, r)) c = INDIGO;
-    if (pointInPoly(x, y, pentagon)) c = WHITE;
-    if (pointInPoly(x, y, flap)) c = FLAP;
-    return c;
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function gradientColor(t) {
+  if (t < 0) t = 0;
+  else if (t > 1) t = 1;
+  return [
+    Math.round(lerp(TOP_STOP[0], BOTTOM_STOP[0], t)),
+    Math.round(lerp(TOP_STOP[1], BOTTOM_STOP[1], t)),
+    Math.round(lerp(TOP_STOP[2], BOTTOM_STOP[2], t)),
+  ];
+}
+
+function buildContext(size, variant) {
+  let tileX, tileY, tileW, tileH, tileR;
+  if (variant === 'standard') {
+    tileX = 0.125 * size;
+    tileY = 0.125 * size;
+    tileW = 0.75 * size;
+    tileH = 0.75 * size;
+    tileR = 0.22 * tileW;
+  } else {
+    tileX = 0;
+    tileY = 0;
+    tileW = size;
+    tileH = size;
+    tileR = 0;
+  }
+  const scale = tileW / SVG_UNIT;
+  const mapPoly = (poly) => poly.map(([px, py]) => [tileX + px * scale, tileY + py * scale]);
+  return {
+    tileX, tileY, tileW, tileH, tileR,
+    pentagon: mapPoly(PENTAGON_UNIT),
+    flap: mapPoly(FLAP_UNIT),
+    wPolyline: mapPoly(W_POLYLINE_UNIT),
+    wOuterR: (W_OUTER_STROKE_UNIT * scale) / 2,
+    wInnerR: (W_INNER_STROKE_UNIT * scale) / 2,
+    strokeR: (STROKE_WIDTH_UNIT * scale) / 2,
+    variant,
   };
-
-  return downsample(size, ss, sample);
 }
 
-// Open Graph card: indigo field with the white note mark centered. (No baked
-// text - rendering a wordmark needs a font engine; see build report.)
-function renderOgCard(w, h, ss = 3) {
-  const hiW = w * ss;
-  const hiH = h * ss;
-  const out = new Uint8Array(hiW * hiH * 4);
-
-  // fill indigo field
-  for (let i = 0; i < hiW * hiH; i++) {
-    out[i * 4] = INDIGO[0];
-    out[i * 4 + 1] = INDIGO[1];
-    out[i * 4 + 2] = INDIGO[2];
-    out[i * 4 + 3] = 255;
+function samplePixel(x, y, ctx) {
+  if (ctx.variant === 'standard') {
+    if (!inRoundedRect(x, y, ctx.tileX, ctx.tileY, ctx.tileW, ctx.tileH, ctx.tileR)) return null;
+  } else {
+    if (x < ctx.tileX || y < ctx.tileY || x > ctx.tileX + ctx.tileW || y > ctx.tileY + ctx.tileH) return null;
   }
-
-  // centered note mark
-  const noteH = 0.5 * hiH;
-  const noteW = noteH * 0.92;
-  const bx = (hiW - noteW) / 2;
-  const by = (hiH - noteH) / 2;
-  const { pentagon, flap } = notePolys(bx, by, noteW, noteH);
-
-  for (let y = Math.floor(by); y < Math.ceil(by + noteH); y++) {
-    for (let x = Math.floor(bx); x < Math.ceil(bx + noteW); x++) {
-      let c = null;
-      if (pointInPoly(x + 0.5, y + 0.5, pentagon)) c = WHITE;
-      if (pointInPoly(x + 0.5, y + 0.5, flap)) c = FLAP;
-      if (c) {
-        const idx = (y * hiW + x) * 4;
-        out[idx] = c[0];
-        out[idx + 1] = c[1];
-        out[idx + 2] = c[2];
-        out[idx + 3] = 255;
-      }
-    }
+  const dPent = distToPolygonOutline(x, y, ctx.pentagon);
+  const dFlap = distToPolygonOutline(x, y, ctx.flap);
+  if (dPent <= ctx.strokeR || dFlap <= ctx.strokeR) return STROKE;
+  if (pointInPoly(x, y, ctx.flap)) return FLAP_FILL;
+  if (pointInPoly(x, y, ctx.pentagon)) {
+    const dW = distToPolyline(x, y, ctx.wPolyline);
+    if (dW <= ctx.wInnerR) return W_FILL;
+    if (dW <= ctx.wOuterR) return STROKE;
+    return WHITE;
   }
-
-  // accent rule under the mark
-  const ruleY = by + noteH + hiH * 0.06;
-  const ruleH = Math.max(2, hiH * 0.012);
-  const ruleW = noteW * 0.8;
-  const rx = (hiW - ruleW) / 2;
-  for (let y = Math.floor(ruleY); y < ruleY + ruleH; y++) {
-    for (let x = Math.floor(rx); x < rx + ruleW; x++) {
-      const idx = (y * hiW + x) * 4;
-      out[idx] = FLAP[0];
-      out[idx + 1] = FLAP[1];
-      out[idx + 2] = FLAP[2];
-      out[idx + 3] = 255;
-    }
-  }
-
-  return boxDownsampleBuffer(out, hiW, hiH, ss);
+  const t = (y - ctx.tileY) / ctx.tileH;
+  return gradientColor(t);
 }
 
-// Generic downsampler for sampled (function-based) renders.
-function downsample(size, ss, sample) {
+function renderIcon(size, variant, ss = 4) {
+  const hi = size * ss;
+  const ctx = buildContext(hi, variant);
   const out = new Uint8Array(size * size * 4);
   const n = ss * ss;
   for (let oy = 0; oy < size; oy++) {
     for (let ox = 0; ox < size; ox++) {
       let opaque = 0;
-      let r = 0;
-      let g = 0;
-      let b = 0;
+      let r = 0, g = 0, b = 0;
       for (let sy = 0; sy < ss; sy++) {
         for (let sx = 0; sx < ss; sx++) {
-          const c = sample(ox * ss + sx + 0.5, oy * ss + sy + 0.5);
+          const c = samplePixel(ox * ss + sx + 0.5, oy * ss + sy + 0.5, ctx);
           if (c) {
             opaque++;
-            r += c[0];
-            g += c[1];
-            b += c[2];
+            r += c[0]; g += c[1]; b += c[2];
           }
         }
       }
@@ -169,7 +201,76 @@ function downsample(size, ss, sample) {
   return out;
 }
 
-// Box downsampler for buffer-based renders (og card).
+function renderOgCard(w, h, ss = 3) {
+  const hiW = w * ss;
+  const hiH = h * ss;
+  const out = new Uint8Array(hiW * hiH * 4);
+  for (let y = 0; y < hiH; y++) {
+    const [gr, gg, gb] = gradientColor(y / hiH);
+    for (let x = 0; x < hiW; x++) {
+      const idx = (y * hiW + x) * 4;
+      out[idx] = gr; out[idx + 1] = gg; out[idx + 2] = gb; out[idx + 3] = 255;
+    }
+  }
+  const noteH = 0.5 * hiH;
+  const noteW = noteH * (88 / 96);
+  const bx = (hiW - noteW) / 2;
+  const by = (hiH - noteH) / 2;
+  const sx = noteW / 88;
+  const sy = noteH / 96;
+  const mapTo = (poly) => poly.map(([px, py]) => [bx + (px - 54) * sx, by + (py - 50) * sy]);
+  const pent = mapTo(PENTAGON_UNIT);
+  const flap = mapTo(FLAP_UNIT);
+  const wPoly = mapTo(W_POLYLINE_UNIT);
+  const strokeR = (STROKE_WIDTH_UNIT * sx) / 2;
+  const wOuterR = (W_OUTER_STROKE_UNIT * sx) / 2;
+  const wInnerR = (W_INNER_STROKE_UNIT * sx) / 2;
+  const halfStep = 1 / ss;
+  for (let y = Math.floor(by) - 2; y < Math.ceil(by + noteH) + 2; y++) {
+    for (let x = Math.floor(bx) - 2; x < Math.ceil(bx + noteW) + 2; x++) {
+      let opaque = 0;
+      let r = 0, g = 0, b = 0;
+      for (let dy = 0; dy < ss; dy++) {
+        for (let dx = 0; dx < ss; dx++) {
+          const sxp = x + (dx + 0.5) * halfStep;
+          const syp = y + (dy + 0.5) * halfStep;
+          const dPent = distToPolygonOutline(sxp, syp, pent);
+          const dFlap = distToPolygonOutline(sxp, syp, flap);
+          let c = null;
+          if (dPent <= strokeR || dFlap <= strokeR) c = STROKE;
+          else if (pointInPoly(sxp, syp, flap)) c = FLAP_FILL;
+          else if (pointInPoly(sxp, syp, pent)) {
+            const dW = distToPolyline(sxp, syp, wPoly);
+            if (dW <= wInnerR) c = W_FILL;
+            else if (dW <= wOuterR) c = STROKE;
+            else c = WHITE;
+          }
+          if (c) { opaque++; r += c[0]; g += c[1]; b += c[2]; }
+        }
+      }
+      if (opaque > 0 && x >= 0 && y >= 0 && x < hiW && y < hiH) {
+        const idx = (y * hiW + x) * 4;
+        const a = opaque / (ss * ss);
+        out[idx] = Math.round(out[idx] * (1 - a) + (r / opaque) * a);
+        out[idx + 1] = Math.round(out[idx + 1] * (1 - a) + (g / opaque) * a);
+        out[idx + 2] = Math.round(out[idx + 2] * (1 - a) + (b / opaque) * a);
+      }
+    }
+  }
+  const ruleY = by + noteH + hiH * 0.06;
+  const ruleH = Math.max(2, hiH * 0.012);
+  const ruleW = noteW * 0.8;
+  const rxr = (hiW - ruleW) / 2;
+  for (let y = Math.floor(ruleY); y < ruleY + ruleH; y++) {
+    for (let x = Math.floor(rxr); x < rxr + ruleW; x++) {
+      if (x < 0 || y < 0 || x >= hiW || y >= hiH) continue;
+      const idx = (y * hiW + x) * 4;
+      out[idx] = FLAP_FILL[0]; out[idx + 1] = FLAP_FILL[1]; out[idx + 2] = FLAP_FILL[2]; out[idx + 3] = 255;
+    }
+  }
+  return boxDownsampleBuffer(out, hiW, hiH, ss);
+}
+
 function boxDownsampleBuffer(buf, hiW, hiH, ss) {
   const w = hiW / ss;
   const h = hiH / ss;
@@ -177,17 +278,11 @@ function boxDownsampleBuffer(buf, hiW, hiH, ss) {
   const n = ss * ss;
   for (let oy = 0; oy < h; oy++) {
     for (let ox = 0; ox < w; ox++) {
-      let r = 0,
-        g = 0,
-        b = 0,
-        a = 0;
+      let r = 0, g = 0, b = 0, a = 0;
       for (let sy = 0; sy < ss; sy++) {
         for (let sx = 0; sx < ss; sx++) {
           const idx = ((oy * ss + sy) * hiW + (ox * ss + sx)) * 4;
-          r += buf[idx];
-          g += buf[idx + 1];
-          b += buf[idx + 2];
-          a += buf[idx + 3];
+          r += buf[idx]; g += buf[idx + 1]; b += buf[idx + 2]; a += buf[idx + 3];
         }
       }
       const o = (oy * w + ox) * 4;
@@ -199,8 +294,6 @@ function boxDownsampleBuffer(buf, hiW, hiH, ss) {
   }
   return out;
 }
-
-// --- PNG encoder ------------------------------------------------------------
 
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
@@ -230,32 +323,43 @@ function chunk(type, data) {
 
 function encodePng(width, height, rgba) {
   const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(width, 0);
   ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 6; // color type RGBA
-  ihdr[10] = 0;
-  ihdr[11] = 0;
-  ihdr[12] = 0;
-
+  ihdr[8] = 8; ihdr[9] = 6; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
   const stride = width * 4;
   const raw = Buffer.alloc((stride + 1) * height);
   for (let y = 0; y < height; y++) {
-    raw[y * (stride + 1)] = 0; // filter: none
+    raw[y * (stride + 1)] = 0;
     Buffer.from(rgba.buffer, rgba.byteOffset + y * stride, stride).copy(raw, y * (stride + 1) + 1);
   }
   const idat = deflateSync(raw, { level: 9 });
-
   return Buffer.concat([sig, chunk('IHDR', ihdr), chunk('IDAT', idat), chunk('IEND', Buffer.alloc(0))]);
 }
 
-// --- write outputs ----------------------------------------------------------
-
-function ensureDir(p) {
-  mkdirSync(p, { recursive: true });
+function encodeIco(entries) {
+  const dirSize = 6 + entries.length * 16;
+  let offset = dirSize;
+  const dir = Buffer.alloc(dirSize);
+  dir.writeUInt16LE(0, 0);
+  dir.writeUInt16LE(1, 2);
+  dir.writeUInt16LE(entries.length, 4);
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    const off = 6 + i * 16;
+    dir[off + 0] = e.size === 256 ? 0 : e.size;
+    dir[off + 1] = e.size === 256 ? 0 : e.size;
+    dir[off + 2] = 0; dir[off + 3] = 0;
+    dir.writeUInt16LE(1, off + 4);
+    dir.writeUInt16LE(32, off + 6);
+    dir.writeUInt32LE(e.png.length, off + 8);
+    dir.writeUInt32LE(offset, off + 12);
+    offset += e.png.length;
+  }
+  return Buffer.concat([dir, ...entries.map((e) => e.png)]);
 }
+
+function ensureDir(p) { mkdirSync(p, { recursive: true }); }
 
 function writePng(path, width, height, rgba) {
   writeFileSync(path, encodePng(width, height, rgba));
@@ -267,30 +371,35 @@ function main() {
   const extPub = resolve(root, 'extension', 'public');
   ensureDir(pub);
   ensureDir(extPub);
-
   console.log('Generating Wren icons...');
-
-  const sizes = [16, 32, 48, 128, 192, 512];
-  const cache = {};
-  for (const s of sizes) cache[s] = renderIcon(s);
-
-  // PWA + favicons
-  writePng(resolve(pub, 'icon-16.png'), 16, 16, cache[16]);
-  writePng(resolve(pub, 'icon-32.png'), 32, 32, cache[32]);
-  writePng(resolve(pub, 'icon-48.png'), 48, 48, cache[48]);
-  writePng(resolve(pub, 'icon-128.png'), 128, 128, cache[128]);
-  writePng(resolve(pub, 'icon-192.png'), 192, 192, cache[192]);
-  writePng(resolve(pub, 'icon-512.png'), 512, 512, cache[512]);
-
-  // Extension icons (CWS requires 128; 16/48 recommended)
-  writePng(resolve(extPub, 'icon-16.png'), 16, 16, cache[16]);
-  writePng(resolve(extPub, 'icon-48.png'), 48, 48, cache[48]);
-  writePng(resolve(extPub, 'icon-128.png'), 128, 128, cache[128]);
-
-  // Open Graph card
+  const stdSizes = [16, 32, 48, 128, 192, 512, 1024];
+  const stdCache = {};
+  for (const s of stdSizes) stdCache[s] = renderIcon(s, 'standard');
+  writePng(resolve(pub, 'icon-16.png'), 16, 16, stdCache[16]);
+  writePng(resolve(pub, 'icon-32.png'), 32, 32, stdCache[32]);
+  writePng(resolve(pub, 'icon-48.png'), 48, 48, stdCache[48]);
+  writePng(resolve(pub, 'icon-128.png'), 128, 128, stdCache[128]);
+  writePng(resolve(pub, 'icon-192.png'), 192, 192, stdCache[192]);
+  writePng(resolve(pub, 'icon-512.png'), 512, 512, stdCache[512]);
+  writePng(resolve(pub, 'icon-master-1024.png'), 1024, 1024, stdCache[1024]);
+  writePng(resolve(extPub, 'icon-16.png'), 16, 16, stdCache[16]);
+  writePng(resolve(extPub, 'icon-32.png'), 32, 32, stdCache[32]);
+  writePng(resolve(extPub, 'icon-48.png'), 48, 48, stdCache[48]);
+  writePng(resolve(extPub, 'icon-128.png'), 128, 128, stdCache[128]);
+  const maskable512 = renderIcon(512, 'maskable');
+  const appleTouch180 = renderIcon(180, 'maskable');
+  writePng(resolve(pub, 'icon-maskable-512.png'), 512, 512, maskable512);
+  writePng(resolve(pub, 'apple-touch-icon-180.png'), 180, 180, appleTouch180);
+  const ico = encodeIco([
+    { size: 16, png: encodePng(16, 16, stdCache[16]) },
+    { size: 32, png: encodePng(32, 32, stdCache[32]) },
+    { size: 48, png: encodePng(48, 48, stdCache[48]) },
+  ]);
+  const icoPath = resolve(root, 'favicon.ico');
+  writeFileSync(icoPath, ico);
+  console.log(`  wrote ${icoPath.replace(root + '\\', '').replace(root + '/', '')} (16+32+48)`);
   const og = renderOgCard(1200, 630);
   writePng(resolve(pub, 'og-card.png'), 1200, 630, og);
-
   console.log('Icons done.');
 }
 
