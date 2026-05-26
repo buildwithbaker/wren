@@ -22,6 +22,10 @@
   --wr-note-green: #eaf7e6;
   --wr-note-rose: #fdeef5;
   --wr-note-purple: #f0ebfa;
+  /* --wr-note-header-tint: derived per-surface from --wr-note-bg; defined on
+     .sc-editor-surface so color-mix() resolves against the active note color
+     (custom-property substitution happens at compute time on the declaring
+     element, so it must live where --wr-note-bg is actually set). */
 
   --wr-shadow-sm: 0 1px 2px rgba(20, 30, 45, 0.08);
   --wr-shadow-md: 0 4px 14px rgba(20, 30, 45, 0.12);
@@ -371,6 +375,10 @@ button {
   border-radius: var(--wr-radius-panel);
   box-shadow: var(--wr-shadow-md);
   overflow: hidden;
+  /* Top-bar tint - subtly darker/lighter than the note body to separate
+     controls from the writing area. Derived from the active note color
+     and the current ink, so it adapts to both color swap and theme. */
+  --wr-note-header-tint: color-mix(in srgb, var(--wr-note-bg, #fff) 92%, var(--wr-ink) 8%);
 }
 
 .sc-editor-head {
@@ -378,6 +386,7 @@ button {
   align-items: center;
   gap: 8px;
   padding: 12px 14px 8px;
+  background: var(--wr-note-header-tint);
 }
 .sc-title-input {
   flex: 1;
@@ -430,6 +439,7 @@ button {
   align-items: center;
   gap: 12px;
   padding: 2px 14px 10px;
+  background: var(--wr-note-header-tint);
 }
 .sc-saved-hint {
   margin-left: auto;
@@ -471,6 +481,7 @@ button {
   align-items: center;
   gap: 2px;
   padding: 6px 6px;
+  background: var(--wr-note-header-tint);
   border-top: 1px solid rgba(42, 53, 64, 0.1);
   border-bottom: 1px solid rgba(42, 53, 64, 0.1);
 }

@@ -40,7 +40,7 @@ export function createCardColorPicker({ value = 'default', onChange }) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'sc-swatch';
-    btn.style.setProperty('--swatch', color.bg);
+    btn.style.setProperty('--swatch', `var(--wr-note-${color.id})`);
     btn.title = color.label;
     btn.setAttribute('role', 'radio');
     btn.setAttribute('aria-label', color.label);
