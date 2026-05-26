@@ -18,6 +18,7 @@ import {
 } from './notes-store.js';
 import { createNotesList } from './ui/notes-list.js';
 import { createNoteEditor } from './ui/note-editor.js';
+import { getStoredTheme, cycleTheme, initTheme } from './theme.js';
 
 const KOFI = 'https://ko-fi.com/abaker421';
 
@@ -35,7 +36,42 @@ export function createApp({ root, enableServiceWorker = false }) {
     installPrompt = e;
   });
 
+  initTheme();
+  mountThemeToggle();
+
   boot();
+
+  function themeLabel(t) {
+    return t === 'system' ? 'Auto' : t === 'light' ? 'Light' : 'Dark';
+  }
+
+  function themeIcon(t) {
+    if (t === 'light') {
+      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>';
+    }
+    if (t === 'dark') {
+      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+    }
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none"/></svg>';
+  }
+
+  function mountThemeToggle() {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'sc-theme-toggle';
+    btn.setAttribute('aria-label', 'Change theme');
+    const render = () => {
+      const t = getStoredTheme();
+      btn.innerHTML = `${themeIcon(t)}<span>${themeLabel(t)}</span>`;
+      btn.title = `Theme: ${themeLabel(t)} (click to cycle)`;
+    };
+    btn.addEventListener('click', () => {
+      cycleTheme();
+      render();
+    });
+    render();
+    document.body.appendChild(btn);
+  }
 
   function isInstalled() {
     return (

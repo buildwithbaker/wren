@@ -8,11 +8,13 @@
       name="description"
       content="Wren is a sticky-notes app that stores rich-text notes as Markdown files on your own PC. No cloud, no lock-in."
     />
-    <meta name="theme-color" content="#2B4A8B" />
+    <meta name="theme-color" content="#8B5E3C" />
 
     <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+    <link rel="icon" type="image/png" sizes="16x16" href="./icon-16.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="./icon-32.png" />
-    <link rel="apple-touch-icon" href="./icon-192.png" />
+    <link rel="icon" type="image/png" sizes="48x48" href="./icon-48.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon-180.png" />
     <link rel="manifest" href="./manifest.json" />
 
     <!-- Open Graph -->
@@ -26,6 +28,16 @@
     <meta name="twitter:card" content="summary_large_image" />
 
     <link rel="stylesheet" href="./src/styles/style.css" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('wren.theme');
+          if (t === 'light' || t === 'dark') {
+            document.documentElement.setAttribute('data-theme', t);
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>

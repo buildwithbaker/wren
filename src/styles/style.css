@@ -61,8 +61,10 @@
 }
 
 /* ---- Dark chrome (note paper stays light by design) -------------------- */
+/* Two ways to engage: OS preference (when no explicit override) OR
+   explicit data-theme="dark" on the root element. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --wr-primary: #7FA0E8;
     --wr-primary-hover: #96B3EE;
     --wr-primary-soft: #1A2644;
@@ -77,6 +79,21 @@
     --wr-shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5);
     --wr-shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.6);
   }
+}
+:root[data-theme='dark'] {
+  --wr-primary: #7FA0E8;
+  --wr-primary-hover: #96B3EE;
+  --wr-primary-soft: #1A2644;
+  --wr-page-bg: #11151b;
+  --wr-panel-bg: #1a212b;
+  --wr-panel-2: #222b37;
+  --wr-panel-text: #e6ebf2;
+  --wr-panel-muted: #9aa6b4;
+  --wr-border: #2b3542;
+  --wr-border-strong: #3a4656;
+  --wr-field-bg: #222b37;
+  --wr-shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5);
+  --wr-shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.6);
 }
 
 /* ---- Reset ------------------------------------------------------------- */
@@ -853,4 +870,34 @@ button {
   .sc-card:hover {
     transform: none;
   }
+}
+
+/* =========================================================================
+   Theme toggle (testing utility)
+   ========================================================================= */
+.sc-theme-toggle {
+  position: fixed;
+  bottom: 14px;
+  right: 14px;
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--wr-border);
+  border-radius: 999px;
+  background: var(--wr-panel-bg);
+  color: var(--wr-panel-text);
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: var(--wr-shadow-sm);
+  cursor: pointer;
+  transition: background var(--wr-trans), border-color var(--wr-trans);
+}
+.sc-theme-toggle:hover {
+  border-color: var(--wr-border-strong);
+}
+.sc-theme-toggle svg {
+  width: 14px;
+  height: 14px;
 }
