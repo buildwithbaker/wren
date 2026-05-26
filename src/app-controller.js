@@ -38,6 +38,7 @@ export function createApp({ root, enableServiceWorker = false }) {
 
   initTheme();
   mountThemeToggle();
+  mountInstallButton();
 
   boot();
 
@@ -69,6 +70,43 @@ export function createApp({ root, enableServiceWorker = false }) {
       cycleTheme();
       render();
     });
+    render();
+    document.body.appendChild(btn);
+  }
+
+  function mountInstallButton() {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'sc-install-button';
+    btn.setAttribute('aria-label', 'Install Wren as an app');
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>Install</span>`;
+    btn.title = 'Install Wren — folder permission then persists across sessions.';
+
+    const render = () => {
+      btn.hidden = !canInstall();
+    };
+
+    btn.addEventListener('click', async () => {
+      if (!installPrompt) return;
+      try {
+        await installPrompt.prompt();
+        await installPrompt.userChoice;
+      } catch (err) {
+        console.warn('Install prompt failed', err);
+      }
+      installPrompt = null;
+      render();
+      if (currentScreen) currentScreen();
+    });
+
+    // Re-render when beforeinstallprompt fires (event may fire AFTER mount).
+    window.addEventListener('beforeinstallprompt', () => render());
+    // Also re-render when the app becomes installed (event fires once on first install).
+    window.addEventListener('appinstalled', () => {
+      installPrompt = null;
+      render();
+    });
+
     render();
     document.body.appendChild(btn);
   }

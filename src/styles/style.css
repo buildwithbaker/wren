@@ -968,3 +968,36 @@ button {
   width: 14px;
   height: 14px;
 }
+
+/* =========================================================================
+   PWA install button (corner-persistent, mirrors theme toggle position)
+   ========================================================================= */
+.sc-install-button {
+  position: fixed;
+  bottom: 14px;
+  left: 14px;
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--wr-border);
+  border-radius: 999px;
+  background: var(--wr-panel-bg);
+  color: var(--wr-panel-text);
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: var(--wr-shadow-sm);
+  cursor: pointer;
+  transition: background var(--wr-trans), border-color var(--wr-trans);
+}
+.sc-install-button:hover {
+  border-color: var(--wr-border-strong);
+}
+.sc-install-button svg {
+  width: 14px;
+  height: 14px;
+}
+.sc-install-button[hidden] {
+  display: none !important;
+}
