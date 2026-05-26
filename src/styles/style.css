@@ -14,14 +14,14 @@
 
   --wr-ink: #2a3540; /* text on note paper (light mode) */
 
-  /* note paper palette (full-card coloring) */
-  --wr-note-default: #eff2f7;
-  --wr-note-slate: #e8eef8;
-  --wr-note-amber: #fff4dc;
-  --wr-note-red: #fdecea;
-  --wr-note-green: #eaf7e6;
-  --wr-note-rose: #fdeef5;
-  --wr-note-purple: #f0ebfa;
+  /* note paper palette (warm, muted - approximates real Post-it stock) */
+  --wr-note-default: #E8E5DF;
+  --wr-note-slate:   #D8DEEA;
+  --wr-note-amber:   #F4E6BD;
+  --wr-note-red:     #EBD3CF;
+  --wr-note-green:   #D5E5CC;
+  --wr-note-rose:    #EAD7DF;
+  --wr-note-purple:  #DCD3E8;
   /* --wr-note-header-tint: derived per-surface from --wr-note-bg; defined on
      .sc-editor-surface so color-mix() resolves against the active note color
      (custom-property substitution happens at compute time on the declaring
@@ -65,17 +65,17 @@
   --wr-bwb-link: var(--wr-primary);
 }
 
-/* ---- Light chrome ------------------------------------------------------ */
+/* ---- Light chrome (muted, warm-leaning to complement brown accent) ---- */
 :root {
-  --wr-page-bg: #f4f6fa;
-  --wr-panel-bg: #ffffff;
-  --wr-panel-2: #f6f8fc;
-  --wr-panel-text: #2a3540;
-  --wr-panel-muted: #6b7785;
-  --wr-border: #dfe4ec;
-  --wr-border-strong: #c8d0dc;
-  --wr-field-bg: #f1f4f9;
-  --wr-paper-muted: rgba(42, 53, 64, 0.55);
+  --wr-page-bg:       #EEEAE4;
+  --wr-panel-bg:      #FAF7F2;
+  --wr-panel-2:       #F2EDE6;
+  --wr-panel-text:    #2a3540;
+  --wr-panel-muted:   #6b7785;
+  --wr-border:        #E0D9CE;
+  --wr-border-strong: #C9C0B2;
+  --wr-field-bg:      #F0EAE0;
+  --wr-paper-muted:   rgba(42, 53, 64, 0.55);
 }
 
 /* ---- Dark chrome (note paper stays light by design) -------------------- */
