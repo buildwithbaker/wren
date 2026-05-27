@@ -6,9 +6,38 @@
 // Shared verbatim by the PWA (main.js) and the Chrome extension (popup.js).
 
 const DB_NAME = 'scrybe';
-const DB_VERSION = 1;
+// v2 (2026-05-27): adds 'sync_state' object store used by src/sync/syncStateStore.js
+//   The existing 'handles' store is preserved untouched; the migration is purely
+//   additive so existing Wren installs with notes-store data do not lose anything.
+const DB_VERSION = 2;
 const STORE = 'handles';
 const HANDLE_KEY = 'notesDir';
+export const SYNC_STATE_STORE = 'sync_state';
+
+// Exposed so src/sync/syncStateStore.js can share the same DB connection schema
+// without re-declaring the migration logic.
+export const SCRYBE_DB_NAME = DB_NAME;
+export const SCRYBE_DB_VERSION = DB_VERSION;
+
+/**
+ * Apply schema migrations to the shared 'scrybe' IndexedDB database.
+ *
+ * Called from onupgradeneeded by any module that opens the database. Each
+ * store-creation is wrapped in a `contains` guard so the function is safe
+ * regardless of which version the user is upgrading from.
+ *
+ * Order of stores:
+ *   v1: 'handles' (FileSystemDirectoryHandle persistence — pre-existing)
+ *   v2: 'sync_state' (per-note sync metadata, keyed by noteId)
+ */
+export function applyScrybeMigrations(db) {
+  if (!db.objectStoreNames.contains(STORE)) {
+    db.createObjectStore(STORE);
+  }
+  if (!db.objectStoreNames.contains(SYNC_STATE_STORE)) {
+    db.createObjectStore(SYNC_STATE_STORE, { keyPath: 'noteId' });
+  }
+}
 
 export const CARD_COLORS = [
   { id: 'default', label: 'Default', bg: '#EFF2F7' },
@@ -30,16 +59,26 @@ export function isSupported() {
 
 // --- IndexedDB handle persistence ------------------------------------------
 
-function openDb() {
+// Shared DB opener. Exported so src/sync/syncStateStore.js can reuse the same
+// connection (sharing the upgrade path avoids two competing onupgradeneeded
+// handlers seeing different schema states).
+export function openScrybeDb() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
-    };
+    req.onupgradeneeded = () => applyScrybeMigrations(req.result);
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
+    req.onblocked = () => {
+      // Another tab is holding an older version open. The promise will not
+      // resolve until that tab closes; surface a hint in the console so the
+      // developer can debug stuck migrations.
+      console.warn('Wren IndexedDB upgrade blocked: another tab is holding the old version open.');
+    };
   });
+}
+
+function openDb() {
+  return openScrybeDb();
 }
 
 async function idbGet(key) {

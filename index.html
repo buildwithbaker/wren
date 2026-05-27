@@ -10,6 +10,25 @@
     />
     <meta name="theme-color" content="#8B5E3C" />
 
+    <!--
+      Content Security Policy.
+
+      Phase 1 of Drive sync adds Google Identity Services (script-src,
+      style-src, frame-src on accounts.google.com/gsi/) and the Drive REST
+      endpoint (connect-src on www.googleapis.com). The 'unsafe-inline' on
+      style-src is required by Wren's own runtime style mutations (Tiptap
+      attribute styles, ProseMirror selection styles); it can be tightened
+      with hashes in a future pass.
+
+      Decision provenance: KB Module 05, P1.7. The connect-src for
+      www.googleapis.com is NOT in the GIS docs but is mandatory because
+      Wren's Drive REST calls land there.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; connect-src 'self' https://accounts.google.com/gsi/ https://www.googleapis.com/; frame-src https://accounts.google.com/gsi/; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data: https:; font-src 'self' data:; manifest-src 'self'; object-src 'none'; base-uri 'self'"
+    />
+
     <link rel="icon" type="image/svg+xml" href="./icon.svg" />
     <link rel="icon" type="image/png" sizes="16x16" href="./icon-16.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="./icon-32.png" />
