@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy Policy — Wren</title>
+<meta name="description" content="Privacy policy for Wren, a local-first sticky notes app.">
+<style>
+  :root {
+    --ink: #2A3540;
+    --muted: #6B7785;
+    --brown: #8B5E3C;
+    --indigo: #2B4A8B;
+    --bg: #FAF7F2;
+    --panel: #FFFFFF;
+    --border: #E0D9CE;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .container {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 48px 24px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .brand-mark {
+    width: 32px;
+    height: 32px;
+    border-radius: 7px;
+    background: var(--brown);
+    display: inline-grid;
+    place-items: center;
+    color: #fff;
+    font-weight: 700;
+    font-size: 18px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .brand-name {
+    font-weight: 700;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  h1 {
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 24px 0 8px;
+  }
+  .effective {
+    color: var(--muted);
+    font-size: 14px;
+    margin-bottom: 32px;
+  }
+  h2 {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 32px 0 12px;
+    color: var(--ink);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+  }
+  p, li { color: var(--ink); }
+  a {
+    color: var(--indigo);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  a:hover { text-decoration: underline; }
+  ul { padding-left: 24px; }
+  li { margin: 8px 0; }
+  .footer {
+    margin-top: 64px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .footer a { color: var(--indigo); }
+  .callout {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin: 20px 0;
+  }
+  .callout strong { color: var(--brown); }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="brand">
+    <span class="brand-mark">W</span>
+    <span class="brand-name">Wren</span>
+  </div>
+
+  <h1>Privacy Policy</h1>
+  <p class="effective">Effective: May 26, 2026</p>
+
+  <div class="callout">
+    <strong>Short version:</strong> Wren is local-first. Your notes live on your own computer (or in your own Google Drive if you connect it). Wren does not have a server, does not collect analytics, and does not see your notes. Read on for the details.
+  </div>
+
+  <h2>What Wren is</h2>
+  <p>Wren is a sticky-notes application that runs entirely in your browser. It is a Progressive Web App (PWA) and a Chrome extension. Notes are stored as Markdown files either on your local computer (via the File System Access API) or in your own Google Drive (if you choose to enable Drive sync). Wren has no backend server.</p>
+
+  <h2>What Wren collects</h2>
+  <p>Wren collects no personal data on any server because Wren has no server. Specifically:</p>
+  <ul>
+    <li>No analytics, telemetry, or usage tracking.</li>
+    <li>No account creation. Wren does not store usernames, passwords, email addresses, or any other identifying information.</li>
+    <li>No cookies set by Wren itself.</li>
+    <li>No advertising, ad networks, or third-party trackers.</li>
+  </ul>
+
+  <h2>What Wren stores locally on your device</h2>
+  <p>For Wren to function, it stores a small amount of information in your browser's local storage:</p>
+  <ul>
+    <li><strong>Notes folder reference.</strong> If you use local file storage, Wren stores a reference to the folder you chose (a <em>FileSystemDirectoryHandle</em>) in IndexedDB, so you don't have to re-pick the folder every time.</li>
+    <li><strong>Theme preference.</strong> Your light/dark/auto choice is stored in localStorage so it persists across sessions.</li>
+    <li><strong>A device identifier.</strong> A short random string is generated the first time Wren runs on your device, stored in IndexedDB, and used to name conflict-copy files when Drive sync detects edits from multiple devices. The identifier never leaves your device or your Drive.</li>
+    <li><strong>Sync metadata (Drive only).</strong> If you connect Drive, Wren stores sync state per note (last synced revision, dirty flag) in IndexedDB so it knows what has changed and what to upload.</li>
+  </ul>
+  <p>All of this lives in your browser's local storage. Clearing your browser data will remove it. Wren cannot access this data from any other device.</p>
+
+  <h2>Google Drive integration (optional)</h2>
+  <p>If you choose to enable Google Drive sync, Wren requests OAuth permission for the <code>drive.file</code> scope. This scope:</p>
+  <ul>
+    <li>Lets Wren see, create, edit, and delete <strong>only files Wren itself created</strong> in your Drive. Wren cannot see your other Drive files.</li>
+    <li>Creates a folder named "Wren Notes" in your Drive on first sync. All Wren notes are stored as <code>.md</code> files in that folder.</li>
+    <li>Reads and writes only when you actively use Wren. There is no background sync from a server you don't control.</li>
+  </ul>
+  <p>The OAuth access token Wren receives is held only in memory while Wren is running. The token is not stored in localStorage, IndexedDB, or any persistent location. When you close Wren, the token is discarded.</p>
+  <p>You can revoke Wren's access to your Drive at any time:</p>
+  <ul>
+    <li>From within Wren: click "Disconnect Drive" in the settings (when Phase 2b ships).</li>
+    <li>From Google directly: visit <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">myaccount.google.com/permissions</a>, find Wren, and remove access.</li>
+  </ul>
+
+  <h2>Third parties</h2>
+  <p>Wren uses these third-party services. Each has its own privacy policy:</p>
+  <ul>
+    <li><strong>Google Identity Services and Google Drive API</strong> — only if you enable Drive sync. See <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google's Privacy Policy</a>.</li>
+    <li><strong>Your hosting provider</strong> — Wren is delivered to your browser as static files from a hosting provider. The host may log standard HTTP request information (IP address, user agent, timestamp). Wren itself does not log or aggregate this data.</li>
+  </ul>
+  <p>Wren does not use Google Analytics, Google Fonts (fonts are bundled), Facebook Pixel, or any other tracking or analytics service.</p>
+
+  <h2>Data retention</h2>
+  <p>Because Wren stores nothing on a server, there is no retention period to disclose. Your notes are retained as long as you keep them, in the location you chose (your computer's filesystem or your Google Drive). If you delete a note in Wren:</p>
+  <ul>
+    <li><strong>Local storage:</strong> the <code>.md</code> file is deleted from your computer immediately.</li>
+    <li><strong>Drive storage:</strong> the file is moved to Drive's trash (recoverable from drive.google.com for ~30 days, then permanently deleted by Drive's policy).</li>
+  </ul>
+
+  <h2>Children's privacy</h2>
+  <p>Wren is not directed at children under 13. Wren does not knowingly collect personal information from children because Wren does not knowingly collect personal information from anyone.</p>
+
+  <h2>Your rights</h2>
+  <p>Because Wren collects no personal data and stores no data on any server, traditional GDPR/CCPA rights (access, deletion, portability, etc.) apply only to the data on your own device:</p>
+  <ul>
+    <li><strong>Access:</strong> all your data is in plain Markdown files on your computer or in your Drive. Open them in any text editor.</li>
+    <li><strong>Deletion:</strong> delete the files directly, or use Wren's delete function. To remove Wren's local state entirely, clear your browser's site data for the Wren domain.</li>
+    <li><strong>Portability:</strong> the <code>.md</code> file format is portable. Copy files to any other Markdown editor (Obsidian, iA Writer, plain text editor) and they will work.</li>
+  </ul>
+
+  <h2>Changes to this policy</h2>
+  <p>If this policy changes, the "Effective" date at the top will update. Material changes (e.g., adding analytics, adding new third-party integrations) will be flagged in Wren's release notes.</p>
+
+  <h2>Contact</h2>
+  <p>Wren is built by Adam Baker under the Build with Baker creator brand. For privacy questions, contact <a href="mailto:bakeradm6@gmail.com">bakeradm6@gmail.com</a> or open an issue at <a href="https://github.com/buildwithbaker/wren/issues" target="_blank" rel="noopener">github.com/buildwithbaker/wren/issues</a>.</p>
+
+  <div class="footer">
+    <p>Wren is open source under the MIT License. Source: <a href="https://github.com/buildwithbaker/wren" target="_blank" rel="noopener">github.com/buildwithbaker/wren</a>.</p>
+    <p><a href="https://buildwithbaker.com" target="_blank" rel="noopener">Build with Baker</a> · <a href="https://ko-fi.com/abaker421" target="_blank" rel="noopener">Support on Ko-fi</a></p>
+  </div>
+
+</div>
+</body>
+</html>
