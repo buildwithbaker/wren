@@ -776,7 +776,7 @@ export function createApp({ root, enableServiceWorker = false }) {
   function buildBrand() {
     const brand = document.createElement('div');
     brand.className = 'sc-brand';
-    brand.innerHTML = `<img src="./icon.svg" alt="" /><span class="sc-brand-name">Wren</span>`;
+    brand.innerHTML = `<img src="./icon.svg" alt="" /><div class="sc-brand-text"><span class="sc-brand-name">Wren</span><span class="sc-brand-tagline">Local-first sticky notes</span></div>`;
     backendChipEl = buildBackendChip();
     if (backendChipEl) brand.appendChild(backendChipEl);
     // Open Full App link is now persistent (mountOpenFullApp), not in-brand.

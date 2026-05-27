@@ -221,11 +221,24 @@ button {
   height: 26px;
   border-radius: 6px;
 }
+.sc-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  min-width: 0;
+}
 .sc-brand-name {
   color: var(--wr-brown);
   font-weight: 700;
   font-size: 17px;
   letter-spacing: -0.01em;
+}
+.sc-brand-tagline {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--wr-panel-muted);
+  letter-spacing: 0.01em;
+  margin-top: 2px;
 }
 
 /* =========================================================================
