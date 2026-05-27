@@ -61,6 +61,7 @@ export function createApp({ root, enableServiceWorker = false }) {
   initTheme();
   mountThemeToggle();
   mountInstallButton();
+  mountOpenFullApp();
 
   boot();
 
@@ -131,6 +132,19 @@ export function createApp({ root, enableServiceWorker = false }) {
 
     render();
     document.body.appendChild(btn);
+  }
+
+  function mountOpenFullApp() {
+    if (!isExtensionPopup()) return;
+    const a = document.createElement('a');
+    a.className = 'sc-open-full-app';
+    a.href = 'https://wren-ckn.pages.dev/';
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.title = 'Open Wren in a full browser tab';
+    a.setAttribute('aria-label', 'Open Wren in a full browser tab');
+    a.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg><span>Open Full App</span>`;
+    document.body.appendChild(a);
   }
 
   function isInstalled() {
@@ -765,17 +779,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     brand.innerHTML = `<img src="./icon.svg" alt="" /><span class="sc-brand-name">Wren</span>`;
     backendChipEl = buildBackendChip();
     if (backendChipEl) brand.appendChild(backendChipEl);
-    if (isExtensionPopup()) {
-      const openBtn = document.createElement('a');
-      openBtn.className = 'sc-open-full-app';
-      openBtn.href = 'https://wren-ckn.pages.dev/';
-      openBtn.target = '_blank';
-      openBtn.rel = 'noopener noreferrer';
-      openBtn.title = 'Open Wren in a full browser tab';
-      openBtn.setAttribute('aria-label', 'Open Wren in a full browser tab');
-      openBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg><span>Open Full App</span>`;
-      brand.appendChild(openBtn);
-    }
+    // Open Full App link is now persistent (mountOpenFullApp), not in-brand.
     return brand;
   }
 
