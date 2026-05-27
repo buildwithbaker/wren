@@ -145,6 +145,20 @@ export function createApp({ root, enableServiceWorker = false }) {
     return !isInstalled() && installPrompt !== null;
   }
 
+  /**
+   * True when Wren is running inside the MV3 extension popup (chrome.runtime
+   * is only populated in extension contexts; in the PWA / Vite dev server it
+   * is undefined). Used to render the "Open Full App" affordance only where
+   * it makes sense.
+   */
+  function isExtensionPopup() {
+    return (
+      typeof chrome !== 'undefined' &&
+      chrome.runtime &&
+      !!chrome.runtime.id
+    );
+  }
+
   function buildInstallSection() {
     if (!canInstall()) return null;
     const frag = document.createDocumentFragment();
@@ -751,6 +765,17 @@ export function createApp({ root, enableServiceWorker = false }) {
     brand.innerHTML = `<img src="./icon.svg" alt="" /><span class="sc-brand-name">Wren</span>`;
     backendChipEl = buildBackendChip();
     if (backendChipEl) brand.appendChild(backendChipEl);
+    if (isExtensionPopup()) {
+      const openBtn = document.createElement('a');
+      openBtn.className = 'sc-open-full-app';
+      openBtn.href = 'https://wren-ckn.pages.dev/';
+      openBtn.target = '_blank';
+      openBtn.rel = 'noopener noreferrer';
+      openBtn.title = 'Open Wren in a full browser tab';
+      openBtn.setAttribute('aria-label', 'Open Wren in a full browser tab');
+      openBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg><span>Open Full App</span>`;
+      brand.appendChild(openBtn);
+    }
     return brand;
   }
 

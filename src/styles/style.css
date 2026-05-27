@@ -1139,3 +1139,29 @@ button {
   from { opacity: 0; transform: translate(-50%, 6px); }
   to   { opacity: 1; transform: translate(-50%, 0); }
 }
+
+/* =========================================================================
+   Open Full App link (extension popup only — JS conditional on chrome.runtime.id)
+   .sc-brand is already display:flex with gap:9px and the backend chip uses
+   margin-left:auto to push itself right; the link sits to the right of the
+   chip via natural flex flow. No parent-layout change needed.
+   ========================================================================= */
+.sc-open-full-app {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: var(--wr-radius-sm);
+  background: var(--wr-field-bg);
+  color: var(--wr-panel-muted);
+  font-size: 11px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background var(--wr-trans), color var(--wr-trans);
+  white-space: nowrap;
+}
+.sc-open-full-app:hover {
+  background: var(--wr-brown-soft);
+  color: var(--wr-brown);
+}
+.sc-open-full-app svg { width: 11px; height: 11px; }
