@@ -1001,3 +1001,141 @@ button {
 .sc-install-button[hidden] {
   display: none !important;
 }
+
+/* =========================================================================
+   Phase 2b.1 — storage backend choice, sign-in, chip, banner
+   ========================================================================= */
+
+/* Storage choice screen */
+.sc-choice-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  max-width: 720px;
+  margin: 24px auto;
+}
+@media (max-width: 640px) {
+  .sc-choice-grid { grid-template-columns: 1fr; }
+}
+.sc-choice-card {
+  background: var(--wr-panel-bg);
+  border: 1px solid var(--wr-border);
+  border-radius: var(--wr-radius-panel);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.sc-choice-card-title { font-size: 17px; font-weight: 600; }
+.sc-choice-card-sub { font-size: 13.5px; color: var(--wr-panel-muted); line-height: 1.45; }
+
+.sc-choice-why {
+  margin-top: 18px;
+  font-size: 13px;
+  color: var(--wr-panel-muted);
+}
+.sc-choice-why summary {
+  cursor: pointer;
+  color: var(--wr-panel-text);
+  padding: 6px 0;
+}
+.sc-choice-why ul {
+  margin: 8px 0 0 18px;
+  padding: 0;
+  line-height: 1.55;
+}
+.sc-choice-why li { margin-bottom: 4px; }
+
+/* Backend indicator chip — lives inside the sidebar brand row */
+.sc-backend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--wr-field-bg);
+  border: 1px solid transparent;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--wr-panel-muted);
+  cursor: pointer;
+  margin-left: auto;
+}
+.sc-backend-chip:hover {
+  color: var(--wr-panel-text);
+  border-color: var(--wr-border);
+}
+.sc-backend-chip svg { width: 12px; height: 12px; }
+
+/* Popover (backend chip menu) */
+.sc-popover {
+  background: var(--wr-panel-bg);
+  border: 1px solid var(--wr-border);
+  border-radius: var(--wr-radius-sm);
+  box-shadow: var(--wr-shadow-md);
+  padding: 4px;
+  min-width: 180px;
+  z-index: 200;
+}
+.sc-popover-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--wr-panel-text);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.sc-popover-item:hover { background: var(--wr-field-bg); }
+.sc-popover-item--danger { color: #B5281C; }
+
+/* Drive-disconnected banner */
+.sc-drive-banner {
+  background: rgba(192, 57, 43, 0.10);
+  color: #B5281C;
+  padding: 8px 14px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(192, 57, 43, 0.20);
+  grid-column: 1 / -1;
+}
+.sc-drive-banner button {
+  color: inherit;
+  font-weight: 600;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+.sc-drive-banner button:hover { text-decoration: underline; }
+
+/* Drive-disconnected — disable New Note button visually */
+.sc-list[data-disconnected='true'] .sc-newbtn {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* Toast — used by Drive-disconnected write attempts */
+.sc-toast {
+  position: fixed;
+  bottom: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--wr-panel-text);
+  color: var(--wr-panel-bg);
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  box-shadow: var(--wr-shadow-md);
+  z-index: 300;
+  animation: sc-toast-in 180ms ease-out;
+}
+@keyframes sc-toast-in {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}

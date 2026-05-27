@@ -273,6 +273,31 @@ export function isSignedIn() {
 }
 
 /**
+ * True when the page is running as an installed iOS PWA (or iPadOS PWA).
+ *
+ * Used by Phase 2b.1's renderDriveSignIn to gate the double-tap confirmation
+ * modal (Decision P2c.1): iOS treats `requestAccessToken()` as a popup attempt
+ * even when fired from a click handler unless the user-activation chain is
+ * primed with a second explicit gesture inside a confirm dialog.
+ *
+ * iPad on iPadOS 13+ defaults to a desktop user-agent, so the legacy
+ * /iPhone|iPad/ check misses it. We additionally accept a Macintosh UA that
+ * has touch (maxTouchPoints > 1) — that combination is uniquely iPad.
+ *
+ * @returns {boolean}
+ */
+export function isIosStandalonePwa() {
+  if (typeof window === 'undefined') return false;
+  const standalone = window.navigator.standalone === true;
+  if (!standalone) return false;
+  const ua = window.navigator.userAgent || '';
+  if (/iPhone|iPad|iPod/.test(ua)) return true;
+  // iPadOS 13+: UA says "Macintosh" but the device has touch.
+  if (/Macintosh/.test(ua) && (window.navigator.maxTouchPoints || 0) > 1) return true;
+  return false;
+}
+
+/**
  * Test-only / debug accessor. Returns a snapshot of the in-memory state.
  * Not exported through the barrel; reach via gisClient.js directly.
  */

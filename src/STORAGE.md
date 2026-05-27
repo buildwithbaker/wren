@@ -183,6 +183,77 @@ Deferred to Phase 2c. Requires `chrome://inspect` during a real OAuth flow.
 All of those are Phase 2b. The existing app is functionally unchanged from
 the user's perspective after Phase 1 ships.
 
+## Phase 2b.1 Status (UI wiring, single-device Drive)
+
+Shipped: the storage layer is now wired into the UI. End users can pick Drive
+on first launch, sign in via GIS, and have notes round-trip through
+`DriveAdapter` end-to-end on a single device.
+
+### What 2b.1 added
+
+- `src/storage/backendPreference.js` — IndexedDB-backed `storageBackend` key
+  (`"fs" | "drive"`), with `getStoredBackend` / `setStoredBackend` /
+  `clearStoredBackend` exports.
+- `src/storage/activeAdapter.js` — `resolveBackend()` (applies the
+  fs-migration heuristic for existing users) and `getActiveAdapter()` factory.
+- `StorageAdapter.js` gains `NoBackendConfiguredError` so the boot path can
+  branch into the storage-choice onboarding cleanly.
+- `FileSystemAdapter` gains a uniform `createNote(content, hint)` method that
+  matches the existing `DriveAdapter.createNote` signature. The old
+  `slugify` helper is now exported from `notes-store.js` for reuse.
+- `gisClient` exports `isIosStandalonePwa()` (with iPadOS 13+ desktop-UA
+  workaround: also matches Macintosh UA + `maxTouchPoints > 1`).
+- `app-controller.js` now imports from `src/storage/` instead of
+  `src/notes-store.js` directly. Boot routes between FS / Drive based on
+  stored backend. The adapter interface speaks raw markdown; app-controller
+  bridges to the parsed-note shape the UI consumes (parse on read, serialize
+  on write).
+- New screens: `renderStorageChoice` (two-card onboarding) and
+  `renderDriveSignIn` (with iOS double-tap modal per P2c.1 and the
+  popup-blocker backstop already present in `gisClient`).
+- Sidebar gains a backend indicator chip with a popover for "Switch backend"
+  and (Drive only) "Disconnect Drive."
+- Drive-disconnected banner + per-write toast (Decision P2c.5). Banner is
+  driven by the `onTokenChange` callback in `gisClient`.
+- `notes-list.js` renamed `note.filename` → `note.id` to remove the FS-ism
+  leak. `note-editor.js` was already field-name-agnostic.
+
+### What 2b.1 explicitly does NOT do (handed to 2b.2)
+
+- Does not pull changes from Drive on app resume (`visibilitychange`). The
+  app only fetches `listNotes` from Drive once at boot; concurrent edits on
+  another device will not be visible until the next reload.
+- Does not detect conflicts. If two devices write the same note
+  concurrently, last write to Drive wins; the earlier write's content is
+  recoverable from Drive's revision history but not from the Wren UI.
+- Does not run a debounced auto-pull. Auto-push is preserved (note-editor's
+  500 ms debounce on save events still fires writes through the adapter).
+- Does not show conflict badges, conflict toasts, or a dedicated
+  conflict-resolution view.
+
+### Design calls baked into 2b.1
+
+- **Sidebar preview on Drive backend uses eager-load (N+1 reads on first
+  list).** Acceptable for single-device scope; will be optimized in 2b.2
+  when the sync runner introduces a content cache.
+- **`createNote` lives on the adapter interface** with a uniform
+  `(content, hint)` signature. FS slugifies the title hint; Drive ignores
+  the hint and lets Drive assign its own file id.
+- **Identifier in the UI is `note.id`** (was `note.filename`). For FS the
+  id is the filename; for Drive it's the Drive file ID.
+
+### Known gaps that did NOT block 2b.1
+
+- The backend chip popover would ideally show the signed-in Google account's
+  email, but `drive.file` scope does not include profile info. Adding the
+  `userinfo.email` scope broadens the consent screen; we deferred that
+  decision to Phase 2c when the consent screen is being re-reviewed for
+  Google brand verification anyway.
+- Empirical Q1 / Q2 outcomes (above) are still pending. Phase 2b.1 does not
+  depend on either — the conflict-detection path that uses `IF_MATCH_SUPPORTED`
+  is currently unreachable (no callers pass `expectedRevision`). The first
+  caller will be the Phase 2b.2 sync runner.
+
 ## Phase 2b stub list
 
 Concrete files Phase 2b will add or change:

@@ -9,7 +9,7 @@ const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
 
 export function createNotesList({ onSelect, onNew, compact = false }) {
   let notes = [];
-  let activeFilename = null;
+  let activeId = null;
   let query = '';
 
   const root = document.createElement('div');
@@ -79,8 +79,8 @@ export function createNotesList({ onSelect, onNew, compact = false }) {
     card.className = 'sc-card';
     const safeId = COLOR_BG[note.color] ? note.color : 'default';
     card.style.background = `var(--wr-note-${safeId})`;
-    card.dataset.filename = note.filename;
-    if (note.filename === activeFilename) card.classList.add('is-active');
+    card.dataset.id = note.id;
+    if (note.id === activeId) card.classList.add('is-active');
 
     const title = document.createElement('div');
     title.className = 'sc-card-title';
@@ -95,7 +95,7 @@ export function createNotesList({ onSelect, onNew, compact = false }) {
     meta.textContent = formatModified(note.modified);
 
     card.append(title, preview, meta);
-    card.addEventListener('click', () => onSelect?.(note.filename));
+    card.addEventListener('click', () => onSelect?.(note.id));
     return card;
   }
 
@@ -118,10 +118,10 @@ export function createNotesList({ onSelect, onNew, compact = false }) {
       notes = next || [];
       render();
     },
-    setActive(filename) {
-      activeFilename = filename;
+    setActive(id) {
+      activeId = id;
       for (const card of scroll.querySelectorAll('.sc-card')) {
-        card.classList.toggle('is-active', card.dataset.filename === filename);
+        card.classList.toggle('is-active', card.dataset.id === id);
       }
     },
     focusSearch() {

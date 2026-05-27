@@ -13,6 +13,7 @@
 // Decision provenance: KB Module 05 P1.3, P1.4, P1.8, P2b.3, P2b.4.
 
 import { ADAPTER_TYPES, ConflictError, AdapterAuthError } from './StorageAdapter.js';
+import { slugify } from '../notes-store.js';
 import {
   getAccessToken,
   requestAccessToken,
@@ -305,16 +306,18 @@ export class DriveAdapter {
   }
 
   /**
-   * Create a new note in the Wren Notes folder. Not part of the formal
-   * StorageAdapter interface but Phase 2b's sync runner needs it; left here
-   * so the adapter is a complete I/O surface.
+   * Create a new note in the Wren Notes folder. Signature matches
+   * FileSystemAdapter.createNote — adapter is responsible for picking the
+   * Drive-side filename (Drive will return an opaque file ID that the UI
+   * uses as the noteId regardless).
    *
-   * @param {string} filename - desired Drive file name (.md)
    * @param {string} content - full file body (frontmatter + markdown)
+   * @param {{title?: string}} [hint] - used to derive the Drive filename
    * @returns {Promise<{id: string, revision: string}>}
    */
-  async createNote(filename, content) {
+  async createNote(content, { title = '' } = {}) {
     this._assertReady();
+    const filename = (slugify(title) || 'untitled') + '.md';
     const boundary = '----wren-' + Math.random().toString(36).slice(2, 12);
     const body = buildMultipart(
       boundary,

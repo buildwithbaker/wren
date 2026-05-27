@@ -97,3 +97,15 @@ export class AdapterAuthError extends Error {
     this.recoverable = recoverable;
   }
 }
+
+/**
+ * Thrown by getActiveAdapter() when no storage backend has been selected yet
+ * (first-launch user). Caller is expected to route to the storage-choice
+ * onboarding screen rather than treating this as a fatal error.
+ */
+export class NoBackendConfiguredError extends Error {
+  constructor(message = 'No storage backend has been chosen yet.') {
+    super(message);
+    this.name = 'NoBackendConfiguredError';
+  }
+}

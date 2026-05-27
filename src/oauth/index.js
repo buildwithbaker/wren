@@ -8,4 +8,5 @@ export {
   getAccessToken,
   revokeToken,
   isSignedIn,
+  isIosStandalonePwa,
 } from './gisClient.js';

@@ -2,34 +2,56 @@
 // Shared orchestration for both the PWA (two-panel on desktop) and the Chrome
 // extension popup (single-panel; the <=640px layout in style.css kicks in
 // automatically at the popup's 400px width). Entry points pass a mount root.
+//
+// Phase 2b.1: CRUD goes through a StorageAdapter (FileSystem or Drive) rather
+// than directly to notes-store.js. The adapter API speaks raw .md text;
+// app-controller bridges that to the parsed-note shape the UI consumes.
+// Multi-device sync (pull-on-resume, conflict detection) is Phase 2b.2.
 
 import {
   isSupported,
-  getStoredDirHandle,
-  queryPermission,
-  requestPermission,
-  pickDirectory,
-  listNotes,
-  readNote,
-  writeNote,
-  createNote,
-  deleteNote,
+  parseNote,
+  serializeNote,
+  firstLineOf,
   exportNoteDownload,
+  CARD_COLORS,
 } from './notes-store.js';
+import {
+  ADAPTER_TYPES,
+  NoBackendConfiguredError,
+  AdapterAuthError,
+  FileSystemAdapter,
+  DriveAdapter,
+  getActiveAdapter,
+  resolveBackend,
+  setStoredBackend,
+  clearStoredBackend,
+} from './storage/index.js';
+import {
+  initTokenClient,
+  requestAccessToken,
+  revokeToken,
+  isSignedIn,
+  isIosStandalonePwa,
+} from './oauth/index.js';
 import { createNotesList } from './ui/notes-list.js';
 import { createNoteEditor } from './ui/note-editor.js';
+import { confirmDialog } from './ui/dialog.js';
 import { getStoredTheme, cycleTheme, initTheme } from './theme.js';
 
 const KOFI = 'https://ko-fi.com/abaker421';
 
 export function createApp({ root, enableServiceWorker = false }) {
-  let dirHandle = null;
+  /** @type {import('./storage/StorageAdapter.js').StorageAdapter|null} */
+  let adapter = null;
   let notes = [];
   let list = null;
   let noteEditor = null;
   let appEl = null;
   let installPrompt = null;
   let currentScreen = null;
+  let backendChipEl = null;
+  let driveBannerEl = null;
 
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
@@ -148,16 +170,51 @@ export function createApp({ root, enableServiceWorker = false }) {
     return frag;
   }
 
+  /* ---- Boot ------------------------------------------------------------- */
+
   async function boot() {
-    if (!isSupported()) return renderUnsupported();
-    const handle = await getStoredDirHandle();
-    if (!handle) return renderOnboarding();
-    const perm = await queryPermission(handle);
-    if (perm === 'granted') {
-      dirHandle = handle;
-      await renderApp();
-    } else {
-      renderReconnect(handle);
+    // Resolve the configured backend (applies fs-migration heuristic).
+    const backend = await resolveBackend();
+    if (backend === null) return renderStorageChoice();
+
+    if (backend === ADAPTER_TYPES.FS) {
+      if (!isSupported()) return renderUnsupported();
+      const fs = new FileSystemAdapter();
+      await fs.initialize();
+      if (await fs.isReady()) {
+        adapter = fs;
+        await renderApp();
+        return;
+      }
+      // Has a handle but permission isn't granted; show reconnect.
+      // Or has no handle at all (rare — implies someone cleared the dir handle
+      // but kept the backend pref). Either way, ask the user to pick again.
+      return renderFsReconnect(fs);
+    }
+
+    if (backend === ADAPTER_TYPES.DRIVE) {
+      // Try silent token re-acquire first.
+      try {
+        await initTokenClient({ onTokenChange: handleTokenChange });
+        if (!isSignedIn()) {
+          try {
+            await requestAccessToken({ silent: true });
+          } catch {
+            // Silent failed — user needs to re-tap to sign in.
+            return renderDriveSignIn({ reason: 'expired' });
+          }
+        }
+        const drive = new DriveAdapter();
+        await drive.initialize();
+        adapter = drive;
+        await renderApp();
+      } catch (err) {
+        if (err instanceof AdapterAuthError) {
+          return renderDriveSignIn({ reason: 'expired' });
+        }
+        console.error('Drive boot failed', err);
+        return renderDriveSignIn({ reason: 'error', error: err });
+      }
     }
   }
 
@@ -181,39 +238,103 @@ export function createApp({ root, enableServiceWorker = false }) {
     card.innerHTML = `
       <img src="./icon.svg" alt="Wren" />
       <h1>Browser not supported</h1>
-      <p>Wren needs the <strong>File System Access API</strong> to read and write
-      notes on your PC. Use Chrome, Edge, or another Chromium browser on desktop.</p>`;
+      <p>Wren needs the <strong>File System Access API</strong> for local-file
+      storage, or you can use Drive sync from any browser.</p>`;
+    const driveBtn = document.createElement('button');
+    driveBtn.className = 'sc-btn sc-btn--primary';
+    driveBtn.textContent = 'Use Google Drive';
+    driveBtn.addEventListener('click', () => renderDriveSignIn({ reason: 'fresh' }));
+    card.appendChild(driveBtn);
     screenShell(card);
   }
 
-  function renderOnboarding() {
-    currentScreen = renderOnboarding;
+  function renderStorageChoice() {
+    currentScreen = renderStorageChoice;
     const card = document.createElement('div');
     card.className = 'sc-screen-card';
     card.innerHTML = `
       <img src="./icon.svg" alt="Wren" />
-      <h1>Welcome to Wren</h1>
-      <p>Choose a folder where your notes will live as Markdown
-      (<code>.md</code>) files. They stay on your computer and are never uploaded.</p>`;
-    const btn = document.createElement('button');
-    btn.className = 'sc-btn sc-btn--primary';
-    btn.textContent = 'Choose notes folder';
-    btn.addEventListener('click', async () => {
+      <h1>Where should your notes live?</h1>
+      <p>You can change this later from the app shell.</p>`;
+
+    const grid = document.createElement('div');
+    grid.className = 'sc-choice-grid';
+
+    // Local files card.
+    const local = document.createElement('div');
+    local.className = 'sc-choice-card';
+    const localTitle = document.createElement('div');
+    localTitle.className = 'sc-choice-card-title';
+    localTitle.textContent = 'Save to my computer';
+    const localSub = document.createElement('p');
+    localSub.className = 'sc-choice-card-sub';
+    localSub.textContent =
+      'Notes live as .md files on this PC. Browser must support the File System Access API. Won’t sync to other devices.';
+    const localBtn = document.createElement('button');
+    localBtn.className = 'sc-btn sc-btn--primary';
+    localBtn.textContent = 'Choose folder';
+    if (!isSupported()) {
+      localBtn.disabled = true;
+      localBtn.title = 'This browser doesn’t support the File System Access API.';
+    }
+    localBtn.addEventListener('click', async () => {
       try {
-        dirHandle = await pickDirectory();
+        const fs = new FileSystemAdapter();
+        await fs.chooseFolder();
+        await setStoredBackend(ADAPTER_TYPES.FS);
+        adapter = fs;
         await renderApp();
       } catch (err) {
-        if (err?.name !== 'AbortError') alert('Could not open that folder. Please try again.');
+        if (err?.name !== 'AbortError') {
+          console.error('Folder pick failed', err);
+          alert('Could not open that folder. Please try again.');
+        }
       }
     });
-    card.appendChild(btn);
+    local.append(localTitle, localSub, localBtn);
+
+    // Drive card.
+    const drive = document.createElement('div');
+    drive.className = 'sc-choice-card';
+    const driveTitle = document.createElement('div');
+    driveTitle.className = 'sc-choice-card-title';
+    driveTitle.textContent = 'Save to Google Drive';
+    const driveSub = document.createElement('p');
+    driveSub.className = 'sc-choice-card-sub';
+    driveSub.textContent =
+      'Notes live in your Drive under a "Wren Notes" folder. Sync across phone and computer. Works in any browser.';
+    const driveBtn = document.createElement('button');
+    driveBtn.className = 'sc-btn sc-btn--primary';
+    driveBtn.textContent = 'Sign in to Google Drive';
+    driveBtn.addEventListener('click', () => renderDriveSignIn({ reason: 'fresh' }));
+    drive.append(driveTitle, driveSub, driveBtn);
+
+    grid.append(local, drive);
+    card.appendChild(grid);
+
+    // Why-choose expandable.
+    const details = document.createElement('details');
+    details.className = 'sc-choice-why';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Why choose?';
+    details.appendChild(summary);
+    const ul = document.createElement('ul');
+    ul.innerHTML = `
+      <li><strong>Local files</strong> never leave your computer. No account needed.</li>
+      <li><strong>Drive</strong> syncs your notes across devices, including phone.</li>
+      <li>Drive uses a narrow <code>drive.file</code> scope — Wren only sees its own "Wren Notes" folder, never the rest of your Drive.</li>
+      <li>You can switch later from the chip in the sidebar header.</li>`;
+    details.appendChild(ul);
+    card.appendChild(details);
+
     const install = buildInstallSection();
     if (install) card.appendChild(install);
+
     screenShell(card);
   }
 
-  function renderReconnect(handle) {
-    currentScreen = () => renderReconnect(handle);
+  function renderFsReconnect(fs) {
+    currentScreen = () => renderFsReconnect(fs);
     const card = document.createElement('div');
     card.className = 'sc-screen-card';
     card.innerHTML = `
@@ -224,10 +345,14 @@ export function createApp({ root, enableServiceWorker = false }) {
     grant.className = 'sc-btn sc-btn--primary';
     grant.textContent = 'Grant access';
     grant.addEventListener('click', async () => {
-      const perm = await requestPermission(handle);
-      if (perm === 'granted') {
-        dirHandle = handle;
+      try {
+        await fs.reconnect();
+        adapter = fs;
         await renderApp();
+      } catch (err) {
+        if (err?.name !== 'AbortError' && !(err instanceof AdapterAuthError)) {
+          console.error('Reconnect failed', err);
+        }
       }
     });
     const choose = document.createElement('button');
@@ -236,7 +361,8 @@ export function createApp({ root, enableServiceWorker = false }) {
     choose.textContent = 'Choose a different folder';
     choose.addEventListener('click', async () => {
       try {
-        dirHandle = await pickDirectory();
+        await fs.chooseFolder();
+        adapter = fs;
         await renderApp();
       } catch (err) {
         if (err?.name !== 'AbortError') alert('Could not open that folder.');
@@ -248,21 +374,126 @@ export function createApp({ root, enableServiceWorker = false }) {
     screenShell(card);
   }
 
+  function renderDriveSignIn({ reason = 'fresh', error } = {}) {
+    currentScreen = () => renderDriveSignIn({ reason, error });
+    const card = document.createElement('div');
+    card.className = 'sc-screen-card';
+    const headline =
+      reason === 'expired'
+        ? 'Sign back in to Google Drive'
+        : reason === 'error'
+          ? 'Could not connect to Google Drive'
+          : 'Connect Google Drive';
+    const sub =
+      reason === 'expired'
+        ? 'Your previous session expired. Sign in again to load your notes.'
+        : reason === 'error'
+          ? 'Something went wrong while contacting Google. Try again, or switch to local files.'
+          : 'You’ll be redirected to Google to grant access to a "Wren Notes" folder in your Drive. Wren only ever sees files inside that folder.';
+    card.innerHTML = `
+      <img src="./icon.svg" alt="Wren" />
+      <h1>${headline}</h1>
+      <p>${sub}</p>`;
+
+    const signIn = document.createElement('button');
+    signIn.className = 'sc-btn sc-btn--primary';
+    signIn.textContent = 'Sign in to Google Drive';
+    signIn.addEventListener('click', () => startDriveSignIn(signIn));
+
+    const switchBtn = document.createElement('button');
+    switchBtn.className = 'sc-btn sc-btn--ghost';
+    switchBtn.style.marginLeft = '8px';
+    switchBtn.textContent = 'Use local files instead';
+    switchBtn.addEventListener('click', async () => {
+      await clearStoredBackend();
+      renderStorageChoice();
+    });
+
+    card.append(signIn, switchBtn);
+
+    if (reason === 'error' && error) {
+      const detail = document.createElement('p');
+      detail.className = 'sc-hint';
+      detail.style.color = 'var(--wr-panel-muted)';
+      detail.textContent = `Error: ${error.message || String(error)}`;
+      card.appendChild(detail);
+    }
+
+    screenShell(card);
+  }
+
+  /**
+   * Click-handler-context Drive sign-in. On iOS standalone PWAs, an extra
+   * confirmation modal is required so the user-activation chain survives into
+   * the requestAccessToken call (Decision P2c.1).
+   */
+  async function startDriveSignIn(triggerBtn) {
+    if (isIosStandalonePwa()) {
+      const proceed = await confirmDialog({
+        title: 'Connect to Google Drive?',
+        message:
+          'Tap Continue to open Google’s sign-in window. Wren needs this extra tap on iOS.',
+        confirmLabel: 'Continue',
+      });
+      if (!proceed) return;
+      // We are now in the modal-confirm click handler.
+      await completeDriveSignIn(triggerBtn);
+    } else {
+      await completeDriveSignIn(triggerBtn);
+    }
+  }
+
+  async function completeDriveSignIn(triggerBtn) {
+    if (triggerBtn) {
+      triggerBtn.disabled = true;
+      triggerBtn.textContent = 'Opening sign-in window…';
+    }
+    try {
+      await initTokenClient({ onTokenChange: handleTokenChange });
+      await requestAccessToken({ silent: false });
+      const drive = new DriveAdapter();
+      await drive.initialize();
+      adapter = drive;
+      await setStoredBackend(ADAPTER_TYPES.DRIVE);
+      await renderApp();
+    } catch (err) {
+      if (triggerBtn) {
+        triggerBtn.disabled = false;
+        triggerBtn.textContent = 'Sign in to Google Drive';
+      }
+      if (err?.code === 'popup_blocked') {
+        alert(
+          'Sign-in window didn’t open. Allow pop-ups for this site (or tap the Sign in button again).'
+        );
+      } else if (err?.code === 'no_token') {
+        // User dismissed the consent dialog. Silently return — the screen
+        // is already showing the sign-in button.
+      } else {
+        console.error('Drive sign-in failed', err);
+        renderDriveSignIn({ reason: 'error', error: err });
+      }
+    }
+  }
+
   /* ---- Main app -------------------------------------------------------- */
 
   async function renderApp() {
+    currentScreen = renderApp;
     root.replaceChildren();
 
     appEl = document.createElement('div');
     appEl.className = 'sc-app';
     appEl.dataset.view = 'list';
 
+    driveBannerEl = buildDriveBanner();
+    if (driveBannerEl) appEl.appendChild(driveBannerEl);
+
     const sidebar = document.createElement('aside');
     sidebar.className = 'sc-sidebar';
     sidebar.appendChild(buildBrand());
 
     list = createNotesList({
-      onSelect: (filename) => openNote(filename),
+      onSelect: (noteId) => openNote(noteId),
       onNew: () => handleNew(),
     });
     sidebar.appendChild(list.element);
@@ -287,63 +518,229 @@ export function createApp({ root, enableServiceWorker = false }) {
     await loadNotes();
   }
 
+  /**
+   * Eager-load every note via the active adapter and bridge to the UI shape
+   * the sidebar list / editor expect:
+   *
+   *   { id, filename, title, body, color, created, modified, firstLine, revision }
+   *
+   * For FS the cost is essentially zero (already a directory scan). For Drive
+   * this is N+1 HTTP calls (listNotes + one readNote per note); acceptable for
+   * Phase 2b.1's single-device scope, will be optimized in 2b.2.
+   */
   async function loadNotes() {
     try {
-      notes = await listNotes(dirHandle);
+      const metas = await adapter.listNotes();
+      const hydrated = await Promise.all(
+        metas.map(async (m) => {
+          try {
+            const { content, revision } = await adapter.readNote(m.id);
+            const parsed = parseNote(content, m.id);
+            return {
+              id: m.id,
+              // 'filename' kept as an alias for backwards compatibility inside
+              // legacy helpers (exportNoteDownload). UI now reads .id.
+              filename: m.id,
+              title: parsed.title || m.title || '',
+              body: parsed.body,
+              color: parsed.color || m.color || 'default',
+              created: parsed.created || m.created,
+              modified: m.modified || parsed.modified,
+              firstLine: firstLineOf(parsed.body),
+              revision: revision || m.revision,
+            };
+          } catch (err) {
+            // Skip unreadable notes but keep the row in the list so the user
+            // sees something. listNotes already filtered out kind!=file/.md.
+            console.warn('Could not read note for sidebar hydration', m.id, err);
+            return null;
+          }
+        })
+      );
+      notes = hydrated.filter(Boolean);
+      notes.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
     } catch (err) {
-      console.error('Failed to read notes folder', err);
+      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
+        notes = [];
+        showDriveDisconnected();
+        return;
+      }
+      console.error('Failed to list notes', err);
       notes = [];
     }
     list.setNotes(notes);
   }
 
-  async function openNote(filename, { focusTitle = false } = {}) {
+  async function openNote(noteId, { focusTitle = false } = {}) {
     let fresh;
     try {
-      fresh = await readNote(dirHandle, filename);
-    } catch {
+      const { content, revision } = await adapter.readNote(noteId);
+      const parsed = parseNote(content, noteId);
+      fresh = {
+        id: noteId,
+        filename: noteId,
+        title: parsed.title,
+        body: parsed.body,
+        color: parsed.color,
+        created: parsed.created,
+        modified: parsed.modified,
+        firstLine: firstLineOf(parsed.body),
+        revision,
+      };
+    } catch (err) {
+      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
+        showDriveDisconnected();
+        return;
+      }
+      console.warn('Could not read note', err);
       await loadNotes();
       return;
     }
-    const idx = notes.findIndex((n) => n.filename === filename);
+    const idx = notes.findIndex((n) => n.id === noteId);
     if (idx !== -1) notes[idx] = fresh;
     await noteEditor.openNote(fresh, { focusTitle });
-    list.setActive(filename);
+    list.setActive(noteId);
     appEl.dataset.view = 'editor';
   }
 
   async function handleNew() {
+    if (isDriveDisconnected()) {
+      showDriveDisconnectedToast('Reconnect Drive to create new notes.');
+      return;
+    }
     try {
-      const note = await createNote(dirHandle);
+      const now = new Date().toISOString();
+      const seed = { title: '', body: '', color: 'default', created: now, modified: now };
+      const content = serializeNote({ ...seed, filename: '' });
+      const { id, revision } = await adapter.createNote(content, { title: seed.title });
+      const note = {
+        id,
+        filename: id,
+        title: seed.title,
+        body: seed.body,
+        color: seed.color,
+        created: seed.created,
+        modified: seed.modified,
+        firstLine: '',
+        revision,
+      };
       notes.unshift(note);
       list.setNotes(notes);
-      await openNote(note.filename, { focusTitle: true });
+      await openNote(id, { focusTitle: true });
     } catch (err) {
+      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
+        showDriveDisconnected();
+        return;
+      }
       console.error('Could not create note', err);
-      alert('Could not create a new note in the folder.');
+      alert('Could not create a new note.');
     }
   }
 
   async function handleSave(note) {
-    await writeNote(dirHandle, note);
+    if (isDriveDisconnected()) {
+      showDriveDisconnectedToast('Reconnect Drive to save changes.');
+      return;
+    }
+    // Bump modified at write time (mirrors legacy notes-store.writeNote).
+    note.modified = new Date().toISOString();
+    const content = serializeNote(note);
+    try {
+      const { revision } = await adapter.writeNote(note.id, content);
+      note.revision = revision;
+      note.firstLine = firstLineOf(note.body);
+    } catch (err) {
+      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
+        showDriveDisconnected();
+        return;
+      }
+      // ConflictError is technically possible but Phase 2b.1 doesn't surface
+      // conflicts — last-write-wins per spec. Log and move on.
+      console.error('Save failed', err);
+      return;
+    }
     notes.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
     list.setNotes(notes);
-    list.setActive(note.filename);
+    list.setActive(note.id);
   }
 
   async function handleDelete(note) {
-    try {
-      await deleteNote(dirHandle, note.filename);
-    } catch (err) {
-      console.error('Delete failed', err);
-      alert('Could not delete the note file.');
+    if (isDriveDisconnected()) {
+      showDriveDisconnectedToast('Reconnect Drive to delete notes.');
       return;
     }
-    notes = notes.filter((n) => n.filename !== note.filename);
+    try {
+      await adapter.deleteNote(note.id);
+    } catch (err) {
+      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
+        showDriveDisconnected();
+        return;
+      }
+      console.error('Delete failed', err);
+      alert('Could not delete the note.');
+      return;
+    }
+    notes = notes.filter((n) => n.id !== note.id);
     list.setNotes(notes);
     noteEditor.clear();
     list.setActive(null);
     appEl.dataset.view = 'list';
+  }
+
+  /* ---- Drive-disconnected fallback (Decision P2c.5) ------------------- */
+
+  let driveDisconnected = false;
+
+  function isDriveDisconnected() {
+    return driveDisconnected;
+  }
+
+  function handleTokenChange(token) {
+    if (adapter?.backendId() !== ADAPTER_TYPES.DRIVE) return;
+    if (token === null && !driveDisconnected) {
+      showDriveDisconnected();
+    } else if (token !== null && driveDisconnected) {
+      driveDisconnected = false;
+      if (driveBannerEl) driveBannerEl.hidden = true;
+      // Re-load notes from Drive now that we have a token again.
+      loadNotes();
+    }
+  }
+
+  function showDriveDisconnected() {
+    driveDisconnected = true;
+    if (driveBannerEl) {
+      driveBannerEl.hidden = false;
+    }
+    if (list) {
+      // Visual cue: disable the New Note button by toggling the data attribute
+      // the CSS targets via [data-disconnected].
+      list.element.dataset.disconnected = 'true';
+    }
+  }
+
+  function showDriveDisconnectedToast(msg) {
+    // Lightweight toast: temporary div, auto-removes. No persistent state.
+    const toast = document.createElement('div');
+    toast.className = 'sc-toast';
+    toast.textContent = msg;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3200);
+  }
+
+  function buildDriveBanner() {
+    if (adapter?.backendId() !== ADAPTER_TYPES.DRIVE) return null;
+    const banner = document.createElement('div');
+    banner.className = 'sc-drive-banner';
+    banner.hidden = true; // shown only when token is invalid
+    const text = document.createElement('span');
+    text.textContent = 'Drive connection lost.';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = 'Reconnect';
+    btn.addEventListener('click', () => completeDriveSignIn(null));
+    banner.append(text, btn);
+    return banner;
   }
 
   /* ---- Chrome ---------------------------------------------------------- */
@@ -352,7 +749,99 @@ export function createApp({ root, enableServiceWorker = false }) {
     const brand = document.createElement('div');
     brand.className = 'sc-brand';
     brand.innerHTML = `<img src="./icon.svg" alt="" /><span class="sc-brand-name">Wren</span>`;
+    backendChipEl = buildBackendChip();
+    if (backendChipEl) brand.appendChild(backendChipEl);
     return brand;
+  }
+
+  function buildBackendChip() {
+    if (!adapter) return null;
+    const isDrive = adapter.backendId() === ADAPTER_TYPES.DRIVE;
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'sc-backend-chip';
+    chip.setAttribute('aria-label', isDrive ? 'Storage: Google Drive' : 'Storage: Local files');
+    const icon = isDrive
+      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 19a4.5 4.5 0 1 0-1.4-8.78A6.5 6.5 0 0 0 4 13.5 4.5 4.5 0 0 0 8.5 19z"/></svg>'
+      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+    chip.innerHTML = `${icon}<span>${isDrive ? 'Google Drive' : 'Local files'}</span>`;
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openBackendPopover(chip);
+    });
+    return chip;
+  }
+
+  function openBackendPopover(anchor) {
+    const isDrive = adapter?.backendId() === ADAPTER_TYPES.DRIVE;
+
+    // Close any existing popover first.
+    document.querySelectorAll('.sc-popover').forEach((el) => el.remove());
+
+    const pop = document.createElement('div');
+    pop.className = 'sc-popover';
+    pop.setAttribute('role', 'menu');
+
+    const rect = anchor.getBoundingClientRect();
+    pop.style.position = 'fixed';
+    pop.style.top = `${rect.bottom + 6}px`;
+    pop.style.left = `${rect.left}px`;
+
+    const switchItem = document.createElement('button');
+    switchItem.type = 'button';
+    switchItem.className = 'sc-popover-item';
+    switchItem.textContent = 'Switch backend…';
+    switchItem.addEventListener('click', async () => {
+      pop.remove();
+      const target = isDrive ? 'local files' : 'Google Drive';
+      const ok = await confirmDialog({
+        title: 'Switch storage backend?',
+        message: `Wren will reload and start with no notes (this device only). Your existing notes stay where they are — you can switch back any time. Continue switching to ${target}?`,
+        confirmLabel: 'Switch',
+      });
+      if (!ok) return;
+      await clearStoredBackend();
+      window.location.reload();
+    });
+    pop.appendChild(switchItem);
+
+    if (isDrive) {
+      const disconnect = document.createElement('button');
+      disconnect.type = 'button';
+      disconnect.className = 'sc-popover-item sc-popover-item--danger';
+      disconnect.textContent = 'Disconnect Drive';
+      disconnect.addEventListener('click', async () => {
+        pop.remove();
+        const ok = await confirmDialog({
+          title: 'Disconnect Google Drive?',
+          message:
+            'Wren will sign out and revoke its access to your Drive. Your notes remain in the "Wren Notes" folder on Drive — they’re just not connected here anymore. You’ll be returned to the storage-choice screen.',
+          confirmLabel: 'Disconnect',
+          danger: true,
+        });
+        if (!ok) return;
+        await revokeToken();
+        await clearStoredBackend();
+        window.location.reload();
+      });
+      pop.appendChild(disconnect);
+    }
+
+    document.body.appendChild(pop);
+
+    // Dismiss on outside click / Escape.
+    const dismiss = (ev) => {
+      if (ev.type === 'keydown' && ev.key !== 'Escape') return;
+      if (ev.type === 'click' && pop.contains(ev.target)) return;
+      pop.remove();
+      document.removeEventListener('click', dismiss, true);
+      document.removeEventListener('keydown', dismiss, true);
+    };
+    // Defer so the originating click doesn't immediately re-trigger dismiss.
+    setTimeout(() => {
+      document.addEventListener('click', dismiss, true);
+      document.addEventListener('keydown', dismiss, true);
+    }, 0);
   }
 
   function buildFooter() {

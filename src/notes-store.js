@@ -240,7 +240,7 @@ export function firstLineOf(markdown) {
 
 // --- Note CRUD --------------------------------------------------------------
 
-function slugify(title) {
+export function slugify(title) {
   const base = (title || '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
