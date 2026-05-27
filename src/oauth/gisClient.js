@@ -26,11 +26,13 @@ const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 
 const GIS_SRC = 'https://accounts.google.com/gsi/client';
 
-// Backstop for popup blockers per Decision P2c.1. The GIS callback should
-// fire within a couple of seconds of the popup opening (or being blocked).
-// If nothing fires within this window, treat it as blocked so the caller
-// can surface a "tap to retry" affordance instead of hanging.
-const POPUP_BLOCKED_TIMEOUT_MS = 4000;
+// Safety-net timeout if GIS itself hangs (never fires the error_callback).
+// The original 4s was too aggressive — real first-time OAuth flows take
+// 15-40s for users to navigate the account picker + "unverified app" warning
+// + scope consent. GIS reliably fires error_callback within milliseconds of
+// an actual popup block, so this timer doesn't need to compete with the
+// real-world flow. 120s acts only as a "GIS hung" safety net.
+const POPUP_BLOCKED_TIMEOUT_MS = 120_000;
 
 // Safety margin used by getAccessToken(): consider the token expired this many
 // ms BEFORE its real expiry to avoid using a token that dies mid-request.
