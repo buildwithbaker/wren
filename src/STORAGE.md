@@ -275,3 +275,15 @@ Concrete files Phase 2b will add or change:
 - `visibilitychange` -> silent token refresh (P2c.3)
 - Real-device test matrix execution (P2c.4)
 - "Drive disconnected" banner state (P2c.5)
+
+## Phase A — Tags backend (2026-05-27)
+
+- YAML frontmatter now supports optional `tags: [...]` array
+- Tag syntax: `namespace:value` colon-delimited (first colon splits)
+- Tags without `:` go under pseudo-namespace `_uncategorized`
+- Validation in `src/tags/tag-parser.js` — `isValidTag()`, `parseTag()`, `getAllNamespaces()`, `getAllTags()`, `groupNotesByNamespace()`
+- Helpers (also in `tag-parser.js`, not `StorageAdapter.js`): `addTagToNote()` (replaces same-namespace), `removeTagFromNote()`
+- Parse: `tags` read as JSON array of strings; missing/malformed → `[]` (defensive)
+- Serialize: `tags` line written only when non-empty (keeps tag-less frontmatter clean)
+- app-controller bridge (loadNotes / openNote / handleNew) carries `tags` through the parse→object→serialize round-trip
+- No UI changes yet (Phase B delivers the list filter, Phase C the Kanban view)

@@ -574,6 +574,7 @@ export function createApp({ root, enableServiceWorker = false }) {
               color: parsed.color || m.color || 'default',
               created: parsed.created || m.created,
               modified: m.modified || parsed.modified,
+              tags: parsed.tags || [],
               firstLine: firstLineOf(parsed.body),
               revision: revision || m.revision,
             };
@@ -612,6 +613,7 @@ export function createApp({ root, enableServiceWorker = false }) {
         color: parsed.color,
         created: parsed.created,
         modified: parsed.modified,
+        tags: parsed.tags || [],
         firstLine: firstLineOf(parsed.body),
         revision,
       };
@@ -638,7 +640,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     }
     try {
       const now = new Date().toISOString();
-      const seed = { title: '', body: '', color: 'default', created: now, modified: now };
+      const seed = { title: '', body: '', color: 'default', created: now, modified: now, tags: [] };
       const content = serializeNote({ ...seed, filename: '' });
       const { id, revision } = await adapter.createNote(content, { title: seed.title });
       const note = {
@@ -649,6 +651,7 @@ export function createApp({ root, enableServiceWorker = false }) {
         color: seed.color,
         created: seed.created,
         modified: seed.modified,
+        tags: seed.tags,
         firstLine: '',
         revision,
       };

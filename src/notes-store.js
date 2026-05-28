@@ -162,6 +162,19 @@ function normalizeColor(value) {
   return VALID_COLORS.has(value) ? value : 'default';
 }
 
+// Parse a frontmatter `tags:` value (inline JSON array form). Defensive:
+// returns [] for anything that isn't a JSON array of non-empty strings.
+function parseTagsValue(val) {
+  if (typeof val !== 'string' || !val.startsWith('[')) return [];
+  try {
+    const arr = JSON.parse(val);
+    if (!Array.isArray(arr)) return [];
+    return arr.filter((t) => typeof t === 'string' && t.trim().length > 0);
+  } catch {
+    return [];
+  }
+}
+
 export function serializeNote(note) {
   const lines = [
     '---',
@@ -169,10 +182,15 @@ export function serializeNote(note) {
     `created: ${note.created}`,
     `modified: ${note.modified}`,
     `color: ${normalizeColor(note.color)}`,
-    '---',
-    '',
-    note.body || '',
   ];
+  // tags: only written when non-empty — keeps tag-less notes' frontmatter clean.
+  const tags = Array.isArray(note.tags)
+    ? note.tags.filter((t) => typeof t === 'string' && t.trim().length > 0)
+    : [];
+  if (tags.length > 0) {
+    lines.push(`tags: ${JSON.stringify(tags)}`);
+  }
+  lines.push('---', '', note.body || '');
   return lines.join('\n');
 }
 
@@ -181,6 +199,7 @@ export function parseNote(text, filename) {
   let created = '';
   let modified = '';
   let color = 'default';
+  let tags = [];
   let body = text;
 
   const fm = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text);
@@ -191,6 +210,12 @@ export function parseNote(text, filename) {
       if (idx === -1) continue;
       const key = line.slice(0, idx).trim();
       let val = line.slice(idx + 1).trim();
+      if (key === 'tags') {
+        // Inline JSON array; first colon already split key/val so the array
+        // literal (which contains internal colons) stays intact in val.
+        tags = parseTagsValue(val);
+        continue;
+      }
       if (val.startsWith('"')) {
         try {
           val = JSON.parse(val);
@@ -213,6 +238,7 @@ export function parseNote(text, filename) {
     color: normalizeColor(color),
     created: created || now,
     modified: modified || created || now,
+    tags,
     firstLine: firstLineOf(body),
   };
 }
