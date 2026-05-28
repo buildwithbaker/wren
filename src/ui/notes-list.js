@@ -1,16 +1,19 @@
 // notes-list.js
-// Sidebar list: search field + New Note button + scrollable note cards.
+// Sidebar list: tag filter + search field + New Note button + scrollable cards.
 // Returns { element, setNotes, setActive, focusSearch, getQuery }.
 
 import { CARD_COLORS } from '@/notes-store.js';
+import { getAllTags } from '@/tags/tag-parser.js';
 import { formatModified } from './format.js';
 
 const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
+const FILTER_KEY = 'wren.filterTags';
 
 export function createNotesList({ onSelect, onNew, compact = false }) {
   let notes = [];
   let activeId = null;
   let query = '';
+  let filterTags = loadFilterTags(); // AND-filter: note must have all of these
 
   const root = document.createElement('div');
   root.className = 'sc-list' + (compact ? ' sc-list--compact' : '');
@@ -42,20 +45,36 @@ export function createNotesList({ onSelect, onNew, compact = false }) {
   });
   searchWrap.appendChild(search);
 
+  // Tag filter (Phase B) — rendered above the search bar. Contents are rebuilt
+  // by renderFilter() since available tags depend on the current notes set.
+  const tagFilterEl = document.createElement('div');
+  tagFilterEl.className = 'sc-tagfilter';
+
   // Scroll area
   const scroll = document.createElement('div');
   scroll.className = 'sc-list-scroll';
 
-  root.append(header, searchWrap, scroll);
+  root.append(header, tagFilterEl, searchWrap, scroll);
 
   function matches(note) {
-    if (!query) return true;
-    const title = (note.title || '').toLowerCase();
-    const preview = (note.firstLine || '').toLowerCase();
-    return title.includes(query) || preview.includes(query);
+    // Tag AND-filter: note must contain every selected filter tag.
+    if (filterTags.length > 0) {
+      const noteTags = note.tags || [];
+      for (const ft of filterTags) {
+        if (!noteTags.includes(ft)) return false;
+      }
+    }
+    // Text query against title + preview.
+    if (query) {
+      const title = (note.title || '').toLowerCase();
+      const preview = (note.firstLine || '').toLowerCase();
+      if (!title.includes(query) && !preview.includes(query)) return false;
+    }
+    return true;
   }
 
   function render() {
+    renderFilter();
     scroll.replaceChildren();
     const filtered = notes.filter(matches);
 
@@ -64,13 +83,130 @@ export function createNotesList({ onSelect, onNew, compact = false }) {
       return;
     }
     if (filtered.length === 0) {
-      scroll.appendChild(emptyState('No matches', `Nothing matches "${search.value.trim()}".`));
+      if (filterTags.length > 0) {
+        scroll.appendChild(filterEmptyState());
+      } else {
+        scroll.appendChild(emptyState('No matches', `Nothing matches "${search.value.trim()}".`));
+      }
       return;
     }
 
     for (const note of filtered) {
       scroll.appendChild(renderCard(note));
     }
+  }
+
+  // ---- Tag filter -----------------------------------------------------------
+
+  function loadFilterTags() {
+    try {
+      const raw = localStorage.getItem(FILTER_KEY);
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr.filter((t) => typeof t === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveFilterTags() {
+    try {
+      if (filterTags.length === 0) localStorage.removeItem(FILTER_KEY);
+      else localStorage.setItem(FILTER_KEY, JSON.stringify(filterTags));
+    } catch {
+      /* ignore quota / disabled storage */
+    }
+  }
+
+  function addFilterTag(tag) {
+    if (!filterTags.includes(tag)) {
+      filterTags.push(tag);
+      saveFilterTags();
+      render();
+    }
+  }
+
+  function removeFilterTag(tag) {
+    filterTags = filterTags.filter((t) => t !== tag);
+    saveFilterTags();
+    render();
+  }
+
+  function renderFilter() {
+    const allTags = getAllTags(notes);
+    const available = allTags.filter((t) => !filterTags.includes(t));
+
+    // Hide the affordance entirely when there are no tags anywhere AND nothing
+    // is selected — keeps the sidebar clean for users who don't tag.
+    if (allTags.length === 0 && filterTags.length === 0) {
+      tagFilterEl.hidden = true;
+      tagFilterEl.replaceChildren();
+      return;
+    }
+    tagFilterEl.hidden = false;
+    tagFilterEl.replaceChildren();
+
+    // Selected-tag chips with click-to-remove.
+    if (filterTags.length > 0) {
+      const chips = document.createElement('div');
+      chips.className = 'sc-tagfilter-chips';
+      for (const tag of filterTags) {
+        const chip = document.createElement('span');
+        chip.className = 'sc-tagfilter-chip';
+        const label = document.createElement('span');
+        label.textContent = tag;
+        const x = document.createElement('button');
+        x.type = 'button';
+        x.setAttribute('aria-label', `Remove filter ${tag}`);
+        x.textContent = '×';
+        x.addEventListener('click', () => removeFilterTag(tag));
+        chip.append(label, x);
+        chips.appendChild(chip);
+      }
+      tagFilterEl.appendChild(chips);
+    }
+
+    // Dropdown to add a filter (only if unselected tags remain).
+    if (available.length > 0) {
+      const select = document.createElement('select');
+      select.className = 'sc-tagfilter-dropdown';
+      select.setAttribute('aria-label', 'Filter by tag');
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = filterTags.length > 0 ? '+ Add another tag…' : 'Filter by tag…';
+      placeholder.selected = true;
+      select.appendChild(placeholder);
+      for (const tag of available) {
+        const opt = document.createElement('option');
+        opt.value = tag;
+        opt.textContent = tag;
+        select.appendChild(opt);
+      }
+      select.addEventListener('change', () => {
+        if (select.value) addFilterTag(select.value);
+      });
+      tagFilterEl.appendChild(select);
+    }
+  }
+
+  function filterEmptyState() {
+    const el = document.createElement('div');
+    el.className = 'sc-list-empty';
+    const h = document.createElement('p');
+    h.className = 'sc-list-empty-h';
+    h.textContent = 'No notes match the selected tags.';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'sc-btn sc-btn--ghost';
+    btn.style.marginTop = '8px';
+    btn.textContent = 'Clear filter';
+    btn.addEventListener('click', () => {
+      filterTags = [];
+      saveFilterTags();
+      render();
+    });
+    el.append(h, btn);
+    return el;
   }
 
   function renderCard(note) {
