@@ -1230,3 +1230,136 @@ button {
   color: var(--wr-panel-text);
   cursor: pointer;
 }
+
+/* =========================================================================
+   Kanban view (Phase C of Kanban SOW)
+   ========================================================================= */
+.sc-viewtoggle {
+  display: inline-flex;
+  align-self: flex-start;
+  margin: 10px 12px 2px;
+  border-radius: 999px;
+  background: var(--wr-field-bg);
+  padding: 2px;
+  gap: 0;
+}
+.sc-viewtoggle button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--wr-panel-muted);
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background var(--wr-trans), color var(--wr-trans);
+}
+.sc-viewtoggle button.is-active {
+  background: var(--wr-brown);
+  color: white;
+}
+.sc-viewtoggle svg { width: 13px; height: 13px; }
+.sc-kanban {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  gap: 12px;
+  overflow: hidden;
+}
+.sc-kanban-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.sc-kanban-toolbar-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--wr-panel-muted);
+}
+.sc-kanban-columns {
+  flex: 1;
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.sc-kanban-col {
+  flex: 0 0 260px;
+  background: var(--wr-panel-2);
+  border-radius: var(--wr-radius-panel);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  transition: background var(--wr-trans);
+}
+.sc-kanban-col--dragover {
+  background: var(--wr-brown-soft);
+}
+.sc-kanban-col-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--wr-panel-text);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--wr-border);
+}
+.sc-kanban-col-count {
+  font-size: 11px;
+  color: var(--wr-panel-muted);
+  font-weight: 500;
+}
+.sc-kanban-card {
+  background: var(--wr-note-bg, var(--wr-panel-bg));
+  border-radius: var(--wr-radius-sm);
+  padding: 10px;
+  cursor: grab;
+  box-shadow: var(--wr-shadow-sm);
+  color: var(--wr-ink);
+  transition: transform var(--wr-trans);
+}
+.sc-kanban-card:hover {
+  transform: translateY(-1px);
+}
+.sc-kanban-card--dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+.sc-kanban-card-title {
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.25;
+  margin-bottom: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.sc-kanban-card-preview {
+  font-size: 12px;
+  color: var(--wr-paper-muted);
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.sc-kanban-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--wr-panel-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+/* Below 640px width, hide the view-toggle and force list view */
+@media (max-width: 640px) {
+  .sc-viewtoggle { display: none; }
+}

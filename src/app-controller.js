@@ -36,10 +36,12 @@ import {
 } from './oauth/index.js';
 import { createNotesList } from './ui/notes-list.js';
 import { createNoteEditor } from './ui/note-editor.js';
+import { createKanbanView } from './ui/kanban-view.js';
 import { confirmDialog } from './ui/dialog.js';
 import { getStoredTheme, cycleTheme, initTheme } from './theme.js';
 
 const KOFI = 'https://ko-fi.com/abaker421';
+const VIEW_MODE_KEY = 'wren.viewMode';
 
 export function createApp({ root, enableServiceWorker = false }) {
   /** @type {import('./storage/StorageAdapter.js').StorageAdapter|null} */
@@ -52,6 +54,10 @@ export function createApp({ root, enableServiceWorker = false }) {
   let currentScreen = null;
   let backendChipEl = null;
   let driveBannerEl = null;
+  let kanbanView = null;
+  let viewToggleEl = null;
+  let viewMode = loadViewMode(); // 'list' | 'kanban'
+  let lastEffectiveMode = null;
 
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
@@ -62,6 +68,29 @@ export function createApp({ root, enableServiceWorker = false }) {
   mountThemeToggle();
   mountInstallButton();
   mountOpenFullApp();
+
+  // View-mode keyboard shortcuts (only act once the app shell is mounted).
+  // NOTE: Ctrl+1/Ctrl+2 are browser tab-switch shortcuts in a normal tab; in
+  // the standalone PWA window (the primary full-app context) there are no tabs
+  // so the override is harmless. Documented as a known caveat.
+  window.addEventListener('keydown', (e) => {
+    if (!kanbanView) return;
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+    if (e.key === '1') {
+      e.preventDefault();
+      setViewMode('list');
+    } else if (e.key === '2') {
+      e.preventDefault();
+      setViewMode('kanban');
+    }
+  });
+
+  // Re-apply view mode only when crossing the 640px breakpoint (force list
+  // below it), so resize-drag doesn't thrash the board re-render.
+  window.addEventListener('resize', () => {
+    if (!kanbanView) return;
+    if (effectiveViewMode() !== lastEffectiveMode) applyViewMode();
+  });
 
   boot();
 
@@ -519,6 +548,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     const sidebar = document.createElement('aside');
     sidebar.className = 'sc-sidebar';
     sidebar.appendChild(buildBrand());
+    sidebar.appendChild(buildViewToggle());
 
     list = createNotesList({
       onSelect: (noteId) => openNote(noteId),
@@ -538,12 +568,93 @@ export function createApp({ root, enableServiceWorker = false }) {
       },
       showBack: true,
     });
-    main.appendChild(noteEditor.element);
+    kanbanView = createKanbanView({
+      getNotes: () => notes,
+      onNoteOpen: (id) => {
+        setViewMode('list');
+        openNote(id);
+      },
+      onNewNote: () => {
+        setViewMode('list');
+        handleNew();
+      },
+    });
+    main.append(noteEditor.element, kanbanView.element);
 
     appEl.append(sidebar, main);
     root.append(appEl, buildFooter());
 
+    applyViewMode();
     await loadNotes();
+    if (effectiveViewMode() === 'kanban') kanbanView.refresh();
+  }
+
+  /* ---- View mode (list | kanban) -------------------------------------- */
+
+  function loadViewMode() {
+    try {
+      return localStorage.getItem(VIEW_MODE_KEY) === 'kanban' ? 'kanban' : 'list';
+    } catch {
+      return 'list';
+    }
+  }
+
+  // Below 640px (e.g. extension popup) Kanban is out of scope — force list.
+  function effectiveViewMode() {
+    if (window.matchMedia('(max-width: 640px)').matches) return 'list';
+    return viewMode;
+  }
+
+  function setViewMode(mode) {
+    viewMode = mode === 'kanban' ? 'kanban' : 'list';
+    try {
+      localStorage.setItem(VIEW_MODE_KEY, viewMode);
+    } catch {
+      /* ignore */
+    }
+    applyViewMode();
+  }
+
+  function applyViewMode() {
+    if (!noteEditor || !kanbanView) return;
+    const mode = effectiveViewMode();
+    const kanban = mode === 'kanban';
+    // Use style.display (not [hidden]) — both panels set display:flex, which
+    // would otherwise win over the hidden attribute.
+    noteEditor.element.style.display = kanban ? 'none' : '';
+    kanbanView.element.style.display = kanban ? '' : 'none';
+    if (appEl) appEl.dataset.viewmode = mode;
+    if (kanban) kanbanView.refresh();
+    updateViewToggle(mode);
+    lastEffectiveMode = mode;
+  }
+
+  function buildViewToggle() {
+    const wrap = document.createElement('div');
+    wrap.className = 'sc-viewtoggle';
+    const listBtn = document.createElement('button');
+    listBtn.type = 'button';
+    listBtn.dataset.mode = 'list';
+    listBtn.innerHTML =
+      '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>List</span>';
+    listBtn.addEventListener('click', () => setViewMode('list'));
+    const kanbanBtn = document.createElement('button');
+    kanbanBtn.type = 'button';
+    kanbanBtn.dataset.mode = 'kanban';
+    kanbanBtn.innerHTML =
+      '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="11" rx="1"/><rect x="17" y="4" width="4" height="14" rx="1"/></svg><span>Kanban</span>';
+    kanbanBtn.addEventListener('click', () => setViewMode('kanban'));
+    wrap.append(listBtn, kanbanBtn);
+    viewToggleEl = wrap;
+    return wrap;
+  }
+
+  function updateViewToggle(mode) {
+    if (!viewToggleEl) return;
+    const m = mode || effectiveViewMode();
+    for (const btn of viewToggleEl.querySelectorAll('button')) {
+      btn.classList.toggle('is-active', btn.dataset.mode === m);
+    }
   }
 
   /**

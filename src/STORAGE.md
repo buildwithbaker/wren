@@ -287,3 +287,31 @@ Concrete files Phase 2b will add or change:
 - Serialize: `tags` line written only when non-empty (keeps tag-less frontmatter clean)
 - app-controller bridge (loadNotes / openNote / handleNew) carries `tags` through the parse→object→serialize round-trip
 - No UI changes yet (Phase B delivers the list filter, Phase C the Kanban view)
+
+## Phase B — List view tag filter (2026-05-27)
+
+- `src/ui/notes-list.js`: tag-filter affordance above the search bar — chips for
+  selected tags (click × to remove) + a dropdown to add more
+- AND-filter semantics: a note must contain *every* selected tag to show
+- Persisted in `localStorage` under `wren.viewMode`-adjacent key `wren.filterTags`
+- Hidden entirely when no tags exist anywhere and nothing is selected
+- Filter-specific empty state with a "Clear filter" button
+
+## Phase C — Kanban view (2026-05-27)
+
+- `src/ui/kanban-view.js`: board grouped by tag namespace; `createKanbanView({ getNotes, onNoteOpen, onNewNote, onMoveNote })`
+- View-toggle (List | Kanban) lives in the **sidebar header** (SOW said "main
+  panel header," but the editor fills the main panel and has no header bar —
+  sidebar placement is the consistent home; decision confirmed with Adam)
+- Kanban fills the main panel; sidebar (list + filter) stays visible (confirmed)
+- Group-by dropdown (namespaces from `getAllNamespaces`), persisted to `wren.kanbanGroupBy`
+- Columns: tag values alphabetically, `_untagged` catch-all last (empty `_untagged` hidden)
+- Cards: note color bg, 2-line title clamp, 1-line preview, click → open in editor (switches to List view per SOW v1 decision)
+- Drag-and-drop (C2): HTML5 DnD; dropping a card into a column re-tags via
+  `addTagToNote` (replaces same-namespace); dropping into `_untagged` *removes*
+  the namespace tag (SOW's handler didn't special-case this — fixed)
+- View mode persisted to `wren.viewMode`; forced to List below 640px (extension
+  popup is out of scope per SOW); toggle hidden below 640px
+- Keyboard: Ctrl/Cmd+1 → List, Ctrl/Cmd+2 → Kanban (caveat: Ctrl+1/2 are
+  browser tab-switch keys in a normal tab; harmless in the standalone PWA window)
+- localStorage keys kept namespaced: `wren.viewMode`, `wren.kanbanGroupBy`, `wren.filterTags`
