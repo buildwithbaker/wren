@@ -187,9 +187,43 @@ export function createKanbanView({ getNotes, onNoteOpen, onNewNote, onMoveNote }
   }
 
   // ---- Drag and drop (Phase C2) --------------------------------------------
-  // Stubs in C1; wired in the C2 commit.
-  function wireCardDrag(_card, _note) {}
-  function wireColumnDrop(_col, _namespace, _value) {}
+
+  function wireCardDrag(card, note) {
+    card.draggable = true;
+    card.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', note.id);
+      e.dataTransfer.effectAllowed = 'move';
+      card.classList.add('sc-kanban-card--dragging');
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('sc-kanban-card--dragging');
+    });
+  }
+
+  function wireColumnDrop(col, namespace, value) {
+    col.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      col.classList.add('sc-kanban-col--dragover');
+    });
+    col.addEventListener('dragleave', (e) => {
+      // dragleave also fires when moving onto child cards; only clear the
+      // highlight when the pointer actually leaves the column subtree.
+      if (!col.contains(e.relatedTarget)) {
+        col.classList.remove('sc-kanban-col--dragover');
+      }
+    });
+    col.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      col.classList.remove('sc-kanban-col--dragover');
+      const noteId = e.dataTransfer.getData('text/plain');
+      if (!noteId || !onMoveNote) return;
+      // The host re-tags the note (replace same-namespace; _untagged removes it),
+      // persists, updates state, and calls refresh(). It is idempotent when the
+      // card is dropped back into its origin column.
+      await onMoveNote(noteId, namespace, value);
+    });
+  }
 
   return {
     element: root,

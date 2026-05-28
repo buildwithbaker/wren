@@ -38,6 +38,7 @@ import { createNotesList } from './ui/notes-list.js';
 import { createNoteEditor } from './ui/note-editor.js';
 import { createKanbanView } from './ui/kanban-view.js';
 import { confirmDialog } from './ui/dialog.js';
+import { addTagToNote, parseTag } from './tags/tag-parser.js';
 import { getStoredTheme, cycleTheme, initTheme } from './theme.js';
 
 const KOFI = 'https://ko-fi.com/abaker421';
@@ -578,6 +579,7 @@ export function createApp({ root, enableServiceWorker = false }) {
         setViewMode('list');
         handleNew();
       },
+      onMoveNote: handleKanbanMove,
     });
     main.append(noteEditor.element, kanbanView.element);
 
@@ -827,6 +829,63 @@ export function createApp({ root, enableServiceWorker = false }) {
     noteEditor.clear();
     list.setActive(null);
     appEl.dataset.view = 'list';
+  }
+
+  /**
+   * Kanban drag-drop handler. Re-tags a note when its card is dropped into a
+   * column. Dropping into a value column adds/replaces `namespace:value`
+   * (addTagToNote drops any prior tag in that namespace); dropping into the
+   * "_untagged" column removes the namespace tag entirely.
+   *
+   * Idempotent: a drop back into the origin column is a no-op (no write).
+   */
+  async function handleKanbanMove(noteId, namespace, value) {
+    if (isDriveDisconnected()) {
+      showDriveDisconnectedToast('Reconnect Drive to move notes.');
+      return;
+    }
+    try {
+      const { content } = await adapter.readNote(noteId);
+      const parsed = parseNote(content, noteId);
+      let updated;
+      if (value === '_untagged') {
+        updated = {
+          ...parsed,
+          tags: (parsed.tags || []).filter((t) => {
+            const tp = parseTag(t);
+            return !tp || tp.namespace !== namespace;
+          }),
+        };
+      } else {
+        updated = addTagToNote(parsed, `${namespace}:${value}`);
+      }
+
+      // Skip the write when nothing changed (dropped into the same column).
+      const before = JSON.stringify((parsed.tags || []).slice().sort());
+      const after = JSON.stringify((updated.tags || []).slice().sort());
+      if (before === after) return;
+
+      updated.modified = new Date().toISOString();
+      const res = await adapter.writeNote(noteId, serializeNote(updated));
+
+      // Keep the in-memory model in sync so both the board and the sidebar
+      // list reflect the move without a full reload.
+      const n = notes.find((x) => x.id === noteId);
+      if (n) {
+        n.tags = updated.tags;
+        n.modified = updated.modified;
+        n.revision = res.revision;
+      }
+      notes.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
+      list.setNotes(notes);
+      kanbanView.refresh();
+    } catch (err) {
+      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
+        showDriveDisconnected();
+        return;
+      }
+      console.error('Kanban move failed', err);
+    }
   }
 
   /* ---- Drive-disconnected fallback (Decision P2c.5) ------------------- */
