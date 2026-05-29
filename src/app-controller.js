@@ -14,6 +14,7 @@ import {
   serializeNote,
   firstLineOf,
   exportNoteDownload,
+  buildNoteFilename,
   CARD_COLORS,
 } from './notes-store.js';
 import {
@@ -689,13 +690,14 @@ export function createApp({ root, enableServiceWorker = false }) {
       const hydrated = await Promise.all(
         metas.map(async (m) => {
           try {
-            const { content, revision } = await adapter.readNote(m.id);
+            const { content, revision, name } = await adapter.readNote(m.id);
             const parsed = parseNote(content, m.id);
             return {
               id: m.id,
-              // 'filename' kept as an alias for backwards compatibility inside
-              // legacy helpers (exportNoteDownload). UI now reads .id.
-              filename: m.id,
+              // The backend file name. Drive returns it (opaque id != name); FS
+              // omits it, so we fall back to the id (which IS the FS filename).
+              // Used by exportNoteDownload and the Drive rename-on-title flow.
+              filename: name || m.name || m.id,
               title: parsed.title || m.title || '',
               body: parsed.body,
               color: parsed.color || m.color || 'default',
@@ -730,11 +732,11 @@ export function createApp({ root, enableServiceWorker = false }) {
   async function openNote(noteId, { focusTitle = false } = {}) {
     let fresh;
     try {
-      const { content, revision } = await adapter.readNote(noteId);
+      const { content, revision, name } = await adapter.readNote(noteId);
       const parsed = parseNote(content, noteId);
       fresh = {
         id: noteId,
-        filename: noteId,
+        filename: name || noteId,
         title: parsed.title,
         body: parsed.body,
         color: parsed.color,
@@ -769,10 +771,13 @@ export function createApp({ root, enableServiceWorker = false }) {
       const now = new Date().toISOString();
       const seed = { title: '', body: '', color: 'default', created: now, modified: now, tags: [] };
       const content = serializeNote({ ...seed, filename: '' });
-      const { id, revision } = await adapter.createNote(content, { title: seed.title });
+      const { id, revision, name } = await adapter.createNote(content, {
+        title: seed.title,
+        created: seed.created,
+      });
       const note = {
         id,
-        filename: id,
+        filename: name || id,
         title: seed.title,
         body: seed.body,
         color: seed.color,
@@ -807,6 +812,7 @@ export function createApp({ root, enableServiceWorker = false }) {
       const { revision } = await adapter.writeNote(note.id, content);
       note.revision = revision;
       note.firstLine = firstLineOf(note.body);
+      await syncDriveFilename(note);
     } catch (err) {
       if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
         showDriveDisconnected();
@@ -820,6 +826,34 @@ export function createApp({ root, enableServiceWorker = false }) {
     notes.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
     list.setNotes(notes);
     list.setActive(note.id);
+  }
+
+  /**
+   * Drive-only: keep the Drive file's name in lockstep with the note title.
+   *
+   * Drive's noteId is an opaque file ID, so the file's display name is tracked
+   * separately on note.filename. We rename only when the title-derived name
+   * actually changed, comparing against the de-dup-stripped current name so a
+   * note that already owns a " (N)" suffix isn't re-renamed on every save.
+   * Called from inside handleSave's debounced flow (never per keystroke), and
+   * only after the content write has succeeded. Best-effort: a rename failure
+   * must not fail the content save, but an auth failure still routes to the
+   * Drive-disconnected UI.
+   */
+  async function syncDriveFilename(note) {
+    if (adapter?.backendId() !== ADAPTER_TYPES.DRIVE) return;
+    if (typeof adapter.renameNote !== 'function') return;
+    const desired = buildNoteFilename(note.created, note.title);
+    const currentBase = (note.filename || '').replace(/ \(\d+\)(\.md)$/, '$1');
+    if (desired === note.filename || desired === currentBase) return;
+    try {
+      const res = await adapter.renameNote(note.id, desired);
+      note.filename = res.name || desired;
+      if (res.revision) note.revision = res.revision;
+    } catch (err) {
+      if (err instanceof AdapterAuthError) throw err;
+      console.warn('Drive rename failed (content saved OK)', err);
+    }
   }
 
   async function handleDelete(note) {

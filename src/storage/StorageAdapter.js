@@ -12,6 +12,7 @@
  *
  * @typedef {Object} NoteMetadata
  * @property {string} id            - stable note identifier (FS: filename; Drive: file ID)
+ * @property {string} [name]        - backend file name (FS: same as id; Drive: the file's `name`)
  * @property {string} title         - extracted from YAML frontmatter
  * @property {string} created       - ISO 8601
  * @property {string} modified      - ISO 8601
@@ -27,6 +28,7 @@
  * @property {string} content       - full .md text (frontmatter + body)
  * @property {string} revision      - revision id at the moment of read
  * @property {string} [contentHash]
+ * @property {string} [name]        - backend file name at read time (Drive sets this; FS omits it)
  */
 
 /**
@@ -47,6 +49,11 @@
  *   If expectedRevision is provided and does not match the backend's current
  *   revision, the adapter must throw ConflictError without writing.
  * @property {(noteId: string) => Promise<void>} deleteNote
+ * @property {(noteId: string, desiredName: string) => Promise<{id: string, revision: string, name: string}>} [renameNote]
+ *   Rename the backend file to `desiredName`, resolving collisions with a
+ *   " (N)" suffix. Drive-only: the noteId (opaque file ID) is unchanged. FS
+ *   omits this — its identity *is* the filename, so renaming is a separate
+ *   concern handled elsewhere.
  * @property {() => string} backendId
  *   Stable identifier for the backend. Used in sync metadata + telemetry.
  */

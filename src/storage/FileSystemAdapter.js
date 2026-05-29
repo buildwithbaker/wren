@@ -18,7 +18,8 @@ import {
   requestPermission,
   pickDirectory,
   parseNote,
-  slugify,
+  buildNoteFilename,
+  uniqueNoteName,
 } from '../notes-store.js';
 import { ADAPTER_TYPES, ConflictError, AdapterAuthError } from './StorageAdapter.js';
 
@@ -205,19 +206,14 @@ export class FileSystemAdapter {
    * note (frontmatter + empty body) into raw markdown text.
    *
    * @param {string} content - raw .md text including frontmatter
-   * @param {{title?: string}} [hint] - used for slug derivation; DriveAdapter
-   *   ignores this since Drive assigns its own opaque file IDs.
+   * @param {{title?: string, created?: string}} [hint] - used to derive the
+   *   "YYYY-MM-DD - <title>.md" filename. DriveAdapter accepts the same shape.
    * @returns {Promise<{id: string, revision: string}>}
    */
-  async createNote(content, { title = '' } = {}) {
+  async createNote(content, { title = '', created = '' } = {}) {
     this._assertReady();
-    const slug = slugify(title);
-    const stamp = Date.now().toString(36);
-    let candidate = `${slug}-${stamp}.md`;
-    let n = 1;
-    while (await this._fileExists(candidate)) {
-      candidate = `${slug}-${stamp}-${n++}.md`;
-    }
+    const desired = buildNoteFilename(created, title);
+    const candidate = await uniqueNoteName(desired, (name) => this._fileExists(name));
     const fileHandle = await this._dirHandle.getFileHandle(candidate, { create: true });
     const writable = await fileHandle.createWritable();
     await writable.write(content);

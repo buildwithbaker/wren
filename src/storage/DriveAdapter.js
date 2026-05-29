@@ -13,7 +13,7 @@
 // Decision provenance: KB Module 05 P1.3, P1.4, P1.8, P2b.3, P2b.4.
 
 import { ADAPTER_TYPES, ConflictError, AdapterAuthError } from './StorageAdapter.js';
-import { slugify } from '../notes-store.js';
+import { buildNoteFilename, uniqueNoteName } from '../notes-store.js';
 import {
   getAccessToken,
   requestAccessToken,
@@ -188,6 +188,7 @@ export class DriveAdapter {
       }
       out.push({
         id: f.id,
+        name: f.name || '',
         title,
         created,
         modified: f.modifiedTime || created,
@@ -204,12 +205,13 @@ export class DriveAdapter {
     this._assertReady();
     const [content, meta] = await Promise.all([
       this._readFileContent(noteId),
-      this._getFileMeta(noteId, 'headRevisionId,md5Checksum'),
+      this._getFileMeta(noteId, 'name,headRevisionId,md5Checksum'),
     ]);
     return {
       content,
       revision: meta.headRevisionId || '',
       contentHash: meta.md5Checksum,
+      name: meta.name || '',
     };
   }
 
@@ -312,12 +314,14 @@ export class DriveAdapter {
    * uses as the noteId regardless).
    *
    * @param {string} content - full file body (frontmatter + markdown)
-   * @param {{title?: string}} [hint] - used to derive the Drive filename
-   * @returns {Promise<{id: string, revision: string}>}
+   * @param {{title?: string, created?: string}} [hint] - used to derive the
+   *   "YYYY-MM-DD - <title>.md" Drive filename. Drive still returns its own
+   *   opaque file ID, which becomes the noteId regardless of the name.
+   * @returns {Promise<{id: string, revision: string, name: string}>}
    */
-  async createNote(content, { title = '' } = {}) {
+  async createNote(content, { title = '', created = '' } = {}) {
     this._assertReady();
-    const filename = (slugify(title) || 'untitled') + '.md';
+    const filename = buildNoteFilename(created, title);
     const boundary = '----wren-' + Math.random().toString(36).slice(2, 12);
     const body = buildMultipart(
       boundary,
@@ -333,7 +337,54 @@ export class DriveAdapter {
       }
     );
     const meta = await resp.json();
-    return { id: meta.id, revision: meta.headRevisionId || '' };
+    return { id: meta.id, revision: meta.headRevisionId || '', name: filename };
+  }
+
+  /**
+   * Rename a note's Drive file (the `name` metadata only — the opaque file ID,
+   * and therefore the noteId, is unchanged). Resolves collisions within the
+   * Wren Notes folder with a " (2)", " (3)", … suffix so two same-day,
+   * same-title notes don't end up with identical names.
+   *
+   * drive.file scope covers files this app created, so the PATCH is permitted.
+   *
+   * @param {string} noteId
+   * @param {string} desiredName - e.g. "2026-05-28 - My Note.md"
+   * @returns {Promise<{id: string, revision: string, name: string}>}
+   */
+  async renameNote(noteId, desiredName) {
+    this._assertReady();
+    const finalName = await uniqueNoteName(desiredName, (name) =>
+      this._nameExistsInFolder(name, noteId)
+    );
+    const resp = await this._driveFetch(
+      `${DRIVE_API}/files/${encodeURIComponent(noteId)}?fields=id,name,headRevisionId`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: finalName }),
+      }
+    );
+    const meta = await resp.json();
+    return {
+      id: noteId,
+      revision: meta.headRevisionId || '',
+      name: meta.name || finalName,
+    };
+  }
+
+  /**
+   * Whether a non-trashed note with this exact name already exists in the
+   * folder, excluding the file identified by `excludeId` (so a note doesn't
+   * collide with itself during a rename).
+   */
+  async _nameExistsInFolder(name, excludeId) {
+    const escaped = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const qExpr =
+      `'${this._folderId}' in parents and trashed=false and ` +
+      `mimeType='${NOTE_MIME}' and name='${escaped}'`;
+    const files = await this._listFiles(qExpr, 'files(id,name)');
+    return files.some((f) => f.id !== excludeId);
   }
 
   /** Soft delete (PATCH trashed=true). Recoverable from Drive trash for ~30d. */

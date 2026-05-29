@@ -275,6 +275,51 @@ export function slugify(title) {
   return base || 'untitled';
 }
 
+/**
+ * Build a human-friendly note filename: "YYYY-MM-DD - <title>.md".
+ *
+ * The date is the first 10 chars of the ISO `created` timestamp (falling back
+ * to today when missing or unparseable). The title is stripped of characters
+ * that are illegal in Windows / macOS / Drive file names plus control chars,
+ * has its whitespace collapsed, is capped to ~80 chars, and defaults to
+ * "Untitled" when empty.
+ */
+export function buildNoteFilename(createdIso, title) {
+  let date = '';
+  if (typeof createdIso === 'string') {
+    const head = createdIso.slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(head)) date = head;
+  }
+  if (!date) date = new Date().toISOString().slice(0, 10);
+
+  let safe = (typeof title === 'string' ? title : '')
+    .replace(/[/\\:*?"<>|]/g, ' ')
+    .replace(/[\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80)
+    .trim();
+  if (!safe) safe = 'Untitled';
+
+  return `${date} - ${safe}.md`;
+}
+
+/**
+ * Resolve a unique filename by appending " (2)", " (3)", … before the .md
+ * extension until `nameExists` reports the candidate is free. `nameExists`
+ * may return a boolean or a Promise<boolean>.
+ */
+export async function uniqueNoteName(desiredName, nameExists) {
+  if (!(await nameExists(desiredName))) return desiredName;
+  const m = /^(.*)(\.md)$/i.exec(desiredName);
+  const base = m ? m[1] : desiredName;
+  const ext = m ? m[2] : '';
+  for (let n = 2; ; n++) {
+    const candidate = `${base} (${n})${ext}`;
+    if (!(await nameExists(candidate))) return candidate;
+  }
+}
+
 export async function listNotes(dirHandle) {
   const notes = [];
   for await (const entry of dirHandle.values()) {
