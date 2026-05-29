@@ -199,8 +199,8 @@ export class FileSystemAdapter {
 
   /**
    * Create a brand-new note. The adapter is responsible for generating an
-   * id (filename) — for FS, this is `<slug>-<base36-timestamp>.md` with a
-   * uniqueness suffix on collision (same logic as the legacy notes-store).
+   * id (filename) — for FS, this is the "YYYY-MM-DD - <title>.md" name from
+   * buildNoteFilename with a " (N)" uniqueness suffix on collision.
    *
    * Called by app-controller's handleNew after it has serialized the empty
    * note (frontmatter + empty body) into raw markdown text.
@@ -220,6 +220,40 @@ export class FileSystemAdapter {
     await writable.close();
     const after = await fileHandle.getFile();
     return { id: candidate, revision: String(after.lastModified) };
+  }
+
+  /**
+   * Rename a note's file to `desiredName`, resolving collisions with a
+   * " (2)", " (3)", … suffix.
+   *
+   * For FS the noteId *is* the filename, so this CHANGES the note's identity —
+   * the caller (app-controller) must propagate the returned id everywhere the
+   * old id was held. The File System Access API has no atomic rename, so this
+   * is write-new-then-delete-old: content is copied to the new file before the
+   * old entry is removed, so a failure mid-way never loses data (at worst it
+   * leaves the original in place).
+   *
+   * @param {string} noteId        - current filename
+   * @param {string} desiredName   - e.g. "2026-05-28 - My Note.md"
+   * @returns {Promise<{id: string, revision: string}>} new filename + mtime
+   */
+  async renameNote(noteId, desiredName) {
+    this._assertReady();
+    if (desiredName === noteId) {
+      const existing = await this._dirHandle.getFileHandle(noteId);
+      const f = await existing.getFile();
+      return { id: noteId, revision: String(f.lastModified) };
+    }
+    const newName = await uniqueNoteName(desiredName, (name) => this._fileExists(name));
+    const srcHandle = await this._dirHandle.getFileHandle(noteId);
+    const content = await (await srcHandle.getFile()).text();
+    const destHandle = await this._dirHandle.getFileHandle(newName, { create: true });
+    const writable = await destHandle.createWritable();
+    await writable.write(content);
+    await writable.close();
+    await this._dirHandle.removeEntry(noteId);
+    const after = await destHandle.getFile();
+    return { id: newName, revision: String(after.lastModified) };
   }
 
   async _fileExists(name) {

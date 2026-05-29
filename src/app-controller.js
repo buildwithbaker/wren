@@ -41,6 +41,7 @@ import { createKanbanView } from './ui/kanban-view.js';
 import { confirmDialog } from './ui/dialog.js';
 import { addTagToNote, parseTag, getAllTags, getAllNamespaces } from './tags/tag-parser.js';
 import { getStoredTheme, cycleTheme, initTheme } from './theme.js';
+import { getSyncState, setSyncState, clearSyncState } from './sync/syncStateStore.js';
 
 const KOFI = 'https://ko-fi.com/abaker421';
 const VIEW_MODE_KEY = 'wren.viewMode';
@@ -812,7 +813,7 @@ export function createApp({ root, enableServiceWorker = false }) {
       const { revision } = await adapter.writeNote(note.id, content);
       note.revision = revision;
       note.firstLine = firstLineOf(note.body);
-      await syncDriveFilename(note);
+      await syncBackendFilename(note);
     } catch (err) {
       if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
         showDriveDisconnected();
@@ -829,30 +830,57 @@ export function createApp({ root, enableServiceWorker = false }) {
   }
 
   /**
-   * Drive-only: keep the Drive file's name in lockstep with the note title.
+   * Keep the backend file name in lockstep with the note title.
    *
-   * Drive's noteId is an opaque file ID, so the file's display name is tracked
-   * separately on note.filename. We rename only when the title-derived name
-   * actually changed, comparing against the de-dup-stripped current name so a
-   * note that already owns a " (N)" suffix isn't re-renamed on every save.
-   * Called from inside handleSave's debounced flow (never per keystroke), and
-   * only after the content write has succeeded. Best-effort: a rename failure
-   * must not fail the content save, but an auth failure still routes to the
-   * Drive-disconnected UI.
+   * Both adapters expose renameNote, but the identity model differs:
+   *   - Drive: noteId is an opaque file ID that never changes — only the file's
+   *     display name (tracked on note.filename) updates. No cascade needed.
+   *   - FS: noteId *is* the filename, so a rename changes the note's identity.
+   *     The new id must propagate to the in-memory notes array, the open editor
+   *     note (same object ref as `note` here), list-active state, and the
+   *     sync_state store (keyed by noteId).
+   *
+   * Rename only when the title-derived name actually changed, comparing against
+   * the de-dup-stripped current name so a note that already owns a " (N)"
+   * suffix isn't re-renamed on every save. Called from handleSave's debounced
+   * flow (never per keystroke) after the content write has succeeded.
+   * Best-effort: a rename failure must not fail the content save, but an auth
+   * failure still routes to the Drive-disconnected UI.
    */
-  async function syncDriveFilename(note) {
-    if (adapter?.backendId() !== ADAPTER_TYPES.DRIVE) return;
+  async function syncBackendFilename(note) {
     if (typeof adapter.renameNote !== 'function') return;
     const desired = buildNoteFilename(note.created, note.title);
     const currentBase = (note.filename || '').replace(/ \(\d+\)(\.md)$/, '$1');
     if (desired === note.filename || desired === currentBase) return;
+
+    let res;
     try {
-      const res = await adapter.renameNote(note.id, desired);
-      note.filename = res.name || desired;
-      if (res.revision) note.revision = res.revision;
+      res = await adapter.renameNote(note.id, desired);
     } catch (err) {
       if (err instanceof AdapterAuthError) throw err;
-      console.warn('Drive rename failed (content saved OK)', err);
+      console.warn('Rename failed (content saved OK)', err);
+      return;
+    }
+
+    const oldId = note.id;
+    const newId = res.id || oldId;
+    note.filename = res.name || newId;
+    if (res.revision) note.revision = res.revision;
+    if (newId === oldId) return; // Drive: id is stable, nothing to cascade.
+
+    // FS: the filename *is* the identity, so the id changed. Propagate it.
+    note.id = newId;
+    const entryInArray = notes.find((n) => n.id === oldId);
+    if (entryInArray && entryInArray !== note) entryInArray.id = newId;
+    if (list) list.setActive(newId);
+    try {
+      const prev = await getSyncState(oldId);
+      if (prev) {
+        await setSyncState(newId, { ...prev });
+        await clearSyncState(oldId);
+      }
+    } catch (err) {
+      console.warn('Could not migrate sync state after rename', oldId, '->', newId, err);
     }
   }
 
