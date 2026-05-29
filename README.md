@@ -9,12 +9,29 @@ Ships in two forms that read/write the same folder:
 
 Built with [Vite](https://vitejs.dev/) and [Tiptap v2](https://tiptap.dev/) (bundled locally — MV3 forbids CDN/inline scripts).
 
-## Develop
+## Setup
+
+Requires Node 20 (see `.nvmrc`).
 
 ```bash
 npm install
-npm run dev          # Vite dev server (PWA)
+npm run dev          # Vite dev server (PWA) at localhost:5173
 ```
+
+### Google Drive sync (OAuth)
+
+Wren can optionally sync the chosen folder to Google Drive (scope
+`drive.file`). The OAuth **client ID is a public web client ID** committed in
+[`src/oauth/gisClient.js`](src/oauth/gisClient.js) — there is no client secret
+(GIS Token Model is a public-client flow). To run Drive sync against your own
+Google Cloud project, replace that ID and register your **Authorized JavaScript
+origins** to include both `http://localhost:5173` (dev) and your Pages domain
+(`https://buildwithbaker.github.io`). OAuth fails from any origin not on that
+list.
+
+> Use `npm run preview` (not `npm run dev`) to exercise the **production service
+> worker** — the SW is only enabled in production builds, so offline behaviour
+> can't be tested from the dev server.
 
 ## Build
 
