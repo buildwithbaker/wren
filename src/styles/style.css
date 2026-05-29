@@ -502,6 +502,86 @@ button {
   box-shadow: 0 0 0 2px var(--wr-note-bg, #fff), 0 0 0 4px var(--wr-accent);
 }
 
+/* tag editor row */
+.sc-tagrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px 10px;
+  background: var(--wr-note-header-tint);
+}
+.sc-tagchips {
+  display: contents;
+}
+.sc-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  padding: 2px 4px 2px 9px;
+  font-size: 12px;
+  line-height: 1.5;
+  border-radius: 999px;
+  background: var(--wr-accent-tint);
+  color: var(--wr-accent-dark);
+  border: 1px solid var(--wr-border);
+}
+.sc-tag-chip__ns {
+  opacity: 0.62;
+}
+.sc-tag-chip__val {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sc-tag-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  opacity: 0.65;
+  transition: background var(--wr-trans), opacity var(--wr-trans);
+}
+.sc-tag-remove:hover {
+  opacity: 1;
+  background: rgba(42, 53, 64, 0.14);
+}
+.sc-tagadd {
+  display: inline-flex;
+  min-width: 110px;
+}
+.sc-taginput {
+  width: 100%;
+  font-size: 12px;
+  padding: 3px 8px;
+  color: var(--wr-ink);
+  background: transparent;
+  border: 1px dashed var(--wr-border-strong);
+  border-radius: 999px;
+  transition: border-color var(--wr-trans), box-shadow var(--wr-trans);
+}
+.sc-taginput::placeholder {
+  color: var(--wr-paper-muted);
+}
+.sc-taginput:focus-visible {
+  outline: none;
+  border-style: solid;
+  border-color: var(--wr-accent);
+  box-shadow: 0 0 0 3px var(--wr-accent-ring);
+}
+.sc-taginput.is-invalid {
+  border-color: #c0392b;
+  border-style: solid;
+}
+
 /* =========================================================================
    Toolbar
    ========================================================================= */

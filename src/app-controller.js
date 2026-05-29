@@ -38,7 +38,7 @@ import { createNotesList } from './ui/notes-list.js';
 import { createNoteEditor } from './ui/note-editor.js';
 import { createKanbanView } from './ui/kanban-view.js';
 import { confirmDialog } from './ui/dialog.js';
-import { addTagToNote, parseTag } from './tags/tag-parser.js';
+import { addTagToNote, parseTag, getAllTags, getAllNamespaces } from './tags/tag-parser.js';
 import { getStoredTheme, cycleTheme, initTheme } from './theme.js';
 
 const KOFI = 'https://ko-fi.com/abaker421';
@@ -567,6 +567,7 @@ export function createApp({ root, enableServiceWorker = false }) {
         appEl.dataset.view = 'list';
         list.setActive(null);
       },
+      getTagSuggestions: tagSuggestions,
       showBack: true,
     });
     kanbanView = createKanbanView({
@@ -657,6 +658,19 @@ export function createApp({ root, enableServiceWorker = false }) {
     for (const btn of viewToggleEl.querySelectorAll('button')) {
       btn.classList.toggle('is-active', btn.dataset.mode === m);
     }
+  }
+
+  /**
+   * Autocomplete source for the editor's tag input. Returns full raw tags
+   * ("status:todo") plus namespace prefixes ("status:") so the user can either
+   * pick a complete tag or start a namespace and get its values next. Drawn
+   * from every loaded note; recomputed each time the editor opens.
+   */
+  function tagSuggestions() {
+    const prefixes = getAllNamespaces(notes)
+      .filter((ns) => ns !== '_uncategorized')
+      .map((ns) => `${ns}:`);
+    return Array.from(new Set([...prefixes, ...getAllTags(notes)]));
   }
 
   /**

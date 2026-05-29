@@ -7,14 +7,16 @@
 import { createEditor, getMarkdown } from '@/editor.js';
 import { createToolbar } from './toolbar.js';
 import { createCardColorPicker } from './color-picker.js';
+import { createTagEditor } from './tag-editor.js';
 import { confirmDialog } from './dialog.js';
 import { CARD_COLORS } from '@/notes-store.js';
+import { parseTag } from '@/tags/tag-parser.js';
 import { formatModified } from './format.js';
 
 const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
 const SAVE_DELAY = 500;
 
-export function createNoteEditor({ onSave, onDelete, onExport, onBack, showBack = false }) {
+export function createNoteEditor({ onSave, onDelete, onExport, onBack, getTagSuggestions, showBack = false }) {
   let note = null;
   let editor = null;
   let toolbar = null;
@@ -117,13 +119,44 @@ export function createNoteEditor({ onSave, onDelete, onExport, onBack, showBack 
   savedHint.setAttribute('aria-live', 'polite');
   colorRow.append(cardColor.element, savedHint);
 
+  // Tag editor row
+  const tagEditor = createTagEditor({
+    getSuggestions: () => getTagSuggestions?.() || [],
+    onAdd: (raw) => {
+      if (!note) return;
+      const parsed = parseTag(raw);
+      if (!parsed) return;
+      const existing = note.tags || [];
+      // Exact duplicate -> no-op.
+      if (existing.includes(parsed.raw)) return;
+      // Explicit namespaces are single-value (mirrors Kanban move semantics):
+      // adding "status:doing" replaces "status:todo". Un-namespaced tags stack.
+      const filtered =
+        parsed.namespace === '_uncategorized'
+          ? existing
+          : existing.filter((t) => {
+              const tp = parseTag(t);
+              return !tp || tp.namespace !== parsed.namespace;
+            });
+      note.tags = [...filtered, parsed.raw];
+      tagEditor.setTags(note.tags);
+      scheduleSave();
+    },
+    onRemove: (raw) => {
+      if (!note) return;
+      note.tags = (note.tags || []).filter((t) => t !== raw);
+      tagEditor.setTags(note.tags);
+      scheduleSave();
+    },
+  });
+
   // Toolbar + editor body mounts
   const toolbarMount = document.createElement('div');
   toolbarMount.className = 'sc-toolbar-mount';
   const bodyMount = document.createElement('div');
   bodyMount.className = 'sc-editor-body';
 
-  surface.append(head, colorRow, toolbarMount, bodyMount);
+  surface.append(head, colorRow, tagEditor.element, toolbarMount, bodyMount);
   root.append(placeholder, surface);
 
   // --- save scheduling ------------------------------------------------------
@@ -184,6 +217,7 @@ export function createNoteEditor({ onSave, onDelete, onExport, onBack, showBack 
     titleInput.value = note.title || '';
     cardColor.setValue(note.color);
     applyColor(note.color);
+    tagEditor.setTags(note.tags || []);
     setHint(note.modified ? `Saved ${formatModified(note.modified)}` : '');
 
     editor = createEditor({
@@ -208,6 +242,7 @@ export function createNoteEditor({ onSave, onDelete, onExport, onBack, showBack 
   function clear() {
     cancelSave();
     teardownEditor();
+    tagEditor.clear();
     note = null;
     surface.hidden = true;
     placeholder.hidden = false;
