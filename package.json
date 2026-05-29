@@ -31,6 +31,6 @@
     "tiptap-markdown": "^0.8.10"
   },
   "devDependencies": {
-    "vite": "^5.4.11"
+    "vite": "^8.0.14"
   }
 }
