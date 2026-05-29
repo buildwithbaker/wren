@@ -1,5 +1,23 @@
+# deps + build
 node_modules/
 dist/
 dist-extension/
+dist-ssr/
 *.local
+.vite/
+
+# env (commit the example only)
+.env
+.env.*
+!.env.example
+
+# os + editor
 .DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# local agent config
+.claude/

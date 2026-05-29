@@ -6,6 +6,9 @@
   "description": "Wren - local-first sticky notes PWA + Chrome extension. Notes stored as .md files on disk.",
   "author": "Adam Baker / Build with Baker",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "icons": "node scripts/gen-icons.mjs",
     "dev": "vite",
