@@ -9,6 +9,8 @@ Ships in two forms that read/write the same folder:
 
 Built with [Vite](https://vitejs.dev/) and [Tiptap v2](https://tiptap.dev/) (bundled locally — MV3 forbids CDN/inline scripts).
 
+> **Internals:** see [docs/internal/architecture.md](docs/internal/architecture.md) for the full architecture reference — file map, boot flow, storage layer, extension points, and gotchas.
+
 ## Setup
 
 Requires Node 20 (see `.nvmrc`).
