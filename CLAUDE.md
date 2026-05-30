@@ -1,6 +1,7 @@
 # CLAUDE.md - Wren
 
 See @README.md for what this project is and why.
+See @docs/internal/architecture.md for the deep architecture reference (file map, boot flow, storage layer, extension points, gotchas).
 
 ## Build, test, deploy
 - `npm run dev`      # Vite dev server (PWA) at localhost:5173
