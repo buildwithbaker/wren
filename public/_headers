@@ -1,0 +1,11 @@
+# Cloudflare Pages security headers. Applied to every response served from
+# https://wren-ckn.pages.dev. The CSP mirrors the <meta> fallback in
+# index.html and additionally carries directives that meta tags can't express
+# (frame-ancestors). See docs/internal/architecture.md for the Drive/GIS CSP
+# rationale (KB Module 05, P1.7).
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; connect-src 'self' https://accounts.google.com/gsi/ https://www.googleapis.com/; frame-src https://accounts.google.com/gsi/; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data: https:; font-src 'self' data:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=63072000; includeSubDomains

@@ -382,8 +382,10 @@ function main() {
   writePng(resolve(pub, 'icon-192.png'), 192, 192, stdCache[192]);
   writePng(resolve(pub, 'icon-512.png'), 512, 512, stdCache[512]);
   writePng(resolve(pub, 'icon-master-1024.png'), 1024, 1024, stdCache[1024]);
+  // The extension manifest references only 16/48/128 (and the popup UI loads
+  // icon.svg). icon-32.png is unreferenced in the extension, so it is not
+  // emitted here (the PWA still gets its public/icon-32.png above).
   writePng(resolve(extPub, 'icon-16.png'), 16, 16, stdCache[16]);
-  writePng(resolve(extPub, 'icon-32.png'), 32, 32, stdCache[32]);
   writePng(resolve(extPub, 'icon-48.png'), 48, 48, stdCache[48]);
   writePng(resolve(extPub, 'icon-128.png'), 128, 128, stdCache[128]);
   const maskable512 = renderIcon(512, 'maskable');
