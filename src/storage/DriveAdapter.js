@@ -13,7 +13,7 @@
 // Decision provenance: KB Module 05 P1.3, P1.4, P1.8, P2b.3, P2b.4.
 
 import { ADAPTER_TYPES, ConflictError, AdapterAuthError } from './StorageAdapter.js';
-import { buildNoteFilename, uniqueNoteName } from '../notes-store.js';
+import { buildNoteFilename, uniqueNoteName, isReservedNoteName } from '../notes-store.js';
 import {
   getAccessToken,
   requestAccessToken,
@@ -174,25 +174,36 @@ export class DriveAdapter {
     // are unavoidable. listNotes is rare (post-init); the cost is acceptable.
     const out = [];
     for (const f of files) {
+      // Skip Wren-managed files (AI phase 2): _index.md / tasks.md. daily/ and
+      // _inbox/ live in subfolders (a different parent) so aren't returned here.
+      if (isReservedNoteName(f.name)) continue;
+      let wrenId = '';
       let title = '';
       let color = 'default';
+      let summary = '';
       let created = f.createdTime || f.modifiedTime || new Date().toISOString();
       try {
         const text = await this._readFileContent(f.id);
         const fm = parseFrontmatterLite(text);
+        wrenId = fm.id || '';
         title = fm.title || '';
         color = fm.color || 'default';
+        summary = fm.summary || '';
         if (fm.created) created = fm.created;
       } catch {
         // Unreadable file - still surface its metadata.
       }
       out.push({
         id: f.id,
+        // Logical wren-id from frontmatter (additive — the storage id stays
+        // `id`, the Drive fileId). Exposed so the AI/index layer can consume it.
+        wrenId,
         name: f.name || '',
         title,
         created,
         modified: f.modifiedTime || created,
         color,
+        summary,
         revision: f.headRevisionId || '',
         contentHash: f.md5Checksum || undefined,
       });
@@ -540,12 +551,15 @@ function buildMultipart(boundary, metadata, content) {
 
 /**
  * Tiny frontmatter parser. Matches notes-store.js's parseNote frontmatter
- * shape but extracts only the fields listNotes needs (title, color, created).
- * Keeping this here rather than importing parseNote avoids a circular dep
- * if the FS adapter ever needs to call into the Drive adapter or vice versa.
+ * shape but extracts only the subset listNotes / the AI-index layer need
+ * (id, title, color, created, summary). Stays a lite/subset parser — do NOT
+ * import the full parseNote here: keeping this local avoids a circular dep if
+ * the FS adapter ever needs to call into the Drive adapter or vice versa.
+ * `out.id` is the logical wren-id from the frontmatter `id` key (distinct from
+ * the Drive fileId, which listNotes carries as the storage `id`).
  */
 function parseFrontmatterLite(text) {
-  const out = { title: '', color: 'default', created: '' };
+  const out = { id: '', title: '', color: 'default', created: '', summary: '' };
   const fm = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text || '');
   if (!fm) return out;
   for (const line of fm[1].split(/\r?\n/)) {
@@ -560,9 +574,11 @@ function parseFrontmatterLite(text) {
         /* ignore */
       }
     }
-    if (key === 'title') out.title = val;
+    if (key === 'id') out.id = val;
+    else if (key === 'title') out.title = val;
     else if (key === 'color') out.color = val;
     else if (key === 'created') out.created = val;
+    else if (key === 'summary') out.summary = val;
   }
   return out;
 }

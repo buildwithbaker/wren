@@ -905,11 +905,11 @@ button {
   transition: background var(--wr-trans), transform var(--wr-trans);
 }
 .sc-btn--primary {
-  background: var(--wr-accent);
+  background: var(--wr-primary);
   color: #fff;
 }
 .sc-btn--primary:hover {
-  background: var(--wr-accent-dark);
+  background: var(--wr-primary-hover);
 }
 .sc-btn--ghost {
   background: var(--wr-field-bg);
@@ -1442,4 +1442,35 @@ button {
 /* Below 640px width, hide the view-toggle and force list view */
 @media (max-width: 640px) {
   .sc-viewtoggle { display: none; }
+}
+
+/* --- A11y/contrast fixes (Test Master 2026-05-30) --- */
+
+/* Skip link: visually hidden until focused (finding #6). */
+.sc-skip-link {
+  position: absolute;
+  left: 8px;
+  top: -48px;
+  z-index: 1000;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--wr-primary);
+  color: #fff;
+  text-decoration: none;
+  transition: top 0.15s ease;
+}
+.sc-skip-link:focus {
+  top: 8px;
+}
+
+/* Primary CTA keeps AA contrast in dark mode: white on the lightened
+   --wr-primary (#7FA0E8) is only ~2.6:1, so pin the button fill to the
+   dark indigo where white text reaches 8.6:1 (finding #1). */
+@media (prefers-color-scheme: dark) {
+  .sc-btn--primary {
+    background: #2B4A8B;
+  }
+  .sc-btn--primary:hover {
+    background: #3A5BA8;
+  }
 }

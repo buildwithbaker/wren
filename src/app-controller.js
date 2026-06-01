@@ -179,6 +179,21 @@ export function createApp({ root, enableServiceWorker = false }) {
     document.body.appendChild(a);
   }
 
+  // Inline "Open Full App" affordance for screens that would otherwise offer
+  // Google Drive sign-in. Drive's GIS flow injects a remote script that MV3's
+  // CSP blocks, so in the extension popup we send users to the full PWA (where
+  // Drive works) instead. Opens in a new browser tab.
+  function buildOpenFullAppButton() {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'sc-btn sc-btn--primary';
+    btn.textContent = 'Open Full App';
+    btn.addEventListener('click', () => {
+      window.open('https://wren-ckn.pages.dev', '_blank', 'noopener');
+    });
+    return btn;
+  }
+
   function isInstalled() {
     return (
       window.matchMedia('(display-mode: standalone)').matches ||
@@ -300,11 +315,18 @@ export function createApp({ root, enableServiceWorker = false }) {
       <h1>Browser not supported</h1>
       <p>Wren needs the <strong>File System Access API</strong> for local-file
       storage, or you can use Drive sync from any browser.</p>`;
-    const driveBtn = document.createElement('button');
-    driveBtn.className = 'sc-btn sc-btn--primary';
-    driveBtn.textContent = 'Use Google Drive';
-    driveBtn.addEventListener('click', () => renderDriveSignIn({ reason: 'fresh' }));
-    card.appendChild(driveBtn);
+    if (isExtensionPopup()) {
+      // Drive sign-in needs the remote GIS script, which MV3's CSP blocks in
+      // the popup — offer the full app instead, where Drive works.
+      card.appendChild(buildOpenFullAppButton());
+    } else {
+      const driveBtn = document.createElement('button');
+      driveBtn.type = 'button';
+      driveBtn.className = 'sc-btn sc-btn--primary';
+      driveBtn.textContent = 'Use Google Drive';
+      driveBtn.addEventListener('click', () => renderDriveSignIn({ reason: 'fresh' }));
+      card.appendChild(driveBtn);
+    }
     screenShell(card);
   }
 
@@ -331,6 +353,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     localSub.textContent =
       'Notes live as .md files on this PC. Browser must support the File System Access API. Won’t sync to other devices.';
     const localBtn = document.createElement('button');
+    localBtn.type = 'button';
     localBtn.className = 'sc-btn sc-btn--primary';
     localBtn.textContent = 'Choose folder';
     if (!isSupported()) {
@@ -361,13 +384,22 @@ export function createApp({ root, enableServiceWorker = false }) {
     driveTitle.textContent = 'Save to Google Drive';
     const driveSub = document.createElement('p');
     driveSub.className = 'sc-choice-card-sub';
-    driveSub.textContent =
-      'Notes live in your Drive under a "Wren Notes" folder. Sync across phone and computer. Works in any browser.';
-    const driveBtn = document.createElement('button');
-    driveBtn.className = 'sc-btn sc-btn--primary';
-    driveBtn.textContent = 'Sign in to Google Drive';
-    driveBtn.addEventListener('click', () => renderDriveSignIn({ reason: 'fresh' }));
-    drive.append(driveTitle, driveSub, driveBtn);
+    if (isExtensionPopup()) {
+      // Drive sign-in uses the remote GIS script, which MV3's CSP blocks in the
+      // popup. Point users to the full app, where Drive sync works.
+      driveSub.textContent =
+        'Drive sync isn’t available in the extension popup. Open the full app to sign in and sync across devices.';
+      drive.append(driveTitle, driveSub, buildOpenFullAppButton());
+    } else {
+      driveSub.textContent =
+        'Notes live in your Drive under a "Wren Notes" folder. Sync across phone and computer. Works in any browser.';
+      const driveBtn = document.createElement('button');
+      driveBtn.type = 'button';
+      driveBtn.className = 'sc-btn sc-btn--primary';
+      driveBtn.textContent = 'Sign in to Google Drive';
+      driveBtn.addEventListener('click', () => renderDriveSignIn({ reason: 'fresh' }));
+      drive.append(driveTitle, driveSub, driveBtn);
+    }
 
     grid.append(local, drive);
     card.appendChild(grid);
@@ -545,6 +577,12 @@ export function createApp({ root, enableServiceWorker = false }) {
     appEl.className = 'sc-app';
     appEl.dataset.view = 'list';
 
+    const skipLink = document.createElement('a');
+    skipLink.className = 'sc-skip-link';
+    skipLink.href = '#main-content';
+    skipLink.textContent = 'Skip to content';
+    appEl.appendChild(skipLink);
+
     driveBannerEl = buildDriveBanner();
     if (driveBannerEl) appEl.appendChild(driveBannerEl);
 
@@ -561,6 +599,7 @@ export function createApp({ root, enableServiceWorker = false }) {
 
     const main = document.createElement('main');
     main.className = 'sc-main';
+    main.id = 'main-content';
     noteEditor = createNoteEditor({
       onSave: handleSave,
       onDelete: handleDelete,
@@ -695,6 +734,9 @@ export function createApp({ root, enableServiceWorker = false }) {
             const parsed = parseNote(content, m.id);
             return {
               id: m.id,
+              // Logical wren-id from frontmatter (additive; note.id stays the
+              // storage identity). Threaded through so it round-trips on save.
+              wrenId: parsed.wrenId || m.wrenId || '',
               // The backend file name. Drive returns it (opaque id != name); FS
               // omits it, so we fall back to the id (which IS the FS filename).
               // Used by exportNoteDownload and the Drive rename-on-title flow.
@@ -737,6 +779,8 @@ export function createApp({ root, enableServiceWorker = false }) {
       const parsed = parseNote(content, noteId);
       fresh = {
         id: noteId,
+        // Logical wren-id from frontmatter (additive; note.id stays storage id).
+        wrenId: parsed.wrenId || '',
         filename: name || noteId,
         title: parsed.title,
         body: parsed.body,
@@ -770,14 +814,18 @@ export function createApp({ root, enableServiceWorker = false }) {
     }
     try {
       const now = new Date().toISOString();
-      const seed = { title: '', body: '', color: 'default', created: now, modified: now, tags: [] };
-      const content = serializeNote({ ...seed, filename: '' });
+      const seed = { title: '', body: '', color: 'default', created: now, modified: now, tags: [], filename: '' };
+      // serializeNote stamps a stable wrenId on first write; serialize `seed`
+      // directly (not a throwaway copy) so we can carry that same logical id
+      // onto the in-memory note below.
+      const content = serializeNote(seed);
       const { id, revision, name } = await adapter.createNote(content, {
         title: seed.title,
         created: seed.created,
       });
       const note = {
         id,
+        wrenId: seed.wrenId,
         filename: name || id,
         title: seed.title,
         body: seed.body,
