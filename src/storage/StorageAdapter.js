@@ -54,6 +54,12 @@
  *   " (N)" suffix. Drive-only: the noteId (opaque file ID) is unchanged. FS
  *   omits this — its identity *is* the filename, so renaming is a separate
  *   concern handled elsewhere.
+ * @property {(name: string, content: string) => Promise<void>} writeManagedFile
+ *   Write/overwrite a Wren-managed file by EXACT name in the notes-folder root
+ *   (e.g. '.wren-index.json', '_index.md'). Separate from writeNote so managed
+ *   artifacts never flow through note routing: it must NOT bump any note's
+ *   revision and the file must NOT appear in listNotes (callers also guard via
+ *   isReservedNoteName). Used by the AI-readable index layer (Phase 2).
  * @property {() => string} backendId
  *   Stable identifier for the backend. Used in sync metadata + telemetry.
  */

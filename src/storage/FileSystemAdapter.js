@@ -206,6 +206,24 @@ export class FileSystemAdapter {
   }
 
   /**
+   * Write/overwrite a Wren-managed file by exact name in the notes-folder root
+   * (e.g. '.wren-index.json', '_index.md'). Mirrors the writeNote write path
+   * minus revision bookkeeping — managed files are not notes, carry no revision,
+   * and are excluded from listNotes (isReservedNoteName + the .md filter).
+   *
+   * @param {string} name
+   * @param {string} content
+   * @returns {Promise<void>}
+   */
+  async writeManagedFile(name, content) {
+    this._assertReady();
+    const fileHandle = await this._dirHandle.getFileHandle(name, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(content);
+    await writable.close();
+  }
+
+  /**
    * Create a brand-new note. The adapter is responsible for generating an
    * id (filename) — for FS, this is the "YYYY-MM-DD - <title>.md" name from
    * buildNoteFilename with a " (N)" uniqueness suffix on collision.

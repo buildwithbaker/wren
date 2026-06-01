@@ -42,6 +42,12 @@ import { confirmDialog } from './ui/dialog.js';
 import { addTagToNote, parseTag, getAllTags, getAllNamespaces } from './tags/tag-parser.js';
 import { getStoredTheme, cycleTheme, initTheme } from './theme.js';
 import { getSyncState, setSyncState, clearSyncState } from './sync/syncStateStore.js';
+import {
+  buildIndexJson,
+  buildIndexMarkdown,
+  INDEX_JSON_NAME,
+  INDEX_MD_NAME,
+} from './ai/note-index.js';
 
 const KOFI = 'https://ko-fi.com/abaker421';
 const VIEW_MODE_KEY = 'wren.viewMode';
@@ -747,6 +753,10 @@ export function createApp({ root, enableServiceWorker = false }) {
               created: parsed.created || m.created,
               modified: m.modified || parsed.modified,
               tags: parsed.tags || [],
+              // AI-readable fields (Phase 1) — threaded through for the Phase 2
+              // index so it has summaries/due without extra reads.
+              summary: parsed.summary || m.summary || '',
+              due: parsed.due || '',
               firstLine: firstLineOf(parsed.body),
               revision: revision || m.revision,
             };
@@ -770,6 +780,42 @@ export function createApp({ root, enableServiceWorker = false }) {
       notes = [];
     }
     list.setNotes(notes);
+    // Refresh the AI-readable index after the initial (and any) full load so an
+    // external agent sees a current manifest even if no edit has happened yet.
+    regenerateIndex();
+  }
+
+  /* ---- AI-readable index (Phase 2) ------------------------------------- */
+
+  // Trailing-debounced regeneration of the Wren-managed catalog files
+  // (.wren-index.json + _index.md). Built purely from the in-memory `notes`
+  // collection — no extra reads. Coalesces bursts of edits into one write.
+  let indexRegenTimer = null;
+  const INDEX_REGEN_DELAY = 1500;
+
+  function regenerateIndex() {
+    clearTimeout(indexRegenTimer);
+    indexRegenTimer = setTimeout(doRegenerateIndex, INDEX_REGEN_DELAY);
+  }
+
+  async function doRegenerateIndex() {
+    indexRegenTimer = null;
+    // Hard rule: index regeneration must NEVER throw into a note operation.
+    // A failed managed-file write logs and is dropped — it never blocks or
+    // rolls back a note save. Managed files can't re-enter the notes list
+    // (isReservedNoteName excludes _index.md / .wren-index.json) so this can
+    // never trigger a reload/regen loop.
+    try {
+      if (!adapter || typeof adapter.writeManagedFile !== 'function') return;
+      if (isDriveDisconnected()) return; // no point writing to a dead Drive token
+      const backend = adapter.backendId();
+      const json = JSON.stringify(buildIndexJson(notes, backend), null, 2);
+      const md = buildIndexMarkdown(notes, backend);
+      await adapter.writeManagedFile(INDEX_JSON_NAME, json);
+      await adapter.writeManagedFile(INDEX_MD_NAME, md);
+    } catch (err) {
+      console.warn('Index regeneration failed (note operations unaffected)', err);
+    }
   }
 
   async function openNote(noteId, { focusTitle = false } = {}) {
@@ -788,6 +834,10 @@ export function createApp({ root, enableServiceWorker = false }) {
         created: parsed.created,
         modified: parsed.modified,
         tags: parsed.tags || [],
+        // AI-readable fields (Phase 1) — kept on the in-memory note for the
+        // Phase 2 index.
+        summary: parsed.summary || '',
+        due: parsed.due || '',
         firstLine: firstLineOf(parsed.body),
         revision,
       };
@@ -814,7 +864,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     }
     try {
       const now = new Date().toISOString();
-      const seed = { title: '', body: '', color: 'default', created: now, modified: now, tags: [], filename: '' };
+      const seed = { title: '', body: '', color: 'default', created: now, modified: now, tags: [], summary: '', due: '', filename: '' };
       // serializeNote stamps a stable wrenId on first write; serialize `seed`
       // directly (not a throwaway copy) so we can carry that same logical id
       // onto the in-memory note below.
@@ -833,11 +883,14 @@ export function createApp({ root, enableServiceWorker = false }) {
         created: seed.created,
         modified: seed.modified,
         tags: seed.tags,
+        summary: seed.summary,
+        due: seed.due,
         firstLine: '',
         revision,
       };
       notes.unshift(note);
       list.setNotes(notes);
+      regenerateIndex();
       await openNote(id, { focusTitle: true });
     } catch (err) {
       if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
@@ -875,6 +928,9 @@ export function createApp({ root, enableServiceWorker = false }) {
     notes.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
     list.setNotes(notes);
     list.setActive(note.id);
+    // Covers both content saves and any rename that syncBackendFilename applied
+    // (filename/id changes are already reflected on the in-memory note above).
+    regenerateIndex();
   }
 
   /**
@@ -953,6 +1009,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     noteEditor.clear();
     list.setActive(null);
     appEl.dataset.view = 'list';
+    regenerateIndex();
   }
 
   /**
@@ -1003,6 +1060,7 @@ export function createApp({ root, enableServiceWorker = false }) {
       notes.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
       list.setNotes(notes);
       kanbanView.refresh();
+      regenerateIndex();
     } catch (err) {
       if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
         showDriveDisconnected();

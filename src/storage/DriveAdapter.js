@@ -50,6 +50,14 @@ export class DriveAdapter {
   constructor() {
     /** @type {string|null} */
     this._folderId = null;
+    /**
+     * Resolved Drive file IDs for Wren-managed files, keyed by name
+     * (e.g. '.wren-index.json'). Lets repeated index regens media-update the
+     * same file instead of re-querying by name each time. Invalidated on write
+     * failure so a stale/deleted id can't wedge future writes.
+     * @type {Record<string, string>}
+     */
+    this._managedFileIds = {};
   }
 
   // ---- Lifecycle ---------------------------------------------------------
@@ -409,6 +417,78 @@ export class DriveAdapter {
         body: JSON.stringify({ trashed: true }),
       }
     );
+  }
+
+  /**
+   * Write/overwrite a Wren-managed file by exact name in the Wren Notes folder
+   * (e.g. '.wren-index.json', '_index.md'). Media-updates the existing file when
+   * one is found, else creates it. Separate from writeNote so managed artifacts
+   * never flow through note routing and never bump a note's revision.
+   *
+   * The resolved file ID is cached on the instance so repeated index regens skip
+   * the name lookup. On any failure the cache entry is invalidated and the error
+   * re-thrown so the caller (app-controller's regenerateIndex) can swallow it.
+   *
+   * NOTE_MIME is text/markdown for both files. The JSON file uses it too: Drive
+   * doesn't strongly care, and keeping one mime avoids a second multipart path.
+   *
+   * @param {string} name
+   * @param {string} content
+   * @returns {Promise<void>}
+   */
+  async writeManagedFile(name, content) {
+    this._assertReady();
+    try {
+      let fileId = this._managedFileIds[name];
+
+      // Resolve by name if we don't have a cached id.
+      if (!fileId) {
+        const escaped = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const hits = await this._listFiles(
+          `name='${escaped}' and '${this._folderId}' in parents and trashed=false`,
+          'files(id)'
+        );
+        if (hits.length > 0) fileId = hits[0].id;
+      }
+
+      const boundary = '----wren-' + Math.random().toString(36).slice(2, 12);
+
+      if (fileId) {
+        // Media-update the existing file.
+        const body = buildMultipart(boundary, { mimeType: NOTE_MIME }, content);
+        await this._driveFetch(
+          `${DRIVE_UPLOAD_API}/files/${encodeURIComponent(fileId)}?uploadType=multipart&fields=id`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+            body,
+          }
+        );
+        this._managedFileIds[name] = fileId;
+        return;
+      }
+
+      // Create it.
+      const body = buildMultipart(
+        boundary,
+        { name, mimeType: NOTE_MIME, parents: [this._folderId] },
+        content
+      );
+      const resp = await this._driveFetch(
+        `${DRIVE_UPLOAD_API}/files?uploadType=multipart&fields=id`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+          body,
+        }
+      );
+      const meta = await resp.json();
+      this._managedFileIds[name] = meta.id;
+    } catch (e) {
+      // Drop the (possibly stale) cached id so the next attempt re-resolves.
+      delete this._managedFileIds[name];
+      throw e;
+    }
   }
 
   // ---- Shared fetch helper (auth + retries + error normalization) ------
