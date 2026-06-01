@@ -734,6 +734,9 @@ export function createApp({ root, enableServiceWorker = false }) {
             const parsed = parseNote(content, m.id);
             return {
               id: m.id,
+              // Logical wren-id from frontmatter (additive; note.id stays the
+              // storage identity). Threaded through so it round-trips on save.
+              wrenId: parsed.wrenId || m.wrenId || '',
               // The backend file name. Drive returns it (opaque id != name); FS
               // omits it, so we fall back to the id (which IS the FS filename).
               // Used by exportNoteDownload and the Drive rename-on-title flow.
@@ -776,6 +779,8 @@ export function createApp({ root, enableServiceWorker = false }) {
       const parsed = parseNote(content, noteId);
       fresh = {
         id: noteId,
+        // Logical wren-id from frontmatter (additive; note.id stays storage id).
+        wrenId: parsed.wrenId || '',
         filename: name || noteId,
         title: parsed.title,
         body: parsed.body,
@@ -809,14 +814,18 @@ export function createApp({ root, enableServiceWorker = false }) {
     }
     try {
       const now = new Date().toISOString();
-      const seed = { title: '', body: '', color: 'default', created: now, modified: now, tags: [] };
-      const content = serializeNote({ ...seed, filename: '' });
+      const seed = { title: '', body: '', color: 'default', created: now, modified: now, tags: [], filename: '' };
+      // serializeNote stamps a stable wrenId on first write; serialize `seed`
+      // directly (not a throwaway copy) so we can carry that same logical id
+      // onto the in-memory note below.
+      const content = serializeNote(seed);
       const { id, revision, name } = await adapter.createNote(content, {
         title: seed.title,
         created: seed.created,
       });
       const note = {
         id,
+        wrenId: seed.wrenId,
         filename: name || id,
         title: seed.title,
         body: seed.body,

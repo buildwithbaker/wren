@@ -9,6 +9,8 @@ import {
   slugify,
   buildNoteFilename,
   uniqueNoteName,
+  generateNoteId,
+  isReservedNoteName,
 } from '../src/notes-store.js';
 
 describe('serializeNote / parseNote round-trip', () => {
@@ -109,5 +111,96 @@ describe('uniqueNoteName', () => {
     const taken = new Set(['a.md', 'a (2).md']);
     const out = await uniqueNoteName('a.md', async (n) => taken.has(n));
     expect(out).toBe('a (3).md');
+  });
+});
+
+describe('generateNoteId', () => {
+  it('returns "wren-" + 12 base36 chars', () => {
+    expect(generateNoteId()).toMatch(/^wren-[0-9a-z]{12}$/);
+  });
+  it('is (practically) unique across calls', () => {
+    const ids = new Set(Array.from({ length: 1000 }, () => generateNoteId()));
+    expect(ids.size).toBe(1000);
+  });
+});
+
+describe('AI-readable frontmatter fields (id / summary / due)', () => {
+  const baseNote = () => ({
+    filename: 'n.md',
+    title: 'Note',
+    body: 'body',
+    color: 'default',
+    created: '2026-01-01T00:00:00.000Z',
+    modified: '2026-01-01T00:00:00.000Z',
+    tags: [],
+  });
+
+  it('stamps a wrenId on first serialize and writes the id: line', () => {
+    const note = baseNote();
+    expect(note.wrenId).toBeUndefined();
+    const text = serializeNote(note);
+    expect(note.wrenId).toMatch(/^wren-[0-9a-z]{12}$/);
+    expect(text).toContain(`id: ${note.wrenId}`);
+  });
+
+  it('keeps an existing wrenId stable across re-serialize (never regenerates)', () => {
+    const note = { ...baseNote(), wrenId: 'wren-abc123def456' };
+    serializeNote(note);
+    expect(note.wrenId).toBe('wren-abc123def456');
+    expect(serializeNote(note)).toContain('id: wren-abc123def456');
+  });
+
+  it('round-trips id, summary, and due (summary with a colon survives)', () => {
+    const note = {
+      ...baseNote(),
+      wrenId: 'wren-aaaaaaaaaaaa',
+      summary: 'Meeting recap: discuss Q3 plans, 2:1 vote',
+      due: '2026-06-15T09:30:00.000Z',
+    };
+    const parsed = parseNote(serializeNote(note), 'n.md');
+    expect(parsed.wrenId).toBe('wren-aaaaaaaaaaaa');
+    expect(parsed.summary).toBe('Meeting recap: discuss Q3 plans, 2:1 vote');
+    expect(parsed.due).toBe('2026-06-15T09:30:00.000Z');
+  });
+
+  it('writes NO summary/due/tags lines when they are empty/absent', () => {
+    const text = serializeNote(baseNote());
+    expect(text).not.toMatch(/\nsummary:/);
+    expect(text).not.toMatch(/\ndue:/);
+    expect(text).not.toMatch(/\ntags:/);
+  });
+
+  it('parse stays read-only: an id-less note parses to wrenId "" (no generation)', () => {
+    const parsed = parseNote('---\ntitle: x\n---\nbody', 'old.md');
+    expect(parsed.wrenId).toBe('');
+    expect(parsed.summary).toBe('');
+    expect(parsed.due).toBe('');
+  });
+
+  it('field order is id, title, created, modified, color, due, summary, tags', () => {
+    const note = {
+      ...baseNote(),
+      wrenId: 'wren-bbbbbbbbbbbb',
+      color: 'amber',
+      due: '2026-06-15',
+      summary: 'hi',
+      tags: ['project:wren'],
+    };
+    const keys = serializeNote(note)
+      .split('\n')
+      .filter((l) => /^[a-z]+:/.test(l))
+      .map((l) => l.slice(0, l.indexOf(':')));
+    expect(keys).toEqual(['id', 'title', 'created', 'modified', 'color', 'due', 'summary', 'tags']);
+  });
+});
+
+describe('isReservedNoteName', () => {
+  it('flags Wren-managed files', () => {
+    expect(isReservedNoteName('_index.md')).toBe(true);
+    expect(isReservedNoteName('tasks.md')).toBe(true);
+  });
+  it('leaves normal notes alone', () => {
+    expect(isReservedNoteName('2026-05-31 - My Note.md')).toBe(false);
+    expect(isReservedNoteName(undefined)).toBe(false);
   });
 });

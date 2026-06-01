@@ -20,6 +20,7 @@ import {
   parseNote,
   buildNoteFilename,
   uniqueNoteName,
+  isReservedNoteName,
 } from '../notes-store.js';
 import { ADAPTER_TYPES, ConflictError, AdapterAuthError } from './StorageAdapter.js';
 
@@ -112,6 +113,9 @@ export class FileSystemAdapter {
     for await (const entry of this._dirHandle.values()) {
       if (entry.kind !== 'file') continue;
       if (!entry.name.toLowerCase().endsWith('.md')) continue;
+      // Skip Wren-managed files (AI phase 2): _index.md / tasks.md. The scan is
+      // top-level only, so daily/ and _inbox/ subdirs are already excluded.
+      if (isReservedNoteName(entry.name)) continue;
       try {
         const file = await entry.getFile();
         const text = await file.text();
@@ -119,10 +123,14 @@ export class FileSystemAdapter {
         const modified = parsed.modified || new Date(file.lastModified).toISOString();
         out.push({
           id: entry.name,
+          // Logical wren-id from frontmatter (additive — the storage id stays
+          // `id`). Exposed so the AI/index layer can consume it.
+          wrenId: parsed.wrenId || '',
           title: parsed.title || '',
           created: parsed.created || modified,
           modified,
           color: parsed.color,
+          summary: parsed.summary || '',
           // Revision for FS = mtime in ms (string for cross-backend symmetry).
           // Drive uses headRevisionId. Both are opaque to the sync layer.
           revision: String(file.lastModified),

@@ -175,14 +175,58 @@ function parseTagsValue(val) {
   }
 }
 
+/**
+ * Generate a stable logical note id: `wren-` + 12 random base36 chars
+ * (e.g. "wren-k3p9x2m7q1za").
+ *
+ * This is the note's ADDITIVE logical identity for AI consumption / backlinks.
+ * It is independent of the storage identity (the FS filename or the Drive
+ * fileId), which the app tracks separately as `note.id`. Generated once and
+ * never changed. Prefers crypto.getRandomValues; falls back to Math.random
+ * where crypto is unavailable (e.g. some test/Node contexts).
+ */
+export function generateNoteId() {
+  const LEN = 12;
+  let out = '';
+  const cryptoObj =
+    typeof crypto !== 'undefined' && crypto.getRandomValues ? crypto : null;
+  if (cryptoObj) {
+    const bytes = new Uint8Array(LEN);
+    cryptoObj.getRandomValues(bytes);
+    for (let i = 0; i < LEN; i++) out += (bytes[i] % 36).toString(36);
+  } else {
+    for (let i = 0; i < LEN; i++) out += Math.floor(Math.random() * 36).toString(36);
+  }
+  return `wren-${out}`;
+}
+
 export function serializeNote(note) {
+  // Stable-id chokepoint — the ONE intentional mutation of the passed note:
+  // if the note has no logical id yet, stamp one before building the lines.
+  // Routing every write through here means new notes get an id on first save and
+  // legacy id-less notes get one lazily the next time they're saved — no mass
+  // file rewrite on load, no modified/Drive-revision churn. The frontmatter key
+  // is `id`; the in-memory property is `note.wrenId`. NOTE: `note.id` is the
+  // STORAGE identity (FS filename / Drive fileId) and must NOT be touched here.
+  if (!note.wrenId) note.wrenId = generateNoteId();
+
   const lines = [
     '---',
+    `id: ${note.wrenId}`,
     `title: ${JSON.stringify(note.title || '')}`,
     `created: ${note.created}`,
     `modified: ${note.modified}`,
     `color: ${normalizeColor(note.color)}`,
   ];
+  // due: only written when set (ISO date / timestamp); kept clean otherwise.
+  if (note.due) {
+    lines.push(`due: ${JSON.stringify(note.due)}`);
+  }
+  // summary: only written when non-empty. JSON.stringify so a summary containing
+  // a colon survives the line-based parser (which splits on the first colon).
+  if (note.summary) {
+    lines.push(`summary: ${JSON.stringify(note.summary)}`);
+  }
   // tags: only written when non-empty — keeps tag-less notes' frontmatter clean.
   const tags = Array.isArray(note.tags)
     ? note.tags.filter((t) => typeof t === 'string' && t.trim().length > 0)
@@ -195,10 +239,15 @@ export function serializeNote(note) {
 }
 
 export function parseNote(text, filename) {
+  // wrenId is the logical id read from the frontmatter `id` key. parse stays
+  // pure / read-only — it never GENERATES an id (that is serializeNote's job).
+  let wrenId = '';
   let title = '';
   let created = '';
   let modified = '';
   let color = 'default';
+  let due = '';
+  let summary = '';
   let tags = [];
   let body = text;
 
@@ -223,21 +272,27 @@ export function parseNote(text, filename) {
           /* leave raw */
         }
       }
-      if (key === 'title') title = val;
+      if (key === 'id') wrenId = val;
+      else if (key === 'title') title = val;
       else if (key === 'created') created = val;
       else if (key === 'modified') modified = val;
       else if (key === 'color') color = val;
+      else if (key === 'due') due = val;
+      else if (key === 'summary') summary = val;
     }
   }
 
   const now = new Date().toISOString();
   return {
     filename,
+    wrenId,
     title,
     body,
     color: normalizeColor(color),
     created: created || now,
     modified: modified || created || now,
+    due,
+    summary,
     tags,
     firstLine: firstLineOf(body),
   };
@@ -262,6 +317,21 @@ export function firstLineOf(markdown) {
     if (line) return line;
   }
   return '';
+}
+
+// --- Reserved Wren-managed files --------------------------------------------
+
+// Files that live in the notes folder but are NOT user notes — they are created
+// by the AI layer in later phases (_index.md, tasks.md, and anything under
+// daily/ or _inbox/). They must be excluded from note listings. Directory scans
+// here are top-level only, so daily/ and _inbox/ subdirs are already skipped;
+// only the reserved top-level files need a name guard. Exported so both storage
+// adapters can share one definition. TODO(ai-phase2): extend if more reserved
+// names are added.
+const RESERVED_NOTE_NAMES = new Set(['_index.md', 'tasks.md']);
+
+export function isReservedNoteName(name) {
+  return RESERVED_NOTE_NAMES.has(name);
 }
 
 // --- Note CRUD --------------------------------------------------------------
@@ -325,6 +395,7 @@ export async function listNotes(dirHandle) {
   for await (const entry of dirHandle.values()) {
     if (entry.kind !== 'file') continue;
     if (!entry.name.toLowerCase().endsWith('.md')) continue;
+    if (isReservedNoteName(entry.name)) continue; // skip Wren-managed files (AI phase 2)
     try {
       const file = await entry.getFile();
       const text = await file.text();
