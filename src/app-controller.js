@@ -809,7 +809,9 @@ export function createApp({ root, enableServiceWorker = false }) {
       if (!adapter || typeof adapter.writeManagedFile !== 'function') return;
       if (isDriveDisconnected()) return; // no point writing to a dead Drive token
       const backend = adapter.backendId();
-      const json = JSON.stringify(buildIndexJson(notes, backend), null, 2);
+      // buildIndexJson is async (per-note contentHash hashing); buildIndexMarkdown
+      // stays sync (no hashing).
+      const json = JSON.stringify(await buildIndexJson(notes, backend), null, 2);
       const md = buildIndexMarkdown(notes, backend);
       await adapter.writeManagedFile(INDEX_JSON_NAME, json);
       await adapter.writeManagedFile(INDEX_MD_NAME, md);
