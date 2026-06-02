@@ -109,7 +109,7 @@
   </div>
 
   <h1>Privacy Policy</h1>
-  <p class="effective">Effective: May 26, 2026</p>
+  <p class="effective">Effective: June 1, 2026</p>
 
   <div class="callout">
     <strong>Short version:</strong> Wren is local-first. Your notes live on your own computer (or in your own Google Drive if you connect it). Wren does not have a server, does not collect analytics, and does not see your notes. Read on for the details.
@@ -151,10 +151,21 @@
     <li>From Google directly: visit <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">myaccount.google.com/permissions</a>, find Wren, and remove access.</li>
   </ul>
 
+  <h2>Wren MCP server (optional)</h2>
+  <p>Wren offers an optional companion app called the <strong>Wren MCP server</strong> that lets an AI assistant — currently the Claude Desktop app — read and create your notes through the Model Context Protocol (MCP). It is a separate program you choose to install; Wren works fully without it.</p>
+  <ul>
+    <li><strong>It runs entirely on your computer.</strong> The MCP server is a local program. It reads the notes folder you point it at, on your own disk, and returns results to your AI assistant over a local connection on your machine. It is not a website and has no server of its own.</li>
+    <li><strong>Wren does not upload your notes.</strong> The MCP server sends your notes to no Wren server, no Build with Baker server, and no third-party server — there is none. The only information that leaves your computer is whatever you choose to share with your AI assistant in a conversation, exactly as in any normal chat with that assistant. Your assistant's provider handles that data under its own privacy policy (see "Third parties").</li>
+    <li><strong>What it can do.</strong> Search and read your notes, and create new ones. Notes it creates are placed in a staging area (an <code>_inbox</code> folder) for you to review in Wren before they join your main notes. It does not edit or delete your existing notes.</li>
+    <li><strong>No account or login.</strong> The MCP server needs no Wren account and stores no credentials. You point it at a folder — that is the entire setup.</li>
+    <li><strong>Removing it.</strong> Uninstall it from your AI assistant's extension settings at any time. Nothing of yours is stored anywhere that would need deleting.</li>
+  </ul>
+
   <h2>Third parties</h2>
   <p>Wren uses these third-party services. Each has its own privacy policy:</p>
   <ul>
     <li><strong>Google Identity Services and Google Drive API</strong> — only if you enable Drive sync. See <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google's Privacy Policy</a>.</li>
+    <li><strong>Your AI assistant's provider</strong> — only if you install the optional Wren MCP server (for example, Anthropic, if you use Claude Desktop). Notes you share with the assistant in a conversation are handled under that provider's privacy policy. See <a href="https://www.anthropic.com/legal/privacy" target="_blank" rel="noopener">Anthropic's Privacy Policy</a>.</li>
     <li><strong>Your hosting provider</strong> — Wren is delivered to your browser as static files from a hosting provider. The host may log standard HTTP request information (IP address, user agent, timestamp). Wren itself does not log or aggregate this data.</li>
   </ul>
   <p>Wren does not use Google Analytics, Google Fonts (fonts are bundled), Facebook Pixel, or any other tracking or analytics service.</p>
