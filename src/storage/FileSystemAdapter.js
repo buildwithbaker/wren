@@ -21,8 +21,20 @@ import {
   buildNoteFilename,
   uniqueNoteName,
   isReservedNoteName,
+  INBOX_DIR,
 } from '../notes-store.js';
 import { ADAPTER_TYPES, ConflictError, AdapterAuthError } from './StorageAdapter.js';
+
+// Inbox-scoped note ids are the bare filename prefixed with `_inbox/`, so
+// readNote/deleteNote can tell a staged file from a top-level one and operate on
+// the right directory handle. (FS only — Drive ids are location-independent.)
+const INBOX_ID_PREFIX = `${INBOX_DIR}/`;
+function isInboxId(id) {
+  return typeof id === 'string' && id.startsWith(INBOX_ID_PREFIX);
+}
+function inboxBaseName(id) {
+  return id.slice(INBOX_ID_PREFIX.length);
+}
 
 /**
  * Filesystem-backed adapter.
@@ -146,7 +158,8 @@ export class FileSystemAdapter {
 
   async readNote(noteId) {
     this._assertReady();
-    const fileHandle = await this._dirHandle.getFileHandle(noteId);
+    const { dirHandle, name } = await this._resolveNoteLocation(noteId);
+    const fileHandle = await dirHandle.getFileHandle(name);
     const file = await fileHandle.getFile();
     const content = await file.text();
     return {
@@ -202,7 +215,118 @@ export class FileSystemAdapter {
 
   async deleteNote(noteId) {
     this._assertReady();
+    if (isInboxId(noteId)) {
+      // Delete inside the _inbox/ subfolder. If the subfolder is gone the file
+      // is already absent — treat as a no-op.
+      const inboxDir = await this._getInboxDirHandle({ create: false });
+      if (!inboxDir) return;
+      await inboxDir.removeEntry(inboxBaseName(noteId));
+      return;
+    }
     await this._dirHandle.removeEntry(noteId);
+  }
+
+  // ---- Inbox (_inbox/) — AI write-back staging (phase 4) ----------------
+
+  /**
+   * Get the `_inbox/` subfolder handle, or null when absent. With
+   * `{ create: false }` (the default) a missing subfolder returns null rather
+   * than creating it — listing must never litter an empty `_inbox/`.
+   */
+  async _getInboxDirHandle({ create = false } = {}) {
+    try {
+      return await this._dirHandle.getDirectoryHandle(INBOX_DIR, { create });
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Resolve a (possibly inbox-scoped) note id to the directory handle + bare
+   * filename to operate on. Top-level ids resolve to the root dir handle; ids
+   * prefixed `_inbox/` resolve to the inbox subfolder handle.
+   */
+  async _resolveNoteLocation(noteId) {
+    if (isInboxId(noteId)) {
+      const inboxDir = await this._getInboxDirHandle({ create: false });
+      if (!inboxDir) {
+        // Surface a clear error rather than silently reading the wrong file.
+        throw new Error(`_inbox/ subfolder not found for id "${noteId}"`);
+      }
+      return { dirHandle: inboxDir, name: inboxBaseName(noteId) };
+    }
+    return { dirHandle: this._dirHandle, name: noteId };
+  }
+
+  /**
+   * Metadata for `.md` files staged in `_inbox/`. Returns [] when the subfolder
+   * is absent (and never creates it). Mirrors listNotes' parse/shape, but each
+   * entry's id is `_inbox/<filename>` and carries `inbox: true`.
+   */
+  async listInboxNotes() {
+    this._assertReady();
+    const inboxDir = await this._getInboxDirHandle({ create: false });
+    if (!inboxDir) return [];
+    const out = [];
+    for await (const entry of inboxDir.values()) {
+      if (entry.kind !== 'file') continue;
+      if (!entry.name.toLowerCase().endsWith('.md')) continue;
+      if (isReservedNoteName(entry.name)) continue;
+      try {
+        const file = await entry.getFile();
+        const text = await file.text();
+        const parsed = parseNote(text, entry.name);
+        const modified = parsed.modified || new Date(file.lastModified).toISOString();
+        out.push({
+          id: `${INBOX_DIR}/${entry.name}`,
+          inbox: true,
+          name: entry.name,
+          wrenId: parsed.wrenId || '',
+          title: parsed.title || '',
+          created: parsed.created || modified,
+          modified,
+          color: parsed.color,
+          summary: parsed.summary || '',
+          revision: String(file.lastModified),
+        });
+      } catch {
+        // Skip unreadable staged files.
+      }
+    }
+    out.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
+    return out;
+  }
+
+  /**
+   * Promote a staged note into the main corpus: read the inbox file, write it at
+   * the root under a collision-free name, then delete the inbox original. Mirrors
+   * renameNote's write-new-then-delete-old move so a mid-failure never loses data
+   * (at worst the original stays staged). Content is byte-preserved, so the
+   * frontmatter `wrenId` survives. Returns the new top-level id.
+   *
+   * @param {string} noteId - an `_inbox/<filename>` id
+   * @returns {Promise<{id: string, revision: string}>}
+   */
+  async promoteInboxNote(noteId) {
+    this._assertReady();
+    if (!isInboxId(noteId)) {
+      throw new Error(`promoteInboxNote requires an _inbox/ id, got "${noteId}"`);
+    }
+    const inboxDir = await this._getInboxDirHandle({ create: false });
+    if (!inboxDir) throw new Error('_inbox/ subfolder not found');
+    const baseName = inboxBaseName(noteId);
+    const srcHandle = await inboxDir.getFileHandle(baseName);
+    const content = await (await srcHandle.getFile()).text();
+
+    const destName = await uniqueNoteName(baseName, (name) => this._fileExists(name));
+    const destHandle = await this._dirHandle.getFileHandle(destName, { create: true });
+    const writable = await destHandle.createWritable();
+    await writable.write(content);
+    await writable.close();
+    await inboxDir.removeEntry(baseName);
+
+    const after = await destHandle.getFile();
+    return { id: destName, revision: String(after.lastModified) };
   }
 
   /**

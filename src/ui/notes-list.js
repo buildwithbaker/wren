@@ -9,8 +9,16 @@ import { formatModified } from './format.js';
 const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
 const FILTER_KEY = 'wren.filterTags';
 
-export function createNotesList({ onSelect, onNew, compact = false }) {
+export function createNotesList({
+  onSelect,
+  onNew,
+  compact = false,
+  onInboxSelect,
+  onInboxPromote,
+  onInboxDiscard,
+} = {}) {
   let notes = [];
+  let inboxNotes = []; // staged _inbox/ notes (AI phase 4), kept separate
   let activeId = null;
   let query = '';
   let filterTags = loadFilterTags(); // AND-filter: note must have all of these
@@ -45,6 +53,12 @@ export function createNotesList({ onSelect, onNew, compact = false }) {
   });
   searchWrap.appendChild(search);
 
+  // Inbox section (AI phase 4) — staged notes from `_inbox/`. Hidden unless at
+  // least one staged note exists. Rebuilt by renderInbox().
+  const inboxEl = document.createElement('div');
+  inboxEl.className = 'sc-inbox';
+  inboxEl.hidden = true;
+
   // Tag filter (Phase B) — rendered above the search bar. Contents are rebuilt
   // by renderFilter() since available tags depend on the current notes set.
   const tagFilterEl = document.createElement('div');
@@ -54,7 +68,7 @@ export function createNotesList({ onSelect, onNew, compact = false }) {
   const scroll = document.createElement('div');
   scroll.className = 'sc-list-scroll';
 
-  root.append(header, tagFilterEl, searchWrap, scroll);
+  root.append(header, inboxEl, tagFilterEl, searchWrap, scroll);
 
   function matches(note) {
     // Tag AND-filter: note must contain every selected filter tag.
@@ -74,6 +88,7 @@ export function createNotesList({ onSelect, onNew, compact = false }) {
   }
 
   function render() {
+    renderInbox();
     renderFilter();
     scroll.replaceChildren();
     const filtered = notes.filter(matches);
@@ -94,6 +109,83 @@ export function createNotesList({ onSelect, onNew, compact = false }) {
     for (const note of filtered) {
       scroll.appendChild(renderCard(note));
     }
+  }
+
+  // ---- Inbox (_inbox/) — AI write-back staging (phase 4) --------------------
+
+  function renderInbox() {
+    if (!inboxNotes || inboxNotes.length === 0) {
+      inboxEl.hidden = true;
+      inboxEl.replaceChildren();
+      return;
+    }
+    inboxEl.hidden = false;
+    inboxEl.replaceChildren();
+
+    const head = document.createElement('div');
+    head.className = 'sc-inbox-head';
+    const label = document.createElement('span');
+    label.className = 'sc-inbox-label';
+    label.textContent = 'Inbox';
+    const badge = document.createElement('span');
+    badge.className = 'sc-inbox-badge';
+    badge.textContent = String(inboxNotes.length);
+    head.append(label, badge);
+    inboxEl.appendChild(head);
+
+    const hint = document.createElement('p');
+    hint.className = 'sc-inbox-hint';
+    hint.textContent = 'AI-captured, pending your review.';
+    inboxEl.appendChild(hint);
+
+    for (const note of inboxNotes) {
+      inboxEl.appendChild(renderInboxCard(note));
+    }
+  }
+
+  function renderInboxCard(note) {
+    const card = document.createElement('div');
+    card.className = 'sc-inbox-card';
+    if (note.id === activeId) card.classList.add('is-active');
+
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'sc-inbox-open';
+    open.dataset.id = note.id;
+
+    const titleRow = document.createElement('div');
+    titleRow.className = 'sc-inbox-card-titlerow';
+    const title = document.createElement('span');
+    title.className = 'sc-inbox-card-title';
+    title.textContent = note.title || 'Untitled';
+    const chip = document.createElement('span');
+    chip.className = 'sc-inbox-chip';
+    chip.textContent = 'AI';
+    titleRow.append(chip, title);
+
+    const preview = document.createElement('div');
+    preview.className = 'sc-inbox-card-preview';
+    preview.textContent = note.summary || note.firstLine || 'No additional text';
+
+    open.append(titleRow, preview);
+    open.addEventListener('click', () => onInboxSelect?.(note.id));
+
+    const actions = document.createElement('div');
+    actions.className = 'sc-inbox-actions';
+    const promote = document.createElement('button');
+    promote.type = 'button';
+    promote.className = 'sc-btn sc-btn--primary sc-inbox-btn';
+    promote.textContent = 'Move to Notes';
+    promote.addEventListener('click', () => onInboxPromote?.(note.id));
+    const discard = document.createElement('button');
+    discard.type = 'button';
+    discard.className = 'sc-btn sc-btn--ghost sc-inbox-btn';
+    discard.textContent = 'Discard';
+    discard.addEventListener('click', () => onInboxDiscard?.(note.id));
+    actions.append(promote, discard);
+
+    card.append(open, actions);
+    return card;
   }
 
   // ---- Tag filter -----------------------------------------------------------
@@ -253,6 +345,10 @@ export function createNotesList({ onSelect, onNew, compact = false }) {
     setNotes(next) {
       notes = next || [];
       render();
+    },
+    setInboxNotes(next) {
+      inboxNotes = next || [];
+      renderInbox();
     },
     setActive(id) {
       activeId = id;
