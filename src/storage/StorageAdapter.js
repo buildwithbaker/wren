@@ -60,6 +60,11 @@
  *   artifacts never flow through note routing: it must NOT bump any note's
  *   revision and the file must NOT appear in listNotes (callers also guard via
  *   isReservedNoteName). Used by the AI-readable index layer (Phase 2).
+ * @property {(name: string) => Promise<string|null>} readManagedFile
+ *   Read a Wren-managed file by EXACT name from the notes-folder root, returning
+ *   its text, or null if it does not exist. Symmetric with writeManagedFile.
+ *   Used by the Phase 3 contract-doc writer to do a once-per-session missing/
+ *   stale-version check before rewriting.
  * @property {() => string} backendId
  *   Stable identifier for the backend. Used in sync metadata + telemetry.
  */

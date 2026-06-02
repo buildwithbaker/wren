@@ -491,6 +491,41 @@ export class DriveAdapter {
     }
   }
 
+  /**
+   * Read a Wren-managed file by exact name from the Wren Notes folder. Returns
+   * its text, or null if it does not exist. Symmetric with writeManagedFile;
+   * used by the Phase 3 contract-doc missing/stale check. Resolves the file id
+   * (reusing/refreshing the writeManagedFile cache) then media-GETs the body.
+   *
+   * @param {string} name
+   * @returns {Promise<string|null>}
+   */
+  async readManagedFile(name) {
+    this._assertReady();
+    let fileId = this._managedFileIds[name];
+    if (!fileId) {
+      const escaped = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const hits = await this._listFiles(
+        `name='${escaped}' and '${this._folderId}' in parents and trashed=false`,
+        'files(id)'
+      );
+      if (hits.length === 0) return null;
+      fileId = hits[0].id;
+      this._managedFileIds[name] = fileId;
+    }
+    try {
+      return await this._readFileContent(fileId);
+    } catch (e) {
+      // A cached id that 404s means the file was deleted/replaced — drop it so
+      // the caller's next attempt re-resolves by name.
+      if (e && e.status === 404) {
+        delete this._managedFileIds[name];
+        return null;
+      }
+      throw e;
+    }
+  }
+
   // ---- Shared fetch helper (auth + retries + error normalization) ------
 
   /**

@@ -323,14 +323,20 @@ export function firstLineOf(markdown) {
 
 // Files that live in the notes folder but are NOT user notes — they are created
 // by the AI layer (the Phase 2 auto-generated index `.wren-index.json` /
-// `_index.md`, plus tasks.md and, in later phases, anything under daily/ or
-// _inbox/). They must be excluded from note listings. Directory scans here are
-// top-level only, so daily/ and _inbox/ subdirs are already skipped; only the
-// reserved top-level files need a name guard. `.wren-index.json` is also
-// excluded by the FS .md filter and the Drive NOTE_MIME query, but it is listed
-// here too for robustness. Exported so both storage adapters can share one
-// definition. TODO(ai-phase2+): extend if more reserved names are added.
-const RESERVED_NOTE_NAMES = new Set(['_index.md', 'tasks.md', '.wren-index.json']);
+// `_index.md`, the Phase 3 contract doc `README-for-AI.md`, plus tasks.md and,
+// in later phases, anything under daily/ or _inbox/). They must be excluded from
+// note listings. Directory scans here are top-level only, so daily/ and _inbox/
+// subdirs are already skipped; only the reserved top-level files need a name
+// guard. `.wren-index.json` is also excluded by the FS .md filter and the Drive
+// NOTE_MIME query, but it is listed here too for robustness. Exported so both
+// storage adapters can share one definition. TODO(ai-phase4+): extend if more
+// reserved names are added.
+const RESERVED_NOTE_NAMES = new Set([
+  '_index.md',
+  'tasks.md',
+  '.wren-index.json',
+  'README-for-AI.md',
+]);
 
 export function isReservedNoteName(name) {
   return RESERVED_NOTE_NAMES.has(name);

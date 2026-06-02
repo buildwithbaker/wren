@@ -48,6 +48,11 @@ import {
   INDEX_JSON_NAME,
   INDEX_MD_NAME,
 } from './ai/note-index.js';
+import {
+  buildAiContractDoc,
+  AI_CONTRACT_DOC_NAME,
+  AI_CONTRACT_VERSION,
+} from './ai/ai-contract-doc.js';
 
 const KOFI = 'https://ko-fi.com/abaker421';
 const VIEW_MODE_KEY = 'wren.viewMode';
@@ -783,6 +788,43 @@ export function createApp({ root, enableServiceWorker = false }) {
     // Refresh the AI-readable index after the initial (and any) full load so an
     // external agent sees a current manifest even if no edit has happened yet.
     regenerateIndex();
+    // Write the AI contract doc once per session (missing/stale-version check).
+    ensureAiContractDoc();
+  }
+
+  /* ---- AI contract doc (Phase 3) -------------------------------------- */
+
+  // README-for-AI.md is static content keyed to AI_CONTRACT_VERSION — NOT
+  // regenerated on every save. We check once per session: write it only when
+  // missing or when its first-line version marker is stale. Guarded so repeated
+  // loadNotes() calls (e.g. Drive reconnect) don't re-check needlessly.
+  let aiContractChecked = false;
+
+  async function ensureAiContractDoc() {
+    if (aiContractChecked) return;
+    aiContractChecked = true;
+    // Hard rule (same as index regen): a contract-doc failure must NEVER break
+    // a note operation. Log and continue.
+    try {
+      if (
+        !adapter ||
+        typeof adapter.writeManagedFile !== 'function' ||
+        typeof adapter.readManagedFile !== 'function'
+      ) {
+        return;
+      }
+      if (isDriveDisconnected()) {
+        aiContractChecked = false; // retry on a later load once Drive is back
+        return;
+      }
+      const marker = `<!-- wren-ai-contract v${AI_CONTRACT_VERSION} -->`;
+      const existing = await adapter.readManagedFile(AI_CONTRACT_DOC_NAME);
+      const firstLine = existing ? existing.split('\n', 1)[0] : '';
+      if (existing && firstLine.includes(marker)) return; // present & current
+      await adapter.writeManagedFile(AI_CONTRACT_DOC_NAME, buildAiContractDoc());
+    } catch (err) {
+      console.warn('AI contract-doc write failed (note operations unaffected)', err);
+    }
   }
 
   /* ---- AI-readable index (Phase 2) ------------------------------------- */

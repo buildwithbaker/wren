@@ -224,6 +224,26 @@ export class FileSystemAdapter {
   }
 
   /**
+   * Read a Wren-managed file by exact name from the notes-folder root. Returns
+   * its text, or null if the file does not exist. Symmetric with
+   * writeManagedFile; used by the Phase 3 contract-doc missing/stale check.
+   *
+   * @param {string} name
+   * @returns {Promise<string|null>}
+   */
+  async readManagedFile(name) {
+    this._assertReady();
+    try {
+      const fileHandle = await this._dirHandle.getFileHandle(name);
+      const file = await fileHandle.getFile();
+      return await file.text();
+    } catch {
+      // NotFoundError (or any read failure) -> treat as absent.
+      return null;
+    }
+  }
+
+  /**
    * Create a brand-new note. The adapter is responsible for generating an
    * id (filename) — for FS, this is the "YYYY-MM-DD - <title>.md" name from
    * buildNoteFilename with a " (N)" uniqueness suffix on collision.
