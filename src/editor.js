@@ -13,9 +13,10 @@ import TaskItem from '@tiptap/extension-task-item';
 import Link from '@tiptap/extension-link';
 import { Markdown } from 'tiptap-markdown';
 
-export function createEditor({ element, content = '', onUpdate, onSelectionUpdate }) {
+export function createEditor({ element, content = '', onUpdate, onSelectionUpdate, editable = true }) {
   return new Editor({
     element,
+    editable,
     extensions: [
       StarterKit.configure({
         // tiptap-markdown handles serialization; keep defaults otherwise.

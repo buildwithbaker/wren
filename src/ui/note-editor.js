@@ -206,7 +206,7 @@ export function createNoteEditor({ onSave, onDelete, onExport, onBack, getTagSug
     bodyMount.replaceChildren();
   }
 
-  async function openNote(next, { focusTitle = false } = {}) {
+  async function openNote(next, { focusTitle = false, readOnly = false } = {}) {
     await flush();
     teardownEditor();
     note = next;
@@ -214,27 +214,37 @@ export function createNoteEditor({ onSave, onDelete, onExport, onBack, getTagSug
     placeholder.hidden = true;
     surface.hidden = false;
 
+    // Read-only mode (AI phase 4): staged _inbox/ notes are view-only — no edits
+    // flow back, so disable inputs and don't wire autosave. The promote/discard
+    // actions live in the sidebar inbox section, not the editor.
+    surface.classList.toggle('is-readonly', readOnly);
     titleInput.value = note.title || '';
+    titleInput.readOnly = readOnly;
+    titleInput.disabled = readOnly;
     cardColor.setValue(note.color);
     applyColor(note.color);
     tagEditor.setTags(note.tags || []);
-    setHint(note.modified ? `Saved ${formatModified(note.modified)}` : '');
+    setHint(readOnly ? 'Staged · read-only' : note.modified ? `Saved ${formatModified(note.modified)}` : '');
 
     editor = createEditor({
       element: bodyMount,
       content: note.body || '',
+      editable: !readOnly,
       onUpdate: (ed) => {
-        if (!note) return;
+        if (!note || readOnly) return;
         note.body = getMarkdown(ed);
         scheduleSave();
         toolbar?.update();
       },
       onSelectionUpdate: () => toolbar?.update(),
     });
-    toolbar = createToolbar({ editor });
-    toolbarMount.appendChild(toolbar.element);
+    // Toolbar would offer edits that can't be saved in read-only mode; skip it.
+    if (!readOnly) {
+      toolbar = createToolbar({ editor });
+      toolbarMount.appendChild(toolbar.element);
+    }
 
-    if (focusTitle) {
+    if (focusTitle && !readOnly) {
       titleInput.focus();
     }
   }

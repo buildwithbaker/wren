@@ -13,7 +13,7 @@
 // Decision provenance: KB Module 05 P1.3, P1.4, P1.8, P2b.3, P2b.4.
 
 import { ADAPTER_TYPES, ConflictError, AdapterAuthError } from './StorageAdapter.js';
-import { buildNoteFilename, uniqueNoteName, isReservedNoteName } from '../notes-store.js';
+import { buildNoteFilename, uniqueNoteName, isReservedNoteName, INBOX_DIR } from '../notes-store.js';
 import {
   getAccessToken,
   requestAccessToken,
@@ -58,6 +58,12 @@ export class DriveAdapter {
      * @type {Record<string, string>}
      */
     this._managedFileIds = {};
+    /**
+     * Resolved Drive file ID of the `_inbox/` subfolder (AI phase 4), once
+     * looked up or created. null = not yet resolved this session.
+     * @type {string|null}
+     */
+    this._inboxFolderId = null;
   }
 
   // ---- Lifecycle ---------------------------------------------------------
@@ -170,6 +176,47 @@ export class DriveAdapter {
     return body.files || [];
   }
 
+  // ---- Inbox (_inbox/) subfolder bootstrap (AI phase 4) ----------------
+
+  /**
+   * Resolve the `_inbox/` subfolder's Drive id. With `{ create: false }` (the
+   * default) returns null when absent WITHOUT creating it — listing must not
+   * litter an empty folder. With `{ create: true }` it creates the subfolder
+   * lazily (only on a write/promote that needs it). Caches the id on success.
+   *
+   * @param {{create?: boolean}} [opts]
+   * @returns {Promise<string|null>}
+   */
+  async _resolveOrCreateInboxFolder({ create = false } = {}) {
+    if (this._inboxFolderId) return this._inboxFolderId;
+    const escaped = INBOX_DIR.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const hits = await this._listFiles(
+      `name='${escaped}' and '${this._folderId}' in parents and ` +
+        `mimeType='${FOLDER_MIME}' and trashed=false`,
+      'files(id,createdTime)'
+    );
+    if (hits.length > 0) {
+      const sorted = [...hits].sort((a, b) =>
+        (a.createdTime || '') < (b.createdTime || '') ? -1 : 1
+      );
+      this._inboxFolderId = sorted[0].id;
+      return this._inboxFolderId;
+    }
+    if (!create) return null;
+    const resp = await this._driveFetch(`${DRIVE_API}/files?fields=id`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: INBOX_DIR,
+        mimeType: FOLDER_MIME,
+        parents: [this._folderId],
+      }),
+    });
+    const body = await resp.json();
+    this._inboxFolderId = body.id;
+    return this._inboxFolderId;
+  }
+
   // ---- StorageAdapter interface ----------------------------------------
 
   async listNotes() {
@@ -218,6 +265,80 @@ export class DriveAdapter {
     }
     out.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
     return out;
+  }
+
+  /**
+   * Metadata for `.md` files staged in the `_inbox/` subfolder. Returns [] when
+   * the subfolder is absent (and never creates it). Drive file ids are
+   * location-independent, so the id round-trips for readNote/deleteNote without
+   * any prefix — the `inbox: true` flag is what marks the entry as staged.
+   */
+  async listInboxNotes() {
+    this._assertReady();
+    const inboxFolderId = await this._resolveOrCreateInboxFolder({ create: false });
+    if (!inboxFolderId) return [];
+    const qExpr = `'${inboxFolderId}' in parents and trashed=false and mimeType='${NOTE_MIME}'`;
+    const files = await this._listFiles(qExpr);
+
+    const out = [];
+    for (const f of files) {
+      if (isReservedNoteName(f.name)) continue;
+      let wrenId = '';
+      let title = '';
+      let color = 'default';
+      let summary = '';
+      let created = f.createdTime || f.modifiedTime || new Date().toISOString();
+      try {
+        const text = await this._readFileContent(f.id);
+        const fm = parseFrontmatterLite(text);
+        wrenId = fm.id || '';
+        title = fm.title || '';
+        color = fm.color || 'default';
+        summary = fm.summary || '';
+        if (fm.created) created = fm.created;
+      } catch {
+        // Unreadable staged file - still surface its metadata.
+      }
+      out.push({
+        id: f.id,
+        inbox: true,
+        wrenId,
+        name: f.name || '',
+        title,
+        created,
+        modified: f.modifiedTime || created,
+        color,
+        summary,
+        revision: f.headRevisionId || '',
+        contentHash: f.md5Checksum || undefined,
+      });
+    }
+    out.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
+    return out;
+  }
+
+  /**
+   * Promote a staged note into the main corpus via a Drive parent move:
+   * addParents=<rootFolderId>, removeParents=<inboxFolderId>. The file id is
+   * unchanged (no content copy), so the frontmatter `wrenId` is trivially
+   * preserved. Returns the same id plus the current revision.
+   *
+   * @param {string} noteId - the Drive file id of a staged note
+   * @returns {Promise<{id: string, revision: string}>}
+   */
+  async promoteInboxNote(noteId) {
+    this._assertReady();
+    const inboxFolderId = await this._resolveOrCreateInboxFolder({ create: false });
+    if (!inboxFolderId) throw new Error('_inbox/ subfolder not found');
+    const resp = await this._driveFetch(
+      `${DRIVE_API}/files/${encodeURIComponent(noteId)}` +
+        `?addParents=${encodeURIComponent(this._folderId)}` +
+        `&removeParents=${encodeURIComponent(inboxFolderId)}` +
+        `&fields=id,headRevisionId`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{}' }
+    );
+    const meta = await resp.json();
+    return { id: meta.id || noteId, revision: meta.headRevisionId || '' };
   }
 
   async readNote(noteId) {

@@ -342,6 +342,15 @@ export function isReservedNoteName(name) {
   return RESERVED_NOTE_NAMES.has(name);
 }
 
+// Reserved subfolder (AI phase 4) — the `_inbox/` staging area where an external
+// AI agent drops new notes for the user to review (promote into the main corpus,
+// or discard). It is NOT part of the main notes list: the top-level directory
+// scans in both adapters iterate the root only, so a different-parent subfolder
+// is naturally excluded. Named here as a constant (rather than a literal) so the
+// adapters and the index builder share one definition. Inbox notes surface only
+// through the dedicated listInboxNotes() adapter method.
+export const INBOX_DIR = '_inbox';
+
 // --- Note CRUD --------------------------------------------------------------
 
 export function slugify(title) {

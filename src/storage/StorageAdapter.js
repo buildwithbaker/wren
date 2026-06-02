@@ -19,6 +19,7 @@
  * @property {string} color         - one of CARD_COLORS ids
  * @property {string} revision      - backend-specific revision identifier (FS: mtime ms as string; Drive: headRevisionId)
  * @property {string} [contentHash] - md5 / sha for secondary conflict detection (Drive only at present)
+ * @property {boolean} [inbox]      - true for notes staged in the `_inbox/` subfolder (AI phase 4). On FS the `id` is `_inbox/<filename>` so read/delete round-trip; on Drive the opaque id already round-trips regardless of parent.
  */
 
 /**
@@ -65,6 +66,16 @@
  *   its text, or null if it does not exist. Symmetric with writeManagedFile.
  *   Used by the Phase 3 contract-doc writer to do a once-per-session missing/
  *   stale-version check before rewriting.
+ * @property {() => Promise<NoteMetadata[]>} listInboxNotes
+ *   Metadata for the `.md` files staged in the `_inbox/` subfolder (AI phase 4),
+ *   each with `inbox: true` and an `id` that round-trips back to the staged file
+ *   via readNote/deleteNote. Returns [] when `_inbox/` is absent — and must NOT
+ *   create the subfolder just from listing (avoids littering empty folders).
+ * @property {(noteId: string) => Promise<{id: string, revision: string}>} promoteInboxNote
+ *   Move a staged note out of `_inbox/` into the notes root (main corpus),
+ *   preserving file content (and therefore the frontmatter `wrenId`). Returns
+ *   the new top-level id. FS: write-new-at-root + delete-inbox-original. Drive:
+ *   parent PATCH (addParents root / removeParents inbox), same file id.
  * @property {() => string} backendId
  *   Stable identifier for the backend. Used in sync metadata + telemetry.
  */

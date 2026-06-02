@@ -24,11 +24,18 @@
 // The .wren-index.json `notes[]` entry shape is FROZEN (the Wren MCP server
 // depends on it): do not drop or rename keys. See buildIndexJson.
 
+import { INBOX_DIR } from '../notes-store.js';
+
 export const INDEX_JSON_NAME = '.wren-index.json';
 export const INDEX_MD_NAME = '_index.md';
 
 // Current .wren-index.json schema version. Bump when the `notes[]` entry shape
 // changes in a non-additive way so consumers can branch on it.
+//
+// Phase 4 adds an OPTIONAL boolean `inbox: true` on staged (_inbox/) entries
+// (absent on normal notes). Adding an optional field is backward-compatible, so
+// the version stays at 1 — existing consumers that ignore unknown keys are
+// unaffected.
 export const INDEX_SCHEMA_VERSION = 1;
 
 /**
@@ -58,14 +65,15 @@ function cleanTags(tags) {
 
 /**
  * Relative path from the notes-folder root to the note's file. For flat
- * top-level notes this equals `file`. Reserved for future subfolder notes
- * (e.g. `_inbox/<name>`): if a note ever carries an explicit `path`/`dir`, it
- * is honored; otherwise we fall back to the flat filename. Always present so
- * the MCP server can locate notes in subfolders without scanning.
+ * top-level notes this equals `file`. Staged (`_inbox/`) notes carry
+ * `inbox: true` and resolve to `_inbox/<file>`. An explicit `path`/`dir` is
+ * honored if present. Always present so the MCP server can locate notes in
+ * subfolders without scanning.
  */
 function pathOf(n) {
   if (n?.path) return n.path;
   const file = fileNameOf(n);
+  if (n?.inbox) return `${INBOX_DIR}/${file}`;
   if (n?.dir) return `${String(n.dir).replace(/\/+$/, '')}/${file}`;
   return file;
 }
@@ -121,6 +129,10 @@ async function sha256Hex(text) {
  *   updated     canonical last-modified ISO (mapped from note.modified); the
  *               field the MCP server's staleness check compares to file mtime
  *   contentHash mandatory change-detection token (see contentHashOf)
+ *   inbox       OPTIONAL boolean — present and `true` only for staged (_inbox/)
+ *               notes; absent on normal notes (do not assume false-vs-absent).
+ *
+ * Pass the combined collection (main notes + inbox notes flagged `inbox:true`).
  *
  * @param {Array<Object>} notes      fully-parsed in-memory notes
  * @param {string} backendId         adapter.backendId() ('fs' | 'drive')
@@ -130,20 +142,26 @@ async function sha256Hex(text) {
 export async function buildIndexJson(notes, backendId) {
   const sorted = sortByModifiedDesc(notes);
   const entries = await Promise.all(
-    sorted.map(async (n) => ({
-      wrenId: n.wrenId || '',
-      storageId: n.id || '',
-      path: pathOf(n),
-      file: fileNameOf(n),
-      title: n.title || '',
-      summary: n.summary || '',
-      due: n.due || '',
-      tags: cleanTags(n.tags),
-      color: n.color || 'default',
-      created: n.created || '',
-      updated: n.modified || '',
-      contentHash: await contentHashOf(n, backendId),
-    }))
+    sorted.map(async (n) => {
+      const entry = {
+        wrenId: n.wrenId || '',
+        storageId: n.id || '',
+        path: pathOf(n),
+        file: fileNameOf(n),
+        title: n.title || '',
+        summary: n.summary || '',
+        due: n.due || '',
+        tags: cleanTags(n.tags),
+        color: n.color || 'default',
+        created: n.created || '',
+        updated: n.modified || '',
+        contentHash: await contentHashOf(n, backendId),
+      };
+      // Additive optional flag — only on staged notes, so normal entries are
+      // byte-for-byte unchanged from the pre-Phase-4 schema.
+      if (n.inbox) entry.inbox = true;
+      return entry;
+    })
   );
   return {
     schemaVersion: INDEX_SCHEMA_VERSION,
@@ -168,11 +186,34 @@ function escapeCell(value) {
     .trim();
 }
 
+const TABLE_HEADER = [
+  '| Updated | Title | Tags | Due | Summary | File | wrenId |',
+  '| --- | --- | --- | --- | --- | --- | --- |',
+];
+
+function tableRow(n) {
+  const cells = [
+    escapeCell(n.modified),
+    escapeCell(n.title),
+    escapeCell(cleanTags(n.tags).join(', ')),
+    escapeCell(n.due),
+    escapeCell(n.summary),
+    escapeCell(fileNameOf(n)),
+    escapeCell(n.wrenId),
+  ];
+  return `| ${cells.join(' | ')} |`;
+}
+
 /**
  * Build the human + AI readable markdown mirror: an auto-generated banner, a
- * small metadata block, then a table (one row per note, newest first). An empty
- * folder yields a valid header plus "No notes yet." and count 0 — intentional,
- * not a placeholder.
+ * small metadata block, then the main notes table (one row per note, newest
+ * first). Staged (`_inbox/`) notes are listed under a separate
+ * "## Inbox (pending review)" heading BELOW the main table, never mixed into it.
+ * An empty folder yields a valid header plus "No notes yet." and count 0 —
+ * intentional, not a placeholder.
+ *
+ * Pass the combined collection (main + inbox notes flagged `inbox:true`); they
+ * are partitioned here.
  *
  * @param {Array<Object>} notes
  * @param {string} backendId
@@ -180,6 +221,9 @@ function escapeCell(value) {
  */
 export function buildIndexMarkdown(notes, backendId) {
   const sorted = sortByModifiedDesc(notes);
+  const main = sorted.filter((n) => !n.inbox);
+  const inbox = sorted.filter((n) => n.inbox);
+
   const lines = [
     '<!-- AUTO-GENERATED by Wren — do not edit by hand. -->',
     '<!-- Regenerated on every note change; manual edits will be overwritten. -->',
@@ -187,32 +231,31 @@ export function buildIndexMarkdown(notes, backendId) {
     '# Wren Note Index',
     '',
     `- Generated: ${new Date().toISOString()}`,
-    `- Notes: ${sorted.length}`,
+    `- Notes: ${main.length}`,
+    `- Inbox (pending review): ${inbox.length}`,
     `- Backend: ${backendId || ''}`,
     '',
   ];
 
-  if (sorted.length === 0) {
+  if (main.length === 0) {
     lines.push('No notes yet.', '');
-    return lines.join('\n');
+  } else {
+    lines.push(...TABLE_HEADER);
+    for (const n of main) lines.push(tableRow(n));
+    lines.push('');
   }
 
-  lines.push(
-    '| Updated | Title | Tags | Due | Summary | File | wrenId |',
-    '| --- | --- | --- | --- | --- | --- | --- |'
-  );
-  for (const n of sorted) {
-    const cells = [
-      escapeCell(n.modified),
-      escapeCell(n.title),
-      escapeCell(cleanTags(n.tags).join(', ')),
-      escapeCell(n.due),
-      escapeCell(n.summary),
-      escapeCell(fileNameOf(n)),
-      escapeCell(n.wrenId),
-    ];
-    lines.push(`| ${cells.join(' | ')} |`);
+  if (inbox.length > 0) {
+    lines.push(
+      '## Inbox (pending review)',
+      '',
+      'AI-captured notes staged in `_inbox/`. Promote or discard them in Wren.',
+      '',
+      ...TABLE_HEADER
+    );
+    for (const n of inbox) lines.push(tableRow(n));
+    lines.push('');
   }
-  lines.push('');
+
   return lines.join('\n');
 }

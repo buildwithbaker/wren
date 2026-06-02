@@ -177,6 +177,64 @@ describe('buildIndexMarkdown', () => {
     expect(md).toContain('# Wren Note Index');
     expect(md).toContain('- Notes: 0');
     expect(md).toContain('No notes yet.');
-    expect(md).not.toContain('| Modified |');
+    expect(md).not.toContain('| Updated |');
+  });
+});
+
+describe('inbox (_inbox/) staging in the index (phase 4)', () => {
+  const inboxNote = {
+    id: '_inbox/2026-01-09 - Captured.md',
+    inbox: true,
+    wrenId: 'wren-cccccccccccc',
+    name: '2026-01-09 - Captured.md',
+    title: 'Captured by AI',
+    summary: 'staged note',
+    due: '',
+    tags: ['source:ai'],
+    color: 'default',
+    created: '2026-01-09T00:00:00.000Z',
+    modified: '2026-01-09T08:00:00.000Z',
+    body: 'captured body',
+  };
+
+  it('JSON: staged note gets path "_inbox/<file>" and inbox:true', async () => {
+    const idx = await buildIndexJson([noteA, inboxNote], 'fs');
+    const staged = idx.notes.find((n) => n.wrenId === 'wren-cccccccccccc');
+    expect(staged.path).toBe('_inbox/2026-01-09 - Captured.md');
+    expect(staged.inbox).toBe(true);
+  });
+
+  it('JSON: normal notes carry no inbox flag (absent, not false)', async () => {
+    const idx = await buildIndexJson([noteA, inboxNote], 'fs');
+    const normal = idx.notes.find((n) => n.wrenId === 'wren-aaaaaaaaaaaa');
+    expect('inbox' in normal).toBe(false);
+    expect(normal.path).toBe('2026-01-02 - Alpha.md'); // flat, no prefix
+  });
+
+  it('JSON: schemaVersion stays 1 (additive optional field)', async () => {
+    const idx = await buildIndexJson([inboxNote], 'fs');
+    expect(idx.schemaVersion).toBe(1);
+  });
+
+  it('Markdown: staged notes go under an Inbox heading, not the main table', () => {
+    const md = buildIndexMarkdown([noteA, inboxNote], 'fs');
+    expect(md).toContain('## Inbox (pending review)');
+    expect(md).toContain('- Notes: 1'); // main count excludes inbox
+    expect(md).toContain('- Inbox (pending review): 1');
+    // The main table appears before the Inbox heading.
+    const mainTableIdx = md.indexOf('| Updated | Title');
+    const inboxHeadingIdx = md.indexOf('## Inbox (pending review)');
+    expect(mainTableIdx).toBeGreaterThan(-1);
+    expect(mainTableIdx).toBeLessThan(inboxHeadingIdx);
+    // Captured note's row is after the Inbox heading.
+    expect(md.indexOf('Captured by AI')).toBeGreaterThan(inboxHeadingIdx);
+  });
+
+  it('Markdown: inbox-only folder still shows the heading and 0 main notes', () => {
+    const md = buildIndexMarkdown([inboxNote], 'fs');
+    expect(md).toContain('- Notes: 0');
+    expect(md).toContain('No notes yet.'); // main table empty
+    expect(md).toContain('## Inbox (pending review)');
+    expect(md).toContain('Captured by AI');
   });
 });

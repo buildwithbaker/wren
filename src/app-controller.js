@@ -61,6 +61,7 @@ export function createApp({ root, enableServiceWorker = false }) {
   /** @type {import('./storage/StorageAdapter.js').StorageAdapter|null} */
   let adapter = null;
   let notes = [];
+  let inboxNotes = []; // staged _inbox/ notes (AI phase 4), kept separate
   let list = null;
   let noteEditor = null;
   let appEl = null;
@@ -605,6 +606,9 @@ export function createApp({ root, enableServiceWorker = false }) {
     list = createNotesList({
       onSelect: (noteId) => openNote(noteId),
       onNew: () => handleNew(),
+      onInboxSelect: (id) => openInboxNote(id),
+      onInboxPromote: (id) => handlePromoteInbox(id),
+      onInboxDiscard: (id) => handleDiscardInbox(id),
     });
     sidebar.appendChild(list.element);
 
@@ -785,11 +789,133 @@ export function createApp({ root, enableServiceWorker = false }) {
       notes = [];
     }
     list.setNotes(notes);
+    // Load staged inbox notes alongside the main list (best-effort — a failure
+    // here must never break the main notes list).
+    await loadInboxNotes();
     // Refresh the AI-readable index after the initial (and any) full load so an
     // external agent sees a current manifest even if no edit has happened yet.
     regenerateIndex();
     // Write the AI contract doc once per session (missing/stale-version check).
     ensureAiContractDoc();
+  }
+
+  /* ---- Inbox (_inbox/) — AI write-back staging (phase 4) -------------- */
+
+  // Load the staged `_inbox/` notes into the separate inboxNotes collection and
+  // push them to the sidebar. Crash-safe: any failure logs and leaves the inbox
+  // empty rather than breaking the main list. Returns nothing.
+  async function loadInboxNotes() {
+    try {
+      if (!adapter || typeof adapter.listInboxNotes !== 'function') {
+        inboxNotes = [];
+      } else {
+        const staged = await adapter.listInboxNotes();
+        inboxNotes = (staged || []).map((m) => ({
+          ...m,
+          // Mirror the main-list shape just enough for rendering + the index.
+          filename: m.name || m.id,
+          firstLine: '',
+          tags: m.tags || [],
+        }));
+      }
+    } catch (err) {
+      console.warn('Could not load inbox notes (main list unaffected)', err);
+      inboxNotes = [];
+    }
+    if (list) list.setInboxNotes(inboxNotes);
+  }
+
+  // Open a staged note read-only (v1: viewing only; editing is out of scope).
+  async function openInboxNote(inboxId) {
+    try {
+      const { content } = await adapter.readNote(inboxId);
+      const parsed = parseNote(content, inboxId);
+      const fresh = {
+        id: inboxId,
+        inbox: true,
+        wrenId: parsed.wrenId || '',
+        filename: inboxId,
+        title: parsed.title,
+        body: parsed.body,
+        color: parsed.color,
+        created: parsed.created,
+        modified: parsed.modified,
+        tags: parsed.tags || [],
+        summary: parsed.summary || '',
+        due: parsed.due || '',
+        firstLine: firstLineOf(parsed.body),
+        revision: '',
+        readOnly: true,
+      };
+      await noteEditor.openNote(fresh, { readOnly: true });
+      list.setActive(inboxId);
+      appEl.dataset.view = 'editor';
+    } catch (err) {
+      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
+        showDriveDisconnected();
+        return;
+      }
+      console.warn('Could not open staged note', err);
+    }
+  }
+
+  // Promote a staged note into the main corpus, then refresh both lists + index.
+  async function handlePromoteInbox(inboxId) {
+    if (isDriveDisconnected()) {
+      showDriveDisconnectedToast('Reconnect Drive to move notes.');
+      return;
+    }
+    try {
+      await adapter.promoteInboxNote(inboxId);
+    } catch (err) {
+      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
+        showDriveDisconnected();
+        return;
+      }
+      console.error('Promote failed', err);
+      alert('Could not move that note into your notes.');
+      return;
+    }
+    // If the promoted note was open in the editor, drop back to the list.
+    noteEditor.clear();
+    list.setActive(null);
+    appEl.dataset.view = 'list';
+    // Reload both collections so the note appears in the main list and leaves
+    // the inbox; loadNotes also triggers regenerateIndex.
+    await loadNotes();
+  }
+
+  // Discard (reject) a staged note after a confirm, then refresh.
+  async function handleDiscardInbox(inboxId) {
+    if (isDriveDisconnected()) {
+      showDriveDisconnectedToast('Reconnect Drive to discard notes.');
+      return;
+    }
+    const staged = inboxNotes.find((n) => n.id === inboxId);
+    const ok = await confirmDialog({
+      title: 'Discard staged note?',
+      message: `"${(staged && staged.title) || 'Untitled'}" will be permanently deleted from the inbox. This cannot be undone.`,
+      confirmLabel: 'Discard',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await adapter.deleteNote(inboxId);
+    } catch (err) {
+      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
+        showDriveDisconnected();
+        return;
+      }
+      console.error('Discard failed', err);
+      alert('Could not discard that staged note.');
+      return;
+    }
+    // If the discarded note was open, clear the editor.
+    noteEditor.clear();
+    list.setActive(null);
+    appEl.dataset.view = 'list';
+    await loadInboxNotes();
+    regenerateIndex();
   }
 
   /* ---- AI contract doc (Phase 3) -------------------------------------- */
@@ -851,10 +977,13 @@ export function createApp({ root, enableServiceWorker = false }) {
       if (!adapter || typeof adapter.writeManagedFile !== 'function') return;
       if (isDriveDisconnected()) return; // no point writing to a dead Drive token
       const backend = adapter.backendId();
-      // buildIndexJson is async (per-note contentHash hashing); buildIndexMarkdown
-      // stays sync (no hashing).
-      const json = JSON.stringify(await buildIndexJson(notes, backend), null, 2);
-      const md = buildIndexMarkdown(notes, backend);
+      // Combine main + staged notes; inbox entries carry `inbox: true` so the
+      // builders flag them (JSON) and partition them under the Inbox heading
+      // (markdown). buildIndexJson is async (per-note contentHash hashing);
+      // buildIndexMarkdown stays sync (no hashing).
+      const combined = [...notes, ...inboxNotes];
+      const json = JSON.stringify(await buildIndexJson(combined, backend), null, 2);
+      const md = buildIndexMarkdown(combined, backend);
       await adapter.writeManagedFile(INDEX_JSON_NAME, json);
       await adapter.writeManagedFile(INDEX_MD_NAME, md);
     } catch (err) {
