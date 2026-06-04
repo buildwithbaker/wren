@@ -1,20 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Wren">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#A87852"/>
-      <stop offset="100%" stop-color="#8B5E3C"/>
-    </linearGradient>
-  </defs>
-  <g transform="translate(128 128) scale(4)">
-    <rect width="192" height="192" rx="42" ry="42" fill="url(#bg)"/>
-    <path fill="#FFFFFF" stroke="#0F1626" stroke-width="2" stroke-linejoin="round"
-      d="M 54 50 L 111 50 L 142 81 L 142 146 L 54 146 Z"/>
-    <path fill="#F7F0EA" stroke="#0F1626" stroke-width="2" stroke-linejoin="round"
-      d="M 111 50 L 142 81 L 111 81 Z"/>
-    <path fill="none" stroke="#0F1626" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"
-      d="M 76 96 L 87 130 L 98 110 L 109 130 L 120 96"/>
-    <path fill="none" stroke="#2B4A8B" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"
-      d="M 76 96 L 87 130 L 98 110 L 109 130 L 120 96"/>
+  <rect width="1024" height="1024" rx="230" fill="#C2693C"/>
+  <g fill="#F7EFE1" stroke="#F7EFE1" stroke-linejoin="round">
+    <path d="M632 548 L792 176 L860 214 L724 600 Z" stroke-width="40"/>
+    <circle cx="520" cy="632" r="238"/>
+    <circle cx="516" cy="500" r="120"/>
+    <circle cx="396" cy="470" r="166"/>
+    <path d="M310 420 L150 470 L310 520 Z" stroke-width="18"/>
   </g>
+  <path d="M452 560 Q600 604 604 736" fill="none" stroke="#C2693C" stroke-width="26" stroke-linecap="round"/>
+  <circle cx="352" cy="456" r="30" fill="#2B4A8B"/>
 </svg>

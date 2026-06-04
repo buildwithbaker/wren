@@ -14,6 +14,11 @@ See @docs/internal/architecture.md for the deep architecture reference (file map
   (NOT in this repo). There is no GitHub Actions deploy workflow. No lint script
   is configured yet; CI runs `npm run lint --if-present` and will simply skip it.
 
+## Branching (main is protected)
+`main` is protected - direct pushes are rejected. Branch, commit, push, open a
+PR, then squash-merge once CI is green. Never run `git push origin main`. The
+Cloudflare build runs on the post-merge `main`.
+
 ## File organization (root is locked)
 Do not add files to the repo root unless they are in the permitted-root-files
 table of the Build with Baker Repo Standard v2.0. Before creating any new file:

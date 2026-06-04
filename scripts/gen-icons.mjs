@@ -1,10 +1,10 @@
 // gen-icons.mjs
 // Rasterizes the Wren icon to PNG at the sizes the PWA, extension, and CWS
 // need. Pure Node (zlib only) - no native image deps so the build is portable.
-// Geometry mirrors public/icon.svg: chestnut gradient rounded tile with a
-// white sticky-note glyph (pentagon body + folded corner flap), a 2px black
-// outline, and a compact bold "W" lettermark (indigo fill, 2-unit black
-// outline) centered inside the note body. Two canvas variants:
+// Geometry mirrors public/icon.svg: a flat terracotta rounded tile with a cream
+// "perched wren" mark (overlapping circles for head/shoulder/body + a cocked
+// tail polygon + a pointed beak), a tile-color wing groove carved into the
+// breast, and a single indigo eye. Two canvas variants:
 //   - standard: 12.5% transparent padding, rounded tile (favicons, PWA "any")
 //   - maskable: full-bleed tile, no corner radius (Android adaptive + apple-touch)
 
@@ -16,43 +16,57 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
 
-// --- color tokens (see wren-sow.md)
-const TOP_STOP = [0xa8, 0x78, 0x52]; // #A87852 lifted chestnut
-const BOTTOM_STOP = [0x8b, 0x5e, 0x3c]; // #8B5E3C --wr-accent
-const WHITE = [0xff, 0xff, 0xff];
-const FLAP_FILL = [0xf7, 0xf0, 0xea]; // #F7F0EA --wr-accent-soft
-const STROKE = [0x0f, 0x16, 0x26]; // #0F1626 near-black
-const W_FILL = [0x2b, 0x4a, 0x8b]; // #2B4A8B BwB umbrella indigo (W lettermark)
+// --- color tokens (mirror public/icon.svg)
+const TILE = [0xc2, 0x69, 0x3c]; // #C2693C terracotta tile
+const CREAM = [0xf7, 0xef, 0xe1]; // #F7EFE1 wren body
+const WING = [0xc2, 0x69, 0x3c]; // wing groove = tile color carved into the breast
+const EYE = [0x2b, 0x4a, 0x8b]; // #2B4A8B BwB indigo eye
 
-// --- SVG-space geometry (192-unit inner group, mirrors public/icon.svg)
-const SVG_UNIT = 192;
-const TILE_RADIUS_UNIT = 42;
-const STROKE_WIDTH_UNIT = 2;
+// --- geometry in 1024-unit tile space (mirrors public/icon.svg viewBox)
+const SVG_UNIT = 1024;
+const TILE_RADIUS_RATIO = 230 / 1024;
 
-const PENTAGON_UNIT = [
-  [54, 50],
-  [111, 50],
-  [142, 81],
-  [142, 146],
-  [54, 146],
+// Cocked tail and pointed beak are drawn with a round-join stroke of the same
+// fill, which optically inflates the polygon; we reproduce that by treating a
+// pixel as "inside" when it is within (strokeWidth / 2) of the polygon outline.
+const TAIL_UNIT = [
+  [632, 548],
+  [792, 176],
+  [860, 214],
+  [724, 600],
 ];
-const FLAP_UNIT = [
-  [111, 50],
-  [142, 81],
-  [111, 81],
+const TAIL_STROKE_UNIT = 40;
+const BEAK_UNIT = [
+  [310, 420],
+  [150, 470],
+  [310, 520],
 ];
+const BEAK_STROKE_UNIT = 18;
 
-// Compact bold W lettermark, centered at x=98 (note body visual center).
-// Rendered as two stacked stroked polylines: black underlay + indigo overlay.
-const W_POLYLINE_UNIT = [
-  [76, 96],
-  [87, 130],
-  [98, 110],
-  [109, 130],
-  [120, 96],
-];
-const W_OUTER_STROKE_UNIT = 17;
-const W_INNER_STROKE_UNIT = 13;
+const BODY_UNIT = [520, 632, 238]; // cx, cy, r
+const SHOULDER_UNIT = [516, 500, 120];
+const HEAD_UNIT = [396, 470, 166];
+const EYE_UNIT = [352, 456, 30];
+
+// Wing groove: quadratic bezier M452,560 Q600,604 604,736, round-cap stroke 26.
+const WING_P0 = [452, 560];
+const WING_C = [600, 604];
+const WING_P1 = [604, 736];
+const WING_STROKE_UNIT = 26;
+
+function flattenQuad(p0, c, p1, n) {
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    const mt = 1 - t;
+    pts.push([
+      mt * mt * p0[0] + 2 * mt * t * c[0] + t * t * p1[0],
+      mt * mt * p0[1] + 2 * mt * t * c[1] + t * t * p1[1],
+    ]);
+  }
+  return pts;
+}
+const WING_POLY_UNIT = flattenQuad(WING_P0, WING_C, WING_P1, 28);
 
 function pointInPoly(x, y, poly) {
   let inside = false;
@@ -74,6 +88,12 @@ function inRoundedRect(x, y, rx, ry, rw, rh, r) {
   const dx = x - cx;
   const dy = y - cy;
   return dx * dx + dy * dy <= r * r;
+}
+
+function inCircle(x, y, c) {
+  const dx = x - c[0];
+  const dy = y - c[1];
+  return dx * dx + dy * dy <= c[2] * c[2];
 }
 
 function distToSegment(px, py, ax, ay, bx, by) {
@@ -108,20 +128,6 @@ function distToPolyline(x, y, poly) {
   return minD;
 }
 
-function lerp(a, b, t) {
-  return a + (b - a) * t;
-}
-
-function gradientColor(t) {
-  if (t < 0) t = 0;
-  else if (t > 1) t = 1;
-  return [
-    Math.round(lerp(TOP_STOP[0], BOTTOM_STOP[0], t)),
-    Math.round(lerp(TOP_STOP[1], BOTTOM_STOP[1], t)),
-    Math.round(lerp(TOP_STOP[2], BOTTOM_STOP[2], t)),
-  ];
-}
-
 function buildContext(size, variant) {
   let tileX, tileY, tileW, tileH, tileR;
   if (variant === 'standard') {
@@ -129,7 +135,7 @@ function buildContext(size, variant) {
     tileY = 0.125 * size;
     tileW = 0.75 * size;
     tileH = 0.75 * size;
-    tileR = 0.22 * tileW;
+    tileR = TILE_RADIUS_RATIO * tileW;
   } else {
     tileX = 0;
     tileY = 0;
@@ -139,15 +145,19 @@ function buildContext(size, variant) {
   }
   const scale = tileW / SVG_UNIT;
   const mapPoly = (poly) => poly.map(([px, py]) => [tileX + px * scale, tileY + py * scale]);
+  const mapCircle = (c) => [tileX + c[0] * scale, tileY + c[1] * scale, c[2] * scale];
   return {
-    tileX, tileY, tileW, tileH, tileR,
-    pentagon: mapPoly(PENTAGON_UNIT),
-    flap: mapPoly(FLAP_UNIT),
-    wPolyline: mapPoly(W_POLYLINE_UNIT),
-    wOuterR: (W_OUTER_STROKE_UNIT * scale) / 2,
-    wInnerR: (W_INNER_STROKE_UNIT * scale) / 2,
-    strokeR: (STROKE_WIDTH_UNIT * scale) / 2,
-    variant,
+    tileX, tileY, tileW, tileH, tileR, variant,
+    tail: mapPoly(TAIL_UNIT),
+    tailR: (TAIL_STROKE_UNIT * scale) / 2,
+    beak: mapPoly(BEAK_UNIT),
+    beakR: (BEAK_STROKE_UNIT * scale) / 2,
+    body: mapCircle(BODY_UNIT),
+    shoulder: mapCircle(SHOULDER_UNIT),
+    head: mapCircle(HEAD_UNIT),
+    eye: mapCircle(EYE_UNIT),
+    wing: mapPoly(WING_POLY_UNIT),
+    wingR: (WING_STROKE_UNIT * scale) / 2,
   };
 }
 
@@ -157,18 +167,20 @@ function samplePixel(x, y, ctx) {
   } else {
     if (x < ctx.tileX || y < ctx.tileY || x > ctx.tileX + ctx.tileW || y > ctx.tileY + ctx.tileH) return null;
   }
-  const dPent = distToPolygonOutline(x, y, ctx.pentagon);
-  const dFlap = distToPolygonOutline(x, y, ctx.flap);
-  if (dPent <= ctx.strokeR || dFlap <= ctx.strokeR) return STROKE;
-  if (pointInPoly(x, y, ctx.flap)) return FLAP_FILL;
-  if (pointInPoly(x, y, ctx.pentagon)) {
-    const dW = distToPolyline(x, y, ctx.wPolyline);
-    if (dW <= ctx.wInnerR) return W_FILL;
-    if (dW <= ctx.wOuterR) return STROKE;
-    return WHITE;
+  const inTail = pointInPoly(x, y, ctx.tail) || distToPolygonOutline(x, y, ctx.tail) <= ctx.tailR;
+  const inBeak = pointInPoly(x, y, ctx.beak) || distToPolygonOutline(x, y, ctx.beak) <= ctx.beakR;
+  const inBird =
+    inTail ||
+    inBeak ||
+    inCircle(x, y, ctx.body) ||
+    inCircle(x, y, ctx.shoulder) ||
+    inCircle(x, y, ctx.head);
+  if (inBird) {
+    if (inCircle(x, y, ctx.eye)) return EYE;
+    if (distToPolyline(x, y, ctx.wing) <= ctx.wingR) return WING;
+    return CREAM;
   }
-  const t = (y - ctx.tileY) / ctx.tileH;
-  return gradientColor(t);
+  return TILE;
 }
 
 function renderIcon(size, variant, ss = 4) {
@@ -201,76 +213,6 @@ function renderIcon(size, variant, ss = 4) {
   return out;
 }
 
-function renderOgCard(w, h, ss = 3) {
-  const hiW = w * ss;
-  const hiH = h * ss;
-  const out = new Uint8Array(hiW * hiH * 4);
-  for (let y = 0; y < hiH; y++) {
-    const [gr, gg, gb] = gradientColor(y / hiH);
-    for (let x = 0; x < hiW; x++) {
-      const idx = (y * hiW + x) * 4;
-      out[idx] = gr; out[idx + 1] = gg; out[idx + 2] = gb; out[idx + 3] = 255;
-    }
-  }
-  const noteH = 0.5 * hiH;
-  const noteW = noteH * (88 / 96);
-  const bx = (hiW - noteW) / 2;
-  const by = (hiH - noteH) / 2;
-  const sx = noteW / 88;
-  const sy = noteH / 96;
-  const mapTo = (poly) => poly.map(([px, py]) => [bx + (px - 54) * sx, by + (py - 50) * sy]);
-  const pent = mapTo(PENTAGON_UNIT);
-  const flap = mapTo(FLAP_UNIT);
-  const wPoly = mapTo(W_POLYLINE_UNIT);
-  const strokeR = (STROKE_WIDTH_UNIT * sx) / 2;
-  const wOuterR = (W_OUTER_STROKE_UNIT * sx) / 2;
-  const wInnerR = (W_INNER_STROKE_UNIT * sx) / 2;
-  const halfStep = 1 / ss;
-  for (let y = Math.floor(by) - 2; y < Math.ceil(by + noteH) + 2; y++) {
-    for (let x = Math.floor(bx) - 2; x < Math.ceil(bx + noteW) + 2; x++) {
-      let opaque = 0;
-      let r = 0, g = 0, b = 0;
-      for (let dy = 0; dy < ss; dy++) {
-        for (let dx = 0; dx < ss; dx++) {
-          const sxp = x + (dx + 0.5) * halfStep;
-          const syp = y + (dy + 0.5) * halfStep;
-          const dPent = distToPolygonOutline(sxp, syp, pent);
-          const dFlap = distToPolygonOutline(sxp, syp, flap);
-          let c = null;
-          if (dPent <= strokeR || dFlap <= strokeR) c = STROKE;
-          else if (pointInPoly(sxp, syp, flap)) c = FLAP_FILL;
-          else if (pointInPoly(sxp, syp, pent)) {
-            const dW = distToPolyline(sxp, syp, wPoly);
-            if (dW <= wInnerR) c = W_FILL;
-            else if (dW <= wOuterR) c = STROKE;
-            else c = WHITE;
-          }
-          if (c) { opaque++; r += c[0]; g += c[1]; b += c[2]; }
-        }
-      }
-      if (opaque > 0 && x >= 0 && y >= 0 && x < hiW && y < hiH) {
-        const idx = (y * hiW + x) * 4;
-        const a = opaque / (ss * ss);
-        out[idx] = Math.round(out[idx] * (1 - a) + (r / opaque) * a);
-        out[idx + 1] = Math.round(out[idx + 1] * (1 - a) + (g / opaque) * a);
-        out[idx + 2] = Math.round(out[idx + 2] * (1 - a) + (b / opaque) * a);
-      }
-    }
-  }
-  const ruleY = by + noteH + hiH * 0.06;
-  const ruleH = Math.max(2, hiH * 0.012);
-  const ruleW = noteW * 0.8;
-  const rxr = (hiW - ruleW) / 2;
-  for (let y = Math.floor(ruleY); y < ruleY + ruleH; y++) {
-    for (let x = Math.floor(rxr); x < rxr + ruleW; x++) {
-      if (x < 0 || y < 0 || x >= hiW || y >= hiH) continue;
-      const idx = (y * hiW + x) * 4;
-      out[idx] = FLAP_FILL[0]; out[idx + 1] = FLAP_FILL[1]; out[idx + 2] = FLAP_FILL[2]; out[idx + 3] = 255;
-    }
-  }
-  return boxDownsampleBuffer(out, hiW, hiH, ss);
-}
-
 function boxDownsampleBuffer(buf, hiW, hiH, ss) {
   const w = hiW / ss;
   const h = hiH / ss;
@@ -293,6 +235,44 @@ function boxDownsampleBuffer(buf, hiW, hiH, ss) {
     }
   }
   return out;
+}
+
+// Social card: flat terracotta field with the wren centered. The wren is drawn
+// as a maskable (full-bleed) square whose own background is the same flat
+// terracotta, so it composites seamlessly onto the card.
+function renderOgCard(w, h, ss = 3) {
+  const hiW = w * ss;
+  const hiH = h * ss;
+  const out = new Uint8Array(hiW * hiH * 4);
+  for (let i = 0; i < hiW * hiH; i++) {
+    const o = i * 4;
+    out[o] = TILE[0]; out[o + 1] = TILE[1]; out[o + 2] = TILE[2]; out[o + 3] = 255;
+  }
+  const S = Math.round(hiH * 0.78);
+  const ctx = buildContext(S, 'maskable');
+  const offX = Math.round((hiW - S) / 2);
+  const offY = Math.round((hiH - S) / 2);
+  const sub = 3;
+  for (let yy = 0; yy < S; yy++) {
+    for (let xx = 0; xx < S; xx++) {
+      let r = 0, g = 0, b = 0;
+      for (let sy = 0; sy < sub; sy++) {
+        for (let sx = 0; sx < sub; sx++) {
+          const c = samplePixel(xx + (sx + 0.5) / sub, yy + (sy + 0.5) / sub, ctx) || TILE;
+          r += c[0]; g += c[1]; b += c[2];
+        }
+      }
+      const n = sub * sub;
+      const px = offX + xx;
+      const py = offY + yy;
+      if (px < 0 || py < 0 || px >= hiW || py >= hiH) continue;
+      const o = (py * hiW + px) * 4;
+      out[o] = Math.round(r / n);
+      out[o + 1] = Math.round(g / n);
+      out[o + 2] = Math.round(b / n);
+    }
+  }
+  return boxDownsampleBuffer(out, hiW, hiH, ss);
 }
 
 const CRC_TABLE = (() => {

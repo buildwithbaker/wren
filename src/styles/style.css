@@ -12,7 +12,7 @@
   --wr-radius-panel: 12px;
   --wr-radius-sm: 6px;
 
-  --wr-ink: #2a3540; /* text on note paper (light mode) */
+  --wr-ink: #2E2A24; /* text on note paper (light mode) - warm charcoal */
 
   /* note paper palette (warm, muted - approximates real Post-it stock) */
   --wr-note-default: #E8E5DF;
@@ -27,9 +27,9 @@
      (custom-property substitution happens at compute time on the declaring
      element, so it must live where --wr-note-bg is actually set). */
 
-  --wr-shadow-sm: 0 1px 2px rgba(20, 30, 45, 0.08);
-  --wr-shadow-md: 0 4px 14px rgba(20, 30, 45, 0.12);
-  --wr-shadow-pop: 0 8px 28px rgba(20, 30, 45, 0.22);
+  --wr-shadow-sm: 0 1px 2px rgba(48, 34, 20, 0.08);
+  --wr-shadow-md: 0 4px 14px rgba(48, 34, 20, 0.12);
+  --wr-shadow-pop: 0 8px 28px rgba(48, 34, 20, 0.22);
 
   --wr-trans: 140ms ease;
 }
@@ -41,12 +41,17 @@
   --wr-primary-soft: #E8EDF7;
 }
 
-/* ---- Wren brown (per-product accent, ties to app icon) ---------------- */
+/* ---- Wren terracotta (per-product accent, matches the app icon) ------- */
+/* Token name kept as --wr-brown so existing references don't churn. Value is
+   now terracotta, the icon family. #A8542C is AA both as a white-text fill
+   (5.29:1) and as text on cream (4.84:1 on panel). The brighter icon tile
+   #C2693C lives only in the focus-glow rgba below. */
 :root {
-  --wr-brown: #8B5E3C;
-  --wr-brown-hover: #6F4A2D;
-  --wr-brown-soft: #F5EDE3;
-  --wr-brown-ring: rgba(139, 94, 60, 0.45);
+  --wr-brown: #A8542C;
+  --wr-brown-hover: #934523;
+  --wr-brown-soft: #F6E7DB;
+  --wr-brown-ring: rgba(194, 105, 60, 0.40);
+  --wr-on-accent: #FFFFFF;
 }
 
 /* ---- App accent (per-app override block, multi-app design system) ------ */
@@ -65,17 +70,17 @@
   --wr-bwb-link: var(--wr-primary);
 }
 
-/* ---- Light chrome (muted, warm-leaning to complement brown accent) ---- */
+/* ---- Light chrome (warm cream, matches the icon's cream + terracotta) -- */
 :root {
-  --wr-page-bg:       #EEEAE4;
-  --wr-panel-bg:      #FAF7F2;
-  --wr-panel-2:       #F2EDE6;
-  --wr-panel-text:    #2a3540;
-  --wr-panel-muted:   #6b7785;
-  --wr-border:        #E0D9CE;
-  --wr-border-strong: #C9C0B2;
-  --wr-field-bg:      #F0EAE0;
-  --wr-paper-muted:   rgba(42, 53, 64, 0.55);
+  --wr-page-bg:       #EFE7DA;
+  --wr-panel-bg:      #FAF4EA;
+  --wr-panel-2:       #F1E8DB;
+  --wr-panel-text:    #2E2A24;
+  --wr-panel-muted:   #7A7064;
+  --wr-border:        #E5DACA;
+  --wr-border-strong: #CDBFA9;
+  --wr-field-bg:      #F1E8DB;
+  --wr-paper-muted:   rgba(46, 42, 36, 0.55);
 }
 
 /* ---- Dark chrome (note paper stays light by design) -------------------- */
@@ -86,21 +91,22 @@
     --wr-primary: #7FA0E8;
     --wr-primary-hover: #96B3EE;
     --wr-primary-soft: #1A2644;
-    --wr-brown: #D4A87C;
-    --wr-brown-hover: #E0B98F;
-    --wr-brown-soft: #3D2E22;
-    --wr-brown-ring: rgba(212, 168, 124, 0.45);
-    --wr-page-bg: #11151b;
-    --wr-panel-bg: #1a212b;
-    --wr-panel-2: #222b37;
-    --wr-panel-text: #e6ebf2;
-    --wr-panel-muted: #9aa6b4;
-    --wr-border: #2b3542;
-    --wr-border-strong: #3a4656;
-    --wr-field-bg: #222b37;
-    --wr-shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5);
-    --wr-shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.6);
-    --wr-ink: #E6EBF2;
+    --wr-brown: #E0A37A;
+    --wr-brown-hover: #E8B48E;
+    --wr-brown-soft: #36251A;
+    --wr-brown-ring: rgba(224, 163, 122, 0.45);
+    --wr-on-accent: #2A1C12;
+    --wr-page-bg: #14110E;
+    --wr-panel-bg: #1E1A15;
+    --wr-panel-2: #272118;
+    --wr-panel-text: #ECE6DC;
+    --wr-panel-muted: #A89C8C;
+    --wr-border: #332B22;
+    --wr-border-strong: #443A2C;
+    --wr-field-bg: #211C16;
+    --wr-shadow-md: 0 4px 14px rgba(0, 0, 0, 0.55);
+    --wr-shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.65);
+    --wr-ink: #ECE6DC;
     --wr-note-default: #1F252E;
     --wr-note-slate: #1F2A3C;
     --wr-note-amber: #3D3528;
@@ -115,21 +121,22 @@
   --wr-primary: #7FA0E8;
   --wr-primary-hover: #96B3EE;
   --wr-primary-soft: #1A2644;
-  --wr-brown: #D4A87C;
-  --wr-brown-hover: #E0B98F;
-  --wr-brown-soft: #3D2E22;
-  --wr-brown-ring: rgba(212, 168, 124, 0.45);
-  --wr-page-bg: #11151b;
-  --wr-panel-bg: #1a212b;
-  --wr-panel-2: #222b37;
-  --wr-panel-text: #e6ebf2;
-  --wr-panel-muted: #9aa6b4;
-  --wr-border: #2b3542;
-  --wr-border-strong: #3a4656;
-  --wr-field-bg: #222b37;
-  --wr-shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5);
-  --wr-shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.6);
-  --wr-ink: #E6EBF2;
+  --wr-brown: #E0A37A;
+  --wr-brown-hover: #E8B48E;
+  --wr-brown-soft: #36251A;
+  --wr-brown-ring: rgba(224, 163, 122, 0.45);
+  --wr-on-accent: #2A1C12;
+  --wr-page-bg: #14110E;
+  --wr-panel-bg: #1E1A15;
+  --wr-panel-2: #272118;
+  --wr-panel-text: #ECE6DC;
+  --wr-panel-muted: #A89C8C;
+  --wr-border: #332B22;
+  --wr-border-strong: #443A2C;
+  --wr-field-bg: #211C16;
+  --wr-shadow-md: 0 4px 14px rgba(0, 0, 0, 0.55);
+  --wr-shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.65);
+  --wr-ink: #ECE6DC;
   --wr-note-default: #1F252E;
   --wr-note-slate: #1F2A3C;
   --wr-note-amber: #3D3528;
@@ -263,7 +270,7 @@ button {
   border: 0;
   border-radius: var(--wr-radius-sm);
   background: var(--wr-accent);
-  color: #fff;
+  color: var(--wr-on-accent);
   font-weight: 600;
   font-size: 14px;
   box-shadow: var(--wr-shadow-sm);
@@ -389,7 +396,7 @@ button {
   padding: 0 5px;
   border-radius: 9px;
   background: var(--wr-accent);
-  color: #fff;
+  color: var(--wr-on-accent);
   font-size: 11px;
   font-weight: 700;
 }
@@ -430,7 +437,7 @@ button {
   padding: 1px 5px;
   border-radius: 4px;
   background: var(--wr-accent);
-  color: #fff;
+  color: var(--wr-on-accent);
 }
 .sc-inbox-card-title {
   font-weight: 650;
