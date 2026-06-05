@@ -1,5 +1,6 @@
-# Cloudflare Pages security headers. Applied to every response served from
-# https://wren-ckn.pages.dev. The CSP mirrors the <meta> fallback in
+# Cloudflare Pages security headers. Applied to every response served by the
+# wren-ckn Pages project (https://wren.buildwithbaker.io and
+# https://wren-ckn.pages.dev). The CSP mirrors the <meta> fallback in
 # index.html and additionally carries directives that meta tags can't express
 # (frame-ancestors). See docs/internal/architecture.md for the Drive/GIS CSP
 # rationale (KB Module 05, P1.7).

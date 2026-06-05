@@ -182,7 +182,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     if (!isExtensionPopup()) return;
     const a = document.createElement('a');
     a.className = 'sc-open-full-app';
-    a.href = 'https://wren-ckn.pages.dev/';
+    a.href = 'https://wren.buildwithbaker.io/';
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
     a.title = 'Open Wren in a full browser tab';
@@ -201,7 +201,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     btn.className = 'sc-btn sc-btn--primary';
     btn.textContent = 'Open Full App';
     btn.addEventListener('click', () => {
-      window.open('https://wren-ckn.pages.dev', '_blank', 'noopener');
+      window.open('https://wren.buildwithbaker.io', '_blank', 'noopener');
     });
     return btn;
   }

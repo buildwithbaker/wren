@@ -14,8 +14,9 @@
 // P1.7 (CSP includes accounts.google.com), P2c.1 (popup-blocker backstop).
 
 // OAuth Client ID for Wren. Web application, Authorized JavaScript origins:
-//   http://localhost:5173, http://localhost, https://wren-ckn.pages.dev
-//   (Cloudflare Pages production origin).
+//   http://localhost:5173, http://localhost, https://wren.buildwithbaker.io
+//   (primary production origin), https://wren-ckn.pages.dev (the underlying
+//   Cloudflare Pages project domain — still registered and resolving).
 // Created in Google Cloud project "Wren" on 2026-05-26.
 const DRIVE_CLIENT_ID =
   '1032576056803-k8kd3hb2lnl4u6qs6416q9rfdhhce9kk.apps.googleusercontent.com';

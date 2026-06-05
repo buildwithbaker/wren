@@ -28,9 +28,10 @@ Wren can optionally sync the chosen folder to Google Drive (scope
 (GIS Token Model is a public-client flow). To run Drive sync against your own
 Google Cloud project, replace that ID and register your **Authorized JavaScript
 origins** to include both `http://localhost:5173` (dev) and your production
-origin. Wren is hosted on **Cloudflare Pages** at `https://wren-ckn.pages.dev`,
-which is the registered production origin. OAuth fails from any origin not on
-that list.
+origin. Wren is served at **`https://wren.buildwithbaker.io`** (the primary
+production origin), a custom domain on the `wren-ckn` **Cloudflare Pages**
+project; both that host and `https://wren-ckn.pages.dev` are registered
+production origins. OAuth fails from any origin not on that list.
 
 > Use `npm run preview` (not `npm run dev`) to exercise the **production service
 > worker** — the SW is only enabled in production builds, so offline behaviour

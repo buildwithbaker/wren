@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Local-first sticky notes. Rich-text notes saved as Markdown files in a folder you choose. No cloud, no account.",
   "author": "Adam Baker / Build with Baker",
-  "homepage_url": "https://wren-ckn.pages.dev",
+  "homepage_url": "https://wren.buildwithbaker.io",
   "minimum_chrome_version": "86",
   "action": {
     "default_popup": "popup.html",
