@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://wren-ckn.pages.dev/sitemap.xml
+Sitemap: https://wren.buildwithbaker.io/sitemap.xml
