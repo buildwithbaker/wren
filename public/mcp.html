@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wren MCP server — read your notes with Claude</title>
+<meta name="description" content="The Wren MCP server lets Claude Desktop search, read, and capture your Wren notes — locally, with nothing uploaded.">
+<link rel="canonical" href="https://wren.buildwithbaker.io/mcp.html" />
+<style>
+  :root {
+    --ink: #2E2A24;
+    --muted: #7A7064;
+    --brown: #A8542C;
+    --indigo: #2B4A8B;
+    --bg: #FAF4EA;
+    --panel: #FFFFFF;
+    --border: #E5DACA;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .container { max-width: 720px; margin: 0 auto; padding: 48px 24px; }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .brand-mark { width: 34px; height: 34px; border-radius: 8px; }
+  .brand-name { font-weight: 700; font-size: 22px; letter-spacing: -0.01em; color: var(--brown); }
+  h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; margin: 24px 0 8px; }
+  .lede { color: var(--muted); font-size: 17px; margin-bottom: 28px; }
+  h2 { font-size: 20px; font-weight: 600; margin: 32px 0 12px; color: var(--ink); border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+  p, li { color: var(--ink); }
+  a { color: var(--indigo); text-decoration: none; font-weight: 500; }
+  a:hover { text-decoration: underline; }
+  ul, ol { padding-left: 24px; }
+  li { margin: 8px 0; }
+  ol.steps li { margin: 12px 0; }
+  code { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 0.9em; background: #F1E8DB; padding: 1px 5px; border-radius: 4px; }
+  .callout { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--brown); border-radius: 0 12px 12px 0; padding: 16px 20px; margin: 20px 0; }
+  .callout strong { color: var(--brown); }
+  .q { font-weight: 600; margin: 20px 0 4px; }
+  .footer { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; }
+  .footer a { color: var(--indigo); }
+  .kofi { display: inline-block; background: #FF5E5B; color: #fff; padding: 3px 10px; border-radius: 12px; font-weight: 600; font-size: 13px; text-decoration: none; }
+  .kofi:hover { background: #E54845; text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="brand">
+    <img class="brand-mark" src="/icon.svg" alt="Wren logo" width="34" height="34">
+    <span class="brand-name">Wren</span>
+  </div>
+
+  <h1>Wren MCP server</h1>
+  <p class="lede">A small companion app that lets Claude search, read, and capture your Wren notes — running entirely on your own computer.</p>
+
+  <div class="callout">
+    <strong>Short version:</strong> install it in Claude Desktop, point it at your Wren notes folder, and you can ask Claude things like "what are my open todos?" or "make a note that says call the vendor Tuesday." Your notes never leave your computer.
+  </div>
+
+  <h2>What it does</h2>
+  <p>Once installed, Claude Desktop can work with your actual notes — no copy-pasting. The server exposes five things:</p>
+  <ul>
+    <li><strong>Search</strong> your notes by text, tag, or due date.</li>
+    <li><strong>Read</strong> a specific note in full.</li>
+    <li><strong>List</strong> your notes, or pull the whole catalog at once.</li>
+    <li><strong>Create</strong> a new note — placed in a staging area (<code>_inbox</code>) for you to review in Wren before it joins your main notes.</li>
+  </ul>
+  <p>It cannot edit or delete your existing notes — by design.</p>
+
+  <h2>Your notes stay on your computer</h2>
+  <p>The Wren MCP server is a local program. It reads the notes folder you point it at, on your own disk, and hands results to Claude over a local connection on your machine. It has no server of its own, requires no Wren account or login, and uploads nothing. The only data that leaves your computer is whatever you choose to share with Claude in a conversation — the same as any normal Claude chat. Full details in the <a href="/privacy.html">Wren privacy policy</a>.</p>
+
+  <h2>Requirements</h2>
+  <ul>
+    <li>The <strong>Claude Desktop</strong> app (macOS or Windows). Local extensions like this run in Claude Desktop only — not the web or mobile apps.</li>
+    <li>A <strong>Wren notes folder</strong> on your computer (the folder you chose in Wren). If you use Wren's Google Drive backend with Drive for Desktop in mirror mode, point it at that synced folder.</li>
+  </ul>
+
+  <h2>Install</h2>
+  <ol class="steps">
+    <li>Download <code>Wren.mcpb</code>.</li>
+    <li>Open <strong>Claude Desktop → Settings → Extensions</strong>.</li>
+    <li>Drag <code>Wren.mcpb</code> into the Extensions area (or use the install control).</li>
+    <li>When prompted, set the <strong>notes folder</strong> to your Wren notes folder.</li>
+    <li>Click <strong>Install</strong>, then make sure the <strong>Wren</strong> extension is enabled in a new chat.</li>
+  </ol>
+  <p>To confirm it works: in a Claude Desktop chat, say "make a note that says MCP test," then open Wren and look in the Inbox — your new note will be there to keep or discard.</p>
+
+  <h2>FAQ</h2>
+
+  <p class="q">Which Claude apps can I use it with?</p>
+  <p>Claude Desktop (macOS / Windows) only. Local extensions can't run in Claude.ai on the web, the mobile apps, or Cowork.</p>
+
+  <p class="q">Can it change or delete my existing notes?</p>
+  <p>No. It can read your notes and create new ones (into the <code>_inbox</code> staging folder). It never edits or deletes notes you already have.</p>
+
+  <p class="q">Does it need a login?</p>
+  <p>No login and no account. You point it at a folder — that's the whole setup.</p>
+
+  <p class="q">Where do AI-created notes go?</p>
+  <p>Into a staging area (the <code>_inbox</code> folder). You review each one in Wren and decide whether to keep (promote) or discard it. They never silently join your main notes.</p>
+
+  <p class="q">Why isn't it built into the Wren app or extension?</p>
+  <p>Browser extensions and web apps can't run this kind of local program — it has to be a separate small app. It just reads the same notes folder Wren writes to, so it's the same notes either way.</p>
+
+  <div class="footer">
+    <p>Wren is built by Adam Baker under the Build with Baker creator brand. Questions or issues: <a href="https://github.com/buildwithbaker/wren-mcp/issues" target="_blank" rel="noopener">github.com/buildwithbaker/wren-mcp/issues</a>.</p>
+    <p><a href="https://wren.buildwithbaker.io">Wren</a> &middot; <a href="/privacy.html">Privacy</a> &middot; <a href="https://buildwithbaker.com" target="_blank" rel="noopener">Build with Baker</a> &middot; <a class="kofi" href="https://ko-fi.com/abaker421" target="_blank" rel="noopener">Support on Ko-fi</a></p>
+  </div>
+
+</div>
+</body>
+</html>
