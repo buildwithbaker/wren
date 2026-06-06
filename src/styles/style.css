@@ -1000,7 +1000,7 @@ button {
 }
 .sc-hint {
   font-size: 13px;
-  color: #6b7280;
+  color: var(--wr-panel-muted);
   margin-top: 16px;
   line-height: 1.4;
   max-width: 36ch;
