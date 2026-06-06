@@ -1357,7 +1357,14 @@ export function createApp({ root, enableServiceWorker = false }) {
         confirmLabel: 'Switch',
       });
       if (!ok) return;
-      await clearStoredBackend();
+      // Set the TARGET backend explicitly instead of clearing the preference.
+      // clearStoredBackend() let resolveBackend()'s fs-migration heuristic
+      // re-infer "fs" from the leftover directory handle, so a local->Drive
+      // switch silently snapped back to local and the Drive option never
+      // appeared. Setting the target deterministically lands on it (Drive boot
+      // then routes to sign-in if needed).
+      const targetBackend = isDrive ? ADAPTER_TYPES.FS : ADAPTER_TYPES.DRIVE;
+      await setStoredBackend(targetBackend);
       window.location.reload();
     });
     pop.appendChild(switchItem);
