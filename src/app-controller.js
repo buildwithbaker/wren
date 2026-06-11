@@ -42,6 +42,9 @@ import { confirmDialog } from './ui/dialog.js';
 import { addTagToNote, parseTag, getAllTags, getAllNamespaces } from './tags/tag-parser.js';
 import { getStoredTheme, cycleTheme, initTheme } from './theme.js';
 import { getSyncState, setSyncState, clearSyncState } from './sync/syncStateStore.js';
+import { createBroadcast } from './sync/broadcast.js';
+import { openSticky } from './sticky/opener.js';
+import { readRegistry, clearRegistry } from './sticky/registry.js';
 import {
   buildIndexJson,
   buildIndexMarkdown,
@@ -73,6 +76,9 @@ export function createApp({ root, enableServiceWorker = false }) {
   let viewToggleEl = null;
   let viewMode = loadViewMode(); // 'list' | 'kanban'
   let lastEffectiveMode = null;
+  // Live cross-window note sync (Sticky Float Phase 2). Created once on first
+  // renderApp; peers' saves refresh the list/editor here.
+  let broadcast = null;
 
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
@@ -598,6 +604,9 @@ export function createApp({ root, enableServiceWorker = false }) {
     driveBannerEl = buildDriveBanner();
     if (driveBannerEl) appEl.appendChild(driveBannerEl);
 
+    const restoreBar = buildRestoreBar();
+    if (restoreBar) appEl.appendChild(restoreBar);
+
     const sidebar = document.createElement('aside');
     sidebar.className = 'sc-sidebar';
     sidebar.appendChild(buildBrand());
@@ -606,6 +615,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     list = createNotesList({
       onSelect: (noteId) => openNote(noteId),
       onNew: () => handleNew(),
+      onPopOut: (noteId) => handlePopOut(noteId),
       onInboxSelect: (id) => openInboxNote(id),
       onInboxPromote: (id) => handlePromoteInbox(id),
       onInboxDiscard: (id) => handleDiscardInbox(id),
@@ -623,6 +633,7 @@ export function createApp({ root, enableServiceWorker = false }) {
         appEl.dataset.view = 'list';
         list.setActive(null);
       },
+      onPopOut: (note) => handlePopOut(note),
       getTagSuggestions: tagSuggestions,
       showBack: true,
     });
@@ -644,8 +655,131 @@ export function createApp({ root, enableServiceWorker = false }) {
     root.append(appEl, buildFooter());
 
     applyViewMode();
+    setupBroadcast();
     await loadNotes();
     if (effectiveViewMode() === 'kanban') kanbanView.refresh();
+  }
+
+  /* ---- Cross-window sync (Sticky Float Phase 2) ----------------------- */
+
+  // Create the shared channel once (renderApp may run again on Drive reconnect).
+  function setupBroadcast() {
+    if (broadcast) return;
+    broadcast = createBroadcast();
+    broadcast.onNoteSaved((msg) => handleRemoteNoteSaved(msg));
+  }
+
+  // A peer window (a sticky, or another tab) saved a note. Re-read it via the
+  // adapter, refresh the in-memory model + sidebar + board, and — if it's the
+  // note open in the editor with no pending local edits — re-open it silently.
+  // Last-write-wins; no conflict UI (consistent with Drive Phase 2b.1).
+  async function handleRemoteNoteSaved(msg) {
+    if (!adapter || isDriveDisconnected()) return;
+    const target =
+      notes.find((n) => n.id === msg.id) ||
+      (msg.wrenId ? notes.find((n) => n.wrenId === msg.wrenId) : null);
+    if (!target) return; // unknown note (e.g. created elsewhere) — caught on next load
+    try {
+      const { content, revision, name } = await adapter.readNote(target.id);
+      const parsed = parseNote(content, target.id);
+      const idx = notes.findIndex((n) => n.id === target.id);
+      if (idx === -1) return;
+      const updated = {
+        ...notes[idx],
+        wrenId: parsed.wrenId || notes[idx].wrenId,
+        filename: name || notes[idx].filename,
+        title: parsed.title,
+        body: parsed.body,
+        color: parsed.color,
+        created: parsed.created || notes[idx].created,
+        modified: parsed.modified || notes[idx].modified,
+        tags: parsed.tags || [],
+        summary: parsed.summary || '',
+        due: parsed.due || '',
+        firstLine: firstLineOf(parsed.body),
+        revision: revision || notes[idx].revision,
+      };
+      notes[idx] = updated;
+      notes.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
+      list.setNotes(notes);
+      list.setActive(noteEditor.getNote()?.id || null);
+      if (effectiveViewMode() === 'kanban') kanbanView.refresh();
+      const open = noteEditor.getNote();
+      if (open && open.id === updated.id && !noteEditor.hasPendingSave()) {
+        await noteEditor.openNote(updated);
+        list.setActive(updated.id);
+      }
+      regenerateIndex();
+    } catch (err) {
+      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
+        showDriveDisconnected();
+        return;
+      }
+      console.warn('Remote note-saved refresh failed', err);
+    }
+  }
+
+  /* ---- Pop-out (Sticky Float Phase 2) --------------------------------- */
+
+  // Open a note in its own floating sticky window. Accepts a note object (from
+  // the editor header button) or a note id (from a sidebar card). Flushes the
+  // editor first when popping out the currently-open note, then returns the
+  // main editor to the empty/list state — the note now "lives" in the sticky.
+  async function handlePopOut(noteOrId) {
+    const id = typeof noteOrId === 'string' ? noteOrId : noteOrId?.id;
+    const note = notes.find((n) => n.id === id) || (typeof noteOrId === 'object' ? noteOrId : null);
+    if (!note) return;
+    const open = noteEditor.getNote();
+    const isOpenNote = open && open.id === note.id;
+    if (isOpenNote) await noteEditor.flush();
+    const win = openSticky(note);
+    if (!win) {
+      showToast('Allow pop-ups for Wren to use stickies.');
+      return;
+    }
+    if (isOpenNote) {
+      noteEditor.clear();
+      list.setActive(null);
+      appEl.dataset.view = 'list';
+    }
+  }
+
+  // Restore bar (Sticky Float Phase 2). Shown above the sidebar when the open-
+  // sticky registry is non-empty (best-effort: after a full browser restart the
+  // registry persists, so this is the "you had stickies open" signal). The
+  // restore click opens ALL of them inside one user gesture so popup blockers
+  // permit the batch; "Dismiss" clears the registry.
+  function buildRestoreBar() {
+    const open = readRegistry();
+    if (!open || open.length === 0) return null;
+    const bar = document.createElement('div');
+    bar.className = 'sc-restore-bar';
+    const text = document.createElement('span');
+    text.className = 'sc-restore-bar-text';
+    text.textContent = `Restore ${open.length} sticky${open.length === 1 ? '' : ' notes'}`;
+    const restore = document.createElement('button');
+    restore.type = 'button';
+    restore.className = 'sc-btn sc-btn--primary';
+    restore.textContent = 'Restore';
+    restore.addEventListener('click', () => {
+      let blocked = false;
+      open.forEach((entry, i) => {
+        const win = openSticky({ id: entry.id, wrenId: entry.wrenId }, { cascadeIndex: i });
+        if (!win) blocked = true;
+      });
+      if (blocked) showToast('Allow pop-ups for Wren to restore all stickies.');
+      bar.remove();
+    });
+    const dismiss = document.createElement('button');
+    dismiss.type = 'button';
+    dismiss.className = 'sc-btn sc-btn--ghost';
+    dismiss.textContent = 'Dismiss';
+    dismiss.addEventListener('click', () => {
+      clearRegistry();
+      bar.remove();
+    });
+    bar.append(text, restore, dismiss);
+    return bar;
   }
 
   /* ---- View mode (list | kanban) -------------------------------------- */
@@ -1104,6 +1238,8 @@ export function createApp({ root, enableServiceWorker = false }) {
     // Covers both content saves and any rename that syncBackendFilename applied
     // (filename/id changes are already reflected on the in-memory note above).
     regenerateIndex();
+    // Notify any open sticky/peer window holding this note (Sticky Phase 2).
+    broadcast?.postNoteSaved(note);
   }
 
   /**
@@ -1234,6 +1370,7 @@ export function createApp({ root, enableServiceWorker = false }) {
       list.setNotes(notes);
       kanbanView.refresh();
       regenerateIndex();
+      if (n) broadcast?.postNoteSaved(n);
     } catch (err) {
       if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
         showDriveDisconnected();
@@ -1275,13 +1412,17 @@ export function createApp({ root, enableServiceWorker = false }) {
     }
   }
 
-  function showDriveDisconnectedToast(msg) {
-    // Lightweight toast: temporary div, auto-removes. No persistent state.
+  // Lightweight toast: temporary div, auto-removes. No persistent state.
+  function showToast(msg) {
     const toast = document.createElement('div');
     toast.className = 'sc-toast';
     toast.textContent = msg;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 3200);
+  }
+
+  function showDriveDisconnectedToast(msg) {
+    showToast(msg);
   }
 
   function buildDriveBanner() {

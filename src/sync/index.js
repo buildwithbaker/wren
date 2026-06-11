@@ -12,3 +12,6 @@ export {
 } from './syncStateStore.js';
 
 export { generateConflictFilename, getDeviceShortId } from './conflictDetection.js';
+
+// Live cross-window note sync (Sticky Float Phase 2).
+export { createBroadcast, buildNoteSavedMessage, shouldIgnoreMessage } from './broadcast.js';

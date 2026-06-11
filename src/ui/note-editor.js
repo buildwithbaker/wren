@@ -16,7 +16,17 @@ import { formatModified } from './format.js';
 const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
 const SAVE_DELAY = 500;
 
-export function createNoteEditor({ onSave, onDelete, onExport, onBack, getTagSuggestions, showBack = false }) {
+export function createNoteEditor({
+  onSave,
+  onDelete,
+  onExport,
+  onBack,
+  onPopOut,
+  onTitleChange,
+  getTagSuggestions,
+  showBack = false,
+  sticky = false,
+}) {
   let note = null;
   let editor = null;
   let toolbar = null;
@@ -61,11 +71,32 @@ export function createNoteEditor({ onSave, onDelete, onExport, onBack, getTagSug
   titleInput.addEventListener('input', () => {
     if (!note) return;
     note.title = titleInput.value;
+    // Live hook so a sticky window can keep its OS title/taskbar label in sync
+    // as the user types (additive — main app passes no handler).
+    onTitleChange?.(titleInput.value);
     scheduleSave();
   });
 
   const actions = document.createElement('div');
   actions.className = 'sc-editor-actions';
+
+  // Pop-out button (Sticky Float Phase 2) — opens the note in its own floating
+  // window. Main app only: hidden in sticky mode (a sticky can't pop itself
+  // out) and when no onPopOut handler was wired.
+  const popOutBtn = document.createElement('button');
+  popOutBtn.type = 'button';
+  popOutBtn.className = 'sc-iconbtn';
+  popOutBtn.title = 'Pop out into its own window';
+  popOutBtn.setAttribute('aria-label', 'Pop out note into its own window');
+  popOutBtn.innerHTML =
+    '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 4h6v6" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 4l-8 8" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  popOutBtn.hidden = sticky || !onPopOut;
+  popOutBtn.addEventListener('click', async () => {
+    if (!note) return;
+    // Flush pending edits so the popped-out window reads the latest content.
+    await flush();
+    onPopOut?.(note);
+  });
 
   const exportBtn = document.createElement('button');
   exportBtn.type = 'button';
@@ -99,7 +130,14 @@ export function createNoteEditor({ onSave, onDelete, onExport, onBack, getTagSug
     }
   });
 
-  actions.append(exportBtn, deleteBtn);
+  // Sticky chrome is slim: title + color + toolbar + body only. Hide export and
+  // delete in a sticky window (those actions stay in the main app).
+  if (sticky) {
+    exportBtn.hidden = true;
+    deleteBtn.hidden = true;
+  }
+
+  actions.append(popOutBtn, exportBtn, deleteBtn);
   head.append(back, titleInput, actions);
 
   // Color picker row
@@ -155,6 +193,9 @@ export function createNoteEditor({ onSave, onDelete, onExport, onBack, getTagSug
   toolbarMount.className = 'sc-toolbar-mount';
   const bodyMount = document.createElement('div');
   bodyMount.className = 'sc-editor-body';
+
+  // Tag row is part of the full editor only — a sticky keeps slim chrome.
+  if (sticky) tagEditor.element.hidden = true;
 
   surface.append(head, colorRow, tagEditor.element, toolbarMount, bodyMount);
   root.append(placeholder, surface);
@@ -270,6 +311,9 @@ export function createNoteEditor({ onSave, onDelete, onExport, onBack, getTagSug
     clear,
     focusTitle: () => titleInput.focus(),
     getNote: () => note,
+    // True while a debounced save is queued — lets callers (cross-window sync)
+    // avoid clobbering in-progress local edits with a remote re-read.
+    hasPendingSave: () => saveTimer !== null,
     destroy,
   };
 }
