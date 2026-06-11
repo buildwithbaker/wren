@@ -1626,3 +1626,116 @@ button {
     background: #3A5BA8;
   }
 }
+
+/* =========================================================================
+   Sticky Float Phase 2 — pop-out affordances, restore bar, sticky window
+   ========================================================================= */
+
+/* Pop-out icon on sidebar cards — revealed on hover/focus. The card is a
+   button; this is a role=button span (stops propagation in JS) sitting in the
+   top-right corner. Reuses --wr- tokens only. */
+.sc-card {
+  position: relative;
+}
+.sc-card-popout {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--wr-radius-sm);
+  color: var(--wr-ink);
+  background: rgba(42, 53, 64, 0.06);
+  opacity: 0;
+  transition: opacity var(--wr-trans), background var(--wr-trans);
+}
+.sc-card:hover .sc-card-popout,
+.sc-card-popout:focus-visible {
+  opacity: 0.8;
+}
+.sc-card-popout:hover {
+  opacity: 1;
+  background: rgba(42, 53, 64, 0.14);
+}
+
+/* Restore-stickies bar — above the sidebar, full app width. Mirrors the
+   drive-banner placement (grid-column 1 / -1). */
+.sc-restore-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  font-size: 13px;
+  background: var(--wr-brown-soft, var(--wr-field-bg));
+  color: var(--wr-panel-text);
+  border-bottom: 1px solid var(--wr-border);
+}
+.sc-restore-bar-text {
+  font-weight: 600;
+}
+.sc-restore-bar .sc-btn {
+  padding: 6px 12px;
+  font-size: 12.5px;
+}
+.sc-restore-bar .sc-btn--ghost {
+  margin-left: auto;
+}
+
+/* ---- Sticky window (body.is-sticky) ------------------------------------
+   Slim, chromeless single-note shell. Hide the app-shell furniture, collapse
+   the editor surface to fill the whole window, and tint the window in the
+   note color via --wr-note-bg (set on body by sticky-app.js). */
+body.is-sticky {
+  background: var(--wr-note-bg, var(--wr-page-bg));
+}
+body.is-sticky .sc-footer,
+body.is-sticky .sc-theme-toggle,
+body.is-sticky .sc-install-button,
+body.is-sticky .sc-open-full-app {
+  display: none !important;
+}
+body.is-sticky #app {
+  height: 100%;
+}
+/* Editor fills the viewport — no outer margin, no rounded floating panel. */
+body.is-sticky .sc-editor-surface {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* Slim header: tighter padding for the small window. */
+body.is-sticky .sc-editor-head {
+  padding: 8px 10px 6px;
+}
+body.is-sticky .sc-title-input {
+  font-size: 17px;
+}
+body.is-sticky .sc-editor-colorrow {
+  padding: 0 10px 8px;
+}
+
+/* Fallback screens inside a sticky (grant access / Drive reconnect / not
+   found). Centered compact card; reuses .sc-screen-card. */
+.sc-sticky-screen {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+.sc-sticky-card {
+  max-width: 320px;
+  padding: 24px 20px;
+}
+.sc-sticky-card h1 {
+  font-size: 17px;
+}
+.sc-sticky-card p {
+  font-size: 13px;
+}
+.sc-sticky-card .sc-btn {
+  width: 100%;
+}

@@ -13,6 +13,7 @@ const FILTER_KEY = 'wren.filterTags';
 export function createNotesList({
   onSelect,
   onNew,
+  onPopOut,
   compact = false,
   onInboxSelect,
   onInboxPromote,
@@ -329,6 +330,34 @@ export function createNotesList({
     const chips = buildTagChips(note.tags, { onTagClick: (tag) => addFilterTag(tag) });
     if (chips) card.appendChild(chips);
     card.appendChild(meta);
+
+    // Pop-out affordance (Sticky Float Phase 2): a small icon shown on hover.
+    // It is a role=button span (not a nested <button>, which would be invalid
+    // inside the card button) and stops propagation so it never opens the note,
+    // matching the tag-chip discipline above.
+    if (onPopOut) {
+      const pop = document.createElement('span');
+      pop.className = 'sc-card-popout';
+      pop.setAttribute('role', 'button');
+      pop.tabIndex = 0;
+      pop.title = 'Pop out into its own window';
+      pop.setAttribute('aria-label', 'Pop out note into its own window');
+      pop.innerHTML =
+        '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 4h6v6" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 4l-8 8" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      pop.addEventListener('click', (e) => {
+        e.stopPropagation();
+        onPopOut(note.id);
+      });
+      pop.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          e.stopPropagation();
+          onPopOut(note.id);
+        }
+      });
+      card.appendChild(pop);
+    }
+
     card.addEventListener('click', () => onSelect?.(note.id));
     return card;
   }
