@@ -11,6 +11,7 @@
 
 import { CARD_COLORS, firstLineOf } from '@/notes-store.js';
 import { getAllNamespaces, groupNotesByNamespace } from '@/tags/tag-parser.js';
+import { buildTagChips } from './tag-chips.js';
 
 const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
 const GROUPBY_KEY = 'wren.kanbanGroupBy';
@@ -180,6 +181,10 @@ export function createKanbanView({ getNotes, onNoteOpen, onNewNote, onMoveNote }
     preview.textContent = note.firstLine || firstLineOf(note.body || '') || 'No additional text';
 
     card.append(title, preview);
+    // Tag chips (Sticky Float Phase 1): display-only on the board — the column
+    // already encodes the grouping tag; chips show the note's full tag set.
+    const chips = buildTagChips(note.tags);
+    if (chips) card.appendChild(chips);
     card.addEventListener('click', () => onNoteOpen?.(note.id));
 
     wireCardDrag(card, note);
