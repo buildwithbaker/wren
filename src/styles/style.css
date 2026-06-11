@@ -646,6 +646,48 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Mini tag chips on note cards (sidebar list + Kanban) — Sticky Float Phase 1.
+   Same visual language as .sc-tag-chip, scaled down for card density. */
+.sc-mtags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.sc-mtag {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  max-width: 100%;
+  padding: 1px 7px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  border-radius: 999px;
+  background: var(--wr-accent-tint);
+  color: var(--wr-accent-dark);
+  border: 1px solid var(--wr-border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sc-mtag__ns {
+  opacity: 0.62;
+}
+.sc-mtag__val {
+  font-weight: 600;
+}
+.sc-mtag--clickable {
+  cursor: pointer;
+  transition: border-color var(--wr-trans);
+}
+.sc-mtag--clickable:hover,
+.sc-mtag--clickable:focus-visible {
+  border-color: var(--wr-accent-dark);
+  outline: none;
+}
+.sc-mtag--more {
+  opacity: 0.8;
+}
 .sc-tag-remove {
   display: inline-grid;
   place-items: center;

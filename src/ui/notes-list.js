@@ -4,6 +4,7 @@
 
 import { CARD_COLORS } from '@/notes-store.js';
 import { getAllTags } from '@/tags/tag-parser.js';
+import { buildTagChips } from './tag-chips.js';
 import { formatModified } from './format.js';
 
 const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
@@ -322,7 +323,12 @@ export function createNotesList({
     meta.className = 'sc-card-meta';
     meta.textContent = formatModified(note.modified);
 
-    card.append(title, preview, meta);
+    card.append(title, preview);
+    // Tag chips (Sticky Float Phase 1): visible per-note tag feedback. Chip
+    // click adds the tag to the AND-filter instead of opening the note.
+    const chips = buildTagChips(note.tags, { onTagClick: (tag) => addFilterTag(tag) });
+    if (chips) card.appendChild(chips);
+    card.appendChild(meta);
     card.addEventListener('click', () => onSelect?.(note.id));
     return card;
   }
