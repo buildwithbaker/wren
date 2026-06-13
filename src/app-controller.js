@@ -38,6 +38,7 @@ import {
 import { createNotesList } from './ui/notes-list.js';
 import { createNoteEditor } from './ui/note-editor.js';
 import { createKanbanView } from './ui/kanban-view.js';
+import { createCompactView } from './ui/compact-view.js';
 import { confirmDialog } from './ui/dialog.js';
 import { addTagToNote, parseTag, getAllTags, getAllNamespaces } from './tags/tag-parser.js';
 import { getStoredTheme, cycleTheme, initTheme } from './theme.js';
@@ -73,8 +74,12 @@ export function createApp({ root, enableServiceWorker = false }) {
   let backendChipEl = null;
   let driveBannerEl = null;
   let kanbanView = null;
+  let compactView = null;
   let viewToggleEl = null;
-  let viewMode = loadViewMode(); // 'list' | 'kanban'
+  // Session view: 'list' | 'kanban' | 'compact'. Only 'list'|'kanban' are ever
+  // persisted (wren.viewMode = the "full mode" memory); 'compact' is a session-
+  // only landing layer set on every launch and never written to localStorage.
+  let viewMode = loadViewMode(); // boot value is the stored full mode
   let lastEffectiveMode = null;
   // Live cross-window note sync (Sticky Float Phase 2). Created once on first
   // renderApp; peers' saves refresh the list/editor here.
@@ -91,9 +96,9 @@ export function createApp({ root, enableServiceWorker = false }) {
   mountOpenFullApp();
 
   // View-mode keyboard shortcuts (only act once the app shell is mounted).
-  // NOTE: Ctrl+1/Ctrl+2 are browser tab-switch shortcuts in a normal tab; in
-  // the standalone PWA window (the primary full-app context) there are no tabs
-  // so the override is harmless. Documented as a known caveat.
+  // NOTE: Ctrl+1/Ctrl+2/Ctrl+3 are browser tab-switch shortcuts in a normal
+  // tab; in the standalone PWA window (the primary full-app context) there are
+  // no tabs so the override is harmless. Documented as a known caveat.
   window.addEventListener('keydown', (e) => {
     if (!kanbanView) return;
     if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
@@ -103,6 +108,9 @@ export function createApp({ root, enableServiceWorker = false }) {
     } else if (e.key === '2') {
       e.preventDefault();
       setViewMode('kanban');
+    } else if (e.key === '3') {
+      e.preventDefault();
+      setViewMode('compact');
     }
   });
 
@@ -649,11 +657,30 @@ export function createApp({ root, enableServiceWorker = false }) {
       },
       onMoveNote: handleKanbanMove,
     });
+    // Compact view is a full-width sibling of the two-panel layout, shown when
+    // data-view='compact'. Card click / + / Expand all route back to the stored
+    // full mode (loadViewMode → list|kanban) and then take the normal path.
+    compactView = createCompactView({
+      onSelect: (id) => {
+        setViewMode(loadViewMode());
+        openNote(id);
+      },
+      onNew: () => {
+        setViewMode(loadViewMode());
+        handleNew();
+      },
+      onExpand: () => setViewMode(loadViewMode()),
+    });
     main.append(noteEditor.element, kanbanView.element);
 
-    appEl.append(sidebar, main);
+    appEl.append(sidebar, main, compactView.element);
     root.append(appEl, buildFooter());
 
+    // Default landing view: every launch opens in Compact regardless of the
+    // stored full mode. Session-only — assign viewMode directly (not via
+    // setViewMode, which is equivalent here, but the intent is "land, don't
+    // persist"). The stored list|kanban preference is untouched.
+    viewMode = 'compact';
     applyViewMode();
     setupBroadcast();
     await loadNotes();
@@ -702,6 +729,7 @@ export function createApp({ root, enableServiceWorker = false }) {
       notes[idx] = updated;
       notes.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
       list.setNotes(notes);
+      compactView?.setNotes(notes);
       list.setActive(noteEditor.getNote()?.id || null);
       if (effectiveViewMode() === 'kanban') kanbanView.refresh();
       const open = noteEditor.getNote();
@@ -793,31 +821,48 @@ export function createApp({ root, enableServiceWorker = false }) {
   }
 
   // Below 640px (e.g. extension popup) Kanban is out of scope — force list.
+  // Compact is exempt from that downgrade: it is already the narrow layout.
   function effectiveViewMode() {
+    if (viewMode === 'compact') return 'compact';
     if (window.matchMedia('(max-width: 640px)').matches) return 'list';
     return viewMode;
   }
 
   function setViewMode(mode) {
-    viewMode = mode === 'kanban' ? 'kanban' : 'list';
-    try {
-      localStorage.setItem(VIEW_MODE_KEY, viewMode);
-    } catch {
-      /* ignore */
+    if (mode === 'compact') {
+      // Session-only landing layer — never written to wren.viewMode.
+      viewMode = 'compact';
+    } else {
+      viewMode = mode === 'kanban' ? 'kanban' : 'list';
+      try {
+        localStorage.setItem(VIEW_MODE_KEY, viewMode);
+      } catch {
+        /* ignore */
+      }
     }
     applyViewMode();
   }
 
   function applyViewMode() {
-    if (!noteEditor || !kanbanView) return;
+    if (!noteEditor || !kanbanView || !compactView) return;
     const mode = effectiveViewMode();
+    const compact = mode === 'compact';
     const kanban = mode === 'kanban';
     // Use style.display (not [hidden]) — both panels set display:flex, which
     // would otherwise win over the hidden attribute.
-    noteEditor.element.style.display = kanban ? 'none' : '';
+    noteEditor.element.style.display = compact || kanban ? 'none' : '';
     kanbanView.element.style.display = kanban ? '' : 'none';
-    if (appEl) appEl.dataset.viewmode = mode;
+    compactView.element.style.display = compact ? '' : 'none';
+    if (appEl) {
+      appEl.dataset.viewmode = mode;
+      // data-view drives the <=640px single-panel toggle (list|editor) and now
+      // the compact full-width layout. Only flip it for the compact transition
+      // so an open editor's data-view='editor' is preserved otherwise.
+      if (compact) appEl.dataset.view = 'compact';
+      else if (appEl.dataset.view === 'compact') appEl.dataset.view = 'list';
+    }
     if (kanban) kanbanView.refresh();
+    if (compact) compactView.setNotes(notes);
     updateViewToggle(mode);
     lastEffectiveMode = mode;
   }
@@ -837,7 +882,13 @@ export function createApp({ root, enableServiceWorker = false }) {
     kanbanBtn.innerHTML =
       '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="11" rx="1"/><rect x="17" y="4" width="4" height="14" rx="1"/></svg><span>Kanban</span>';
     kanbanBtn.addEventListener('click', () => setViewMode('kanban'));
-    wrap.append(listBtn, kanbanBtn);
+    const compactBtn = document.createElement('button');
+    compactBtn.type = 'button';
+    compactBtn.dataset.mode = 'compact';
+    compactBtn.innerHTML =
+      '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="3" width="12" height="5" rx="1"/><rect x="6" y="11" width="12" height="5" rx="1"/><rect x="6" y="19" width="12" height="2" rx="1"/></svg><span>Compact</span>';
+    compactBtn.addEventListener('click', () => setViewMode('compact'));
+    wrap.append(listBtn, kanbanBtn, compactBtn);
     viewToggleEl = wrap;
     return wrap;
   }
@@ -923,6 +974,7 @@ export function createApp({ root, enableServiceWorker = false }) {
       notes = [];
     }
     list.setNotes(notes);
+    compactView?.setNotes(notes);
     // Load staged inbox notes alongside the main list (best-effort — a failure
     // here must never break the main notes list).
     await loadInboxNotes();
