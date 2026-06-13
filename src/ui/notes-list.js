@@ -6,6 +6,7 @@ import { CARD_COLORS } from '@/notes-store.js';
 import { getAllTags } from '@/tags/tag-parser.js';
 import { buildTagChips } from './tag-chips.js';
 import { formatModified } from './format.js';
+import { noteMatchesQuery } from './note-search.js';
 
 const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
 const FILTER_KEY = 'wren.filterTags';
@@ -80,13 +81,9 @@ export function createNotesList({
         if (!noteTags.includes(ft)) return false;
       }
     }
-    // Text query against title + preview.
-    if (query) {
-      const title = (note.title || '').toLowerCase();
-      const preview = (note.firstLine || '').toLowerCase();
-      if (!title.includes(query) && !preview.includes(query)) return false;
-    }
-    return true;
+    // Text query against title + preview (shared predicate, reused by the
+    // compact view so both stay in lockstep).
+    return noteMatchesQuery(note, query);
   }
 
   function render() {

@@ -1739,3 +1739,196 @@ body.is-sticky .sc-editor-colorrow {
 .sc-sticky-card .sc-btn {
   width: 100%;
 }
+
+/* =========================================================================
+   Compact View — third view mode (Sticky Notes hub panel)
+   A narrow single-column stack of mini cards. Default landing layer; shown
+   when .sc-app[data-view='compact']. Light-mode tokens only, no new colors.
+   ========================================================================= */
+.sc-app[data-view='compact'] {
+  grid-template-columns: 1fr;
+}
+.sc-app[data-view='compact'] .sc-sidebar,
+.sc-app[data-view='compact'] .sc-main {
+  display: none;
+}
+
+.sc-compact {
+  /* Fixed-width docked column; full background fills the rest of the grid. */
+  width: 340px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--wr-panel-bg);
+  border-right: 1px solid var(--wr-border);
+}
+
+.sc-compact-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 12px 8px;
+}
+.sc-compact-new {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: var(--wr-radius-sm);
+  background: var(--wr-accent);
+  color: var(--wr-on-accent);
+  box-shadow: var(--wr-shadow-sm);
+  cursor: pointer;
+  transition: background var(--wr-trans), transform var(--wr-trans);
+}
+.sc-compact-new:hover {
+  background: var(--wr-accent-dark);
+}
+.sc-compact-new:active {
+  transform: translateY(1px);
+}
+.sc-compact-expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border: 1px solid var(--wr-border);
+  border-radius: 999px;
+  background: var(--wr-field-bg);
+  color: var(--wr-panel-text);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--wr-trans), border-color var(--wr-trans);
+}
+.sc-compact-expand:hover {
+  border-color: var(--wr-accent);
+}
+
+.sc-compact-search {
+  position: relative;
+  margin: 0 12px 8px;
+  display: flex;
+  align-items: center;
+}
+.sc-compact-search svg {
+  position: absolute;
+  left: 10px;
+  color: var(--wr-panel-muted);
+  pointer-events: none;
+}
+.sc-compact-search-input {
+  width: 100%;
+  padding: 8px 10px 8px 32px;
+  border: 1px solid var(--wr-border);
+  border-radius: var(--wr-radius-sm);
+  background: var(--wr-field-bg);
+  color: var(--wr-panel-text);
+  font-size: 14px;
+}
+.sc-compact-search-input::placeholder {
+  color: var(--wr-panel-muted);
+}
+.sc-compact-search-input:focus-visible {
+  outline: none;
+  border-color: var(--wr-accent);
+  box-shadow: 0 0 0 3px var(--wr-accent-ring);
+}
+
+.sc-compact-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+/* Mini card — denser than the sidebar card; a left color strip stands in for
+   the sidebar card's full-surface tint. */
+.sc-compact-card {
+  position: relative;
+  text-align: left;
+  border: 1px solid var(--wr-border);
+  border-radius: var(--wr-radius-card);
+  padding: 9px 11px 9px 16px;
+  background: var(--wr-page-bg);
+  color: var(--wr-ink);
+  box-shadow: var(--wr-shadow-sm);
+  cursor: pointer;
+  transition: box-shadow var(--wr-trans), transform var(--wr-trans);
+  overflow: hidden;
+}
+.sc-compact-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: var(--sc-strip, var(--wr-note-default));
+}
+.sc-compact-card:hover {
+  box-shadow: var(--wr-shadow-md);
+  transform: translateY(-1px);
+}
+.sc-compact-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sc-compact-card-title {
+  font-weight: 650;
+  font-size: 13.5px;
+  color: var(--wr-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sc-compact-card-meta {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--wr-paper-muted);
+  letter-spacing: 0.01em;
+}
+.sc-compact-card-preview {
+  font-size: 12px;
+  color: var(--wr-paper-muted);
+  margin-top: 3px;
+  /* Clamp the start-of-note preview to ~2 lines. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+.sc-compact-card .sc-mtags {
+  margin-top: 6px;
+}
+
+.sc-compact-empty {
+  text-align: center;
+  padding: 28px 12px;
+}
+.sc-compact-empty-h {
+  font-weight: 600;
+  color: var(--wr-panel-text);
+}
+.sc-compact-empty-b {
+  font-size: 13px;
+  color: var(--wr-panel-muted);
+  margin-top: 4px;
+}
+
+/* Below 640px the column goes full-width but stays single-column. */
+@media (max-width: 640px) {
+  .sc-compact {
+    width: 100%;
+    border-right: 0;
+  }
+}
