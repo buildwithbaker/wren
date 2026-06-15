@@ -32,6 +32,14 @@ export default defineConfig({
     },
   },
   plugins: [coopHeadersPlugin()],
+  // When running inside `tauri dev`, Vite watches the project root. Without this
+  // ignore it tries to watch src-tauri/target/*.dll while cargo is writing them
+  // and crashes with EBUSY on Windows. Harmless for plain `npm run dev`.
+  server: {
+    watch: {
+      ignored: ['**/src-tauri/**'],
+    },
+  },
   build: {
     outDir: resolve(__dirname, 'dist'),
     emptyOutDir: true,
