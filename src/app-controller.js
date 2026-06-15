@@ -39,6 +39,7 @@ import { createNotesList } from './ui/notes-list.js';
 import { createNoteEditor } from './ui/note-editor.js';
 import { createKanbanView } from './ui/kanban-view.js';
 import { createCompactView } from './ui/compact-view.js';
+import { applyWindowSize, watchResize } from './tauri-window.js';
 import { confirmDialog } from './ui/dialog.js';
 import { addTagToNote, parseTag, getAllTags, getAllNamespaces } from './tags/tag-parser.js';
 import { getStoredTheme, cycleTheme, initTheme } from './theme.js';
@@ -682,6 +683,10 @@ export function createApp({ root, enableServiceWorker = false }) {
     // persist"). The stored list|kanban preference is untouched.
     viewMode = 'compact';
     applyViewMode();
+    // Tauri desktop shell: land small (Compact) and persist manual resizes per
+    // view. Both calls no-op in the browser PWA / extension (isTauri() false).
+    applyWindowSize('compact');
+    watchResize(() => effectiveViewMode());
     setupBroadcast();
     await loadNotes();
     if (effectiveViewMode() === 'kanban') kanbanView.refresh();
@@ -841,6 +846,11 @@ export function createApp({ root, enableServiceWorker = false }) {
       }
     }
     applyViewMode();
+    // Resize the native window to match the new view (Tauri only; no-op in the
+    // browser). Hooked here — at explicit transitions — rather than in
+    // applyViewMode so the 640px breakpoint resize handler can't fight a manual
+    // drag.
+    applyWindowSize(viewMode === 'compact' ? 'compact' : 'expanded');
   }
 
   function applyViewMode() {

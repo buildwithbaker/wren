@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "Wren",
-        "width": 1000,
-        "height": 800,
+        "width": 380,
+        "height": 780,
         "resizable": true,
         "fullscreen": false
       }
