@@ -7,12 +7,15 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   WINDOW_PRESETS,
   WINDOW_LS_KEYS,
+  WINDOW_PINNED_KEY,
   slotForView,
   resolveWindowSize,
   readRememberedSize,
   writeRememberedSize,
   applyWindowSize,
   watchResize,
+  isPinned,
+  setPinned,
 } from '../src/tauri-window.js';
 
 beforeEach(() => {
@@ -76,6 +79,33 @@ describe('readRememberedSize / writeRememberedSize round-trip', () => {
   it('ignores invalid sizes on write', () => {
     writeRememberedSize('compact', { w: 0, h: 0 });
     expect(readRememberedSize('compact')).toBeNull();
+  });
+});
+
+describe('always-on-top pin flag', () => {
+  it('defaults to false when nothing is stored', () => {
+    expect(isPinned()).toBe(false);
+  });
+  it('setPinned(true) persists and round-trips', async () => {
+    await setPinned(true);
+    expect(localStorage.getItem(WINDOW_PINNED_KEY)).toBe('true');
+    expect(isPinned()).toBe(true);
+  });
+  it('setPinned(false) persists and round-trips', async () => {
+    await setPinned(true);
+    await setPinned(false);
+    expect(localStorage.getItem(WINDOW_PINNED_KEY)).toBe('false');
+    expect(isPinned()).toBe(false);
+  });
+  it('coerces truthy/falsy inputs to a boolean flag', async () => {
+    await setPinned(1);
+    expect(isPinned()).toBe(true);
+    await setPinned(0);
+    expect(isPinned()).toBe(false);
+  });
+  it('treats a corrupt stored value as not pinned', () => {
+    localStorage.setItem(WINDOW_PINNED_KEY, 'yes');
+    expect(isPinned()).toBe(false);
   });
 });
 

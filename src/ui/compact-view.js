@@ -16,6 +16,7 @@ import { CARD_COLORS } from '@/notes-store.js';
 import { buildTagChips } from './tag-chips.js';
 import { formatModified } from './format.js';
 import { noteMatchesQuery } from './note-search.js';
+import { createPinButton } from './pin-button.js';
 
 const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
 
@@ -56,7 +57,19 @@ export function createCompactView({ onSelect, onNew, onExpand } = {}) {
     '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg><span>Expand</span>';
   expandBtn.addEventListener('click', () => onExpand?.());
 
-  bar.append(newBtn, expandBtn);
+  // Always-on-top pin toggle — desktop (Tauri) only; createPinButton returns
+  // null in the PWA/extension so nothing renders there. Window-level: applies
+  // in both Compact and Expanded views (the Expanded view has its own copy).
+  const pin = createPinButton();
+  if (pin) {
+    // Keep the + on the left; group pin + expand on the right.
+    const right = document.createElement('div');
+    right.className = 'sc-compact-bar-right';
+    right.append(pin.element, expandBtn);
+    bar.append(newBtn, right);
+  } else {
+    bar.append(newBtn, expandBtn);
+  }
 
   // Search
   const searchWrap = document.createElement('div');
@@ -150,6 +163,9 @@ export function createCompactView({ onSelect, onNew, onExpand } = {}) {
     element: root,
     setNotes(next) {
       notes = next || [];
+      // Reflect the current pin state — it may have been toggled from the
+      // Expanded view's pin button while this view was hidden.
+      pin?.sync();
       render();
     },
     focusSearch() {

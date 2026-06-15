@@ -26,6 +26,9 @@ export const WINDOW_LS_KEYS = {
   expanded: 'wren.win.expanded',
 };
 
+// localStorage key for the whole-window always-on-top ("pin") flag.
+export const WINDOW_PINNED_KEY = 'wren.win.pinned';
+
 // Map any view identifier ('list' | 'kanban' | 'compact') to a window slot.
 // Only Compact is small; every full mode shares the expanded slot.
 export function slotForView(view) {
@@ -141,5 +144,55 @@ export async function watchResize(getView, debounceMs = 400) {
   } catch (err) {
     console.warn('watchResize failed', err);
     return () => {};
+  }
+}
+
+/* ---- Always-on-top ("pin") ------------------------------------------- */
+
+/**
+ * Whether the window is pinned (always-on-top) per the persisted flag.
+ * Defaults to false. Pure read of localStorage — safe outside Tauri.
+ * @returns {boolean}
+ */
+export function isPinned() {
+  try {
+    return localStorage.getItem(WINDOW_PINNED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Set the whole-window always-on-top state and persist it. Persists the flag
+ * even outside Tauri (harmless), but only calls the native API when isTauri().
+ * @param {boolean} on
+ */
+export async function setPinned(on) {
+  const next = !!on;
+  try {
+    localStorage.setItem(WINDOW_PINNED_KEY, next ? 'true' : 'false');
+  } catch {
+    /* ignore */
+  }
+  if (!isTauri()) return;
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    await getCurrentWindow().setAlwaysOnTop(next);
+  } catch (err) {
+    console.warn('setPinned failed', err);
+  }
+}
+
+/**
+ * On launch, reconcile the native window's always-on-top state with the stored
+ * flag. No-op outside Tauri.
+ */
+export async function applyPinnedAtBoot() {
+  if (!isTauri()) return;
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    await getCurrentWindow().setAlwaysOnTop(isPinned());
+  } catch (err) {
+    console.warn('applyPinnedAtBoot failed', err);
   }
 }
