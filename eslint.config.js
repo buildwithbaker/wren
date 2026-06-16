@@ -13,6 +13,7 @@ export default [
       'dist/**',
       'dist-extension/**',
       'node_modules/**',
+      'src-tauri/**', // Rust crate; target/ holds generated JS assets, not ours
       '**/*.html',
       '**/*.timestamp-*.mjs',
     ],

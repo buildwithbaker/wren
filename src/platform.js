@@ -14,3 +14,26 @@
 export function isTauri() {
   return !!window.__TAURI_INTERNALS__;
 }
+
+/**
+ * Open a URL in the user's default system browser.
+ *
+ * In the browser PWA/extension this is a normal new-tab `window.open`. Inside
+ * the Tauri desktop app a plain link would navigate (or spawn) a webview, so we
+ * route through the Tauri opener plugin to launch the system browser and leave
+ * the app window untouched.
+ *
+ * @param {string} url
+ */
+export async function openExternal(url) {
+  if (isTauri()) {
+    try {
+      const { openUrl } = await import('@tauri-apps/plugin-opener');
+      await openUrl(url);
+      return;
+    } catch (err) {
+      console.warn('openExternal (Tauri) failed', err);
+    }
+  }
+  window.open(url, '_blank', 'noopener');
+}

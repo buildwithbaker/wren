@@ -2,7 +2,10 @@
 // Caches the app shell so Wren loads offline. Notes themselves live on the
 // user's disk via the File System Access API and never touch this cache.
 
-const CACHE = 'wren-shell-v1';
+// Bump on every release that adds/changes routable pages so the activate
+// handler purges stale per-URL entries (e.g. an app-shell that was cached under
+// /guide.html before that page existed). v2: site nav + /guide page.
+const CACHE = 'wren-shell-v2';
 const APP_SHELL = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', (event) => {

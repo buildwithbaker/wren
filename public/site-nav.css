@@ -1,0 +1,63 @@
+/* site-nav.css
+   Shared top navigation for the Wren info pages (privacy, mcp, download,
+   guide). Brand-matched to the page styles: terracotta accent (#A8542C),
+   Build-with-Baker indigo focus ring (#2B4A8B). Light mode only. */
+
+.site-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px 24px;
+}
+.site-nav-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 700;
+  font-size: 19px;
+  letter-spacing: -0.01em;
+  color: #A8542C;
+  text-decoration: none;
+}
+.site-nav-brand:hover { text-decoration: none; }
+.site-nav-brand img { width: 28px; height: 28px; border-radius: 7px; display: block; }
+.site-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.site-nav-links a {
+  color: #5A5247;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 15px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.site-nav-links a:hover {
+  color: #A8542C;
+  background: rgba(168, 84, 44, 0.08);
+  text-decoration: none;
+}
+.site-nav-links a[aria-current="page"] {
+  color: #A8542C;
+  background: rgba(168, 84, 44, 0.12);
+  font-weight: 600;
+}
+/* BwB indigo focus ring for keyboard users. */
+.site-nav a:focus-visible {
+  outline: 2px solid #2B4A8B;
+  outline-offset: 2px;
+}
+.site-nav-divider {
+  border: 0;
+  border-top: 1px solid #E5DACA;
+  max-width: 720px;
+  margin: 0 auto;
+}

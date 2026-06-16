@@ -40,6 +40,7 @@ import { createNoteEditor } from './ui/note-editor.js';
 import { createKanbanView } from './ui/kanban-view.js';
 import { createCompactView } from './ui/compact-view.js';
 import { createPinButton } from './ui/pin-button.js';
+import { isTauri, openExternal } from './platform.js';
 import { applyWindowSize, watchResize, applyPinnedAtBoot } from './tauri-window.js';
 import { confirmDialog } from './ui/dialog.js';
 import { addTagToNote, parseTag, getAllTags, getAllNamespaces } from './tags/tag-parser.js';
@@ -1632,12 +1633,40 @@ export function createApp({ root, enableServiceWorker = false }) {
   function buildFooter() {
     const footer = document.createElement('footer');
     footer.className = 'sc-footer';
-    footer.innerHTML = `
-      <a href="https://wren.buildwithbaker.io/download.html" target="_blank" rel="noopener" class="sc-footer-bwb">Desktop app</a>
-      <span class="sc-footer-dot">·</span>
-      <a href="${KOFI}" target="_blank" rel="noopener" class="sc-footer-bwb">Build with Baker</a>
-      <span class="sc-footer-dot">·</span>
-      <a href="${KOFI}" target="_blank" rel="noopener" class="sc-footer-kofi">☕ Support on Ko-fi</a>`;
+    const SITE = 'https://wren.buildwithbaker.io';
+    const links = [
+      { href: `${SITE}/download.html`, label: 'Download' },
+      { href: `${SITE}/guide.html`, label: 'Guide' },
+      { href: `${SITE}/privacy.html`, label: 'Privacy' },
+      { href: KOFI, label: 'Build with Baker' },
+      { href: KOFI, label: '☕ Support on Ko-fi', cls: 'sc-footer-kofi' },
+    ];
+    links.forEach((l, i) => {
+      if (i) {
+        const dot = document.createElement('span');
+        dot.className = 'sc-footer-dot';
+        dot.textContent = '·';
+        footer.appendChild(dot);
+      }
+      const a = document.createElement('a');
+      a.href = l.href;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.className = l.cls || 'sc-footer-bwb';
+      a.textContent = l.label;
+      footer.appendChild(a);
+    });
+    // In the Tauri desktop app a plain target=_blank link would open/navigate a
+    // webview; intercept and hand the URL to the system browser instead so the
+    // app window stays put. PWA/extension keep the normal new-tab behavior.
+    if (isTauri()) {
+      footer.addEventListener('click', (e) => {
+        const a = e.target.closest('a');
+        if (!a || !footer.contains(a)) return;
+        e.preventDefault();
+        openExternal(a.href);
+      });
+    }
     return footer;
   }
 

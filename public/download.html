@@ -60,14 +60,19 @@
   .kofi { display: inline-block; background: #FF5E5B; color: #fff; padding: 3px 10px; border-radius: 12px; font-weight: 600; font-size: 13px; text-decoration: none; }
   .kofi:hover { background: #E54845; text-decoration: none; }
 </style>
+<link rel="stylesheet" href="/site-nav.css">
 </head>
 <body>
-<div class="container">
-
-  <div class="brand">
-    <img class="brand-mark" src="/icon.svg" alt="Wren logo" width="34" height="34">
-    <span class="brand-name">Wren</span>
+<nav class="site-nav" aria-label="Primary">
+  <a class="site-nav-brand" href="/"><img src="/icon.svg" alt="" width="28" height="28"><span>Wren</span></a>
+  <div class="site-nav-links">
+    <a href="/download.html" aria-current="page">Download</a>
+    <a href="/guide.html">Guide</a>
+    <a href="/privacy.html">Privacy</a>
   </div>
+</nav>
+<hr class="site-nav-divider">
+<div class="container">
 
   <h1>Wren for Windows</h1>
   <p class="lede">The desktop app: a small notes window that floats on top of your work and expands to the full app when you need it — plus tear-off sticky notes that stay on top. An optional companion to the web app. Your notes stay on your computer.</p>
@@ -109,7 +114,7 @@
 
   <div class="footer">
     <p>Wren is built by Adam Baker under the Build with Baker creator brand. Questions or issues: <a href="https://github.com/buildwithbaker/wren/issues" target="_blank" rel="noopener">github.com/buildwithbaker/wren/issues</a>.</p>
-    <p><a href="https://wren.buildwithbaker.io">Wren</a> &middot; <a href="/mcp.html">MCP server</a> &middot; <a href="/privacy.html">Privacy</a> &middot; <a href="https://buildwithbaker.com" target="_blank" rel="noopener">Build with Baker</a> &middot; <a class="kofi" href="https://ko-fi.com/abaker421" target="_blank" rel="noopener">Support on Ko-fi</a></p>
+    <p><a href="https://wren.buildwithbaker.io">Wren</a> &middot; <a href="/guide.html">Guide</a> &middot; <a href="/mcp.html">MCP server</a> &middot; <a href="/privacy.html">Privacy</a> &middot; <a href="https://buildwithbaker.com" target="_blank" rel="noopener">Build with Baker</a> &middot; <a class="kofi" href="https://ko-fi.com/abaker421" target="_blank" rel="noopener">Support on Ko-fi</a></p>
   </div>
 
 </div>
