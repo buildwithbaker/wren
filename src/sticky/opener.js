@@ -14,6 +14,7 @@
 // Decision provenance: project-blueprints/wren/future-enhancements/sticky-float-sow.md (Phase 2)
 
 import { loadGeometry } from './geometry.js';
+import { isTauri } from '../platform.js';
 
 const DEFAULT_W = 320;
 const DEFAULT_H = 360;
@@ -56,6 +57,18 @@ export function buildStickyUrl(storageId, wrenId, base) {
  */
 export function stickyWindowName(wrenId, storageId) {
   return `wren-sticky-${wrenId || storageId || ''}`;
+}
+
+/**
+ * The Tauri WebviewWindow label used to dedupe native sticky windows. Keyed by
+ * wrenId when present, else the storage id. Tauri v2 labels must match
+ * /^[a-zA-Z0-9\-/:_]+$/, so any other character (spaces, dots, '@' in a legacy
+ * filename id) is replaced with '_'. Pure.
+ */
+export function stickyWindowLabel(wrenId, storageId) {
+  const raw = String(wrenId || storageId || '');
+  const safe = raw.replace(/[^a-zA-Z0-9\-_]/g, '_');
+  return `sticky-${safe}`;
 }
 
 /**
@@ -106,6 +119,16 @@ export function resolveStickyGeometry(wrenId, storageId, cascadeIndex = 0) {
 export function openSticky(note, { cascadeIndex = 0 } = {}) {
   const storageId = note.id;
   const wrenId = note.wrenId || '';
+
+  // Tauri desktop (Phase 3b): open the same sticky route in a native,
+  // always-on-top WebviewWindow instead of a browser popup. Returns a truthy
+  // sentinel synchronously so the caller's popup-blocked-toast logic treats it
+  // as opened (the async creation/focus happens in openStickyTauri).
+  if (isTauri()) {
+    openStickyTauri(note, { cascadeIndex });
+    return { tauri: true };
+  }
+
   const url = buildStickyUrl(storageId, wrenId);
   const name = stickyWindowName(wrenId, storageId);
   const geom = resolveStickyGeometry(wrenId, storageId, cascadeIndex);
@@ -120,4 +143,45 @@ export function openSticky(note, { cascadeIndex = 0 } = {}) {
     }
   }
   return win || null;
+}
+
+/**
+ * Tauri-only sticky opener: create (or focus) an always-on-top WebviewWindow
+ * loading the same sticky route + shell. Label-based dedupe mirrors the Phase 2
+ * named-window behaviour. Async and fire-and-forget from openSticky; errors are
+ * logged, never thrown.
+ *
+ * @param {{id: string, wrenId?: string, title?: string}} note
+ * @param {{ cascadeIndex?: number }} [opts]
+ */
+export async function openStickyTauri(note, { cascadeIndex = 0 } = {}) {
+  const storageId = note.id;
+  const wrenId = note.wrenId || '';
+  const label = stickyWindowLabel(wrenId, storageId);
+  const url = buildStickyUrl(storageId, wrenId);
+  const geom = resolveStickyGeometry(wrenId, storageId, cascadeIndex);
+  try {
+    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    // Dedupe: focus an already-open sticky for this note rather than duplicate.
+    const existing = await WebviewWindow.getByLabel(label);
+    if (existing) {
+      await existing.setFocus();
+      return existing;
+    }
+    const win = new WebviewWindow(label, {
+      url,
+      title: note.title || 'Wren note',
+      alwaysOnTop: true,
+      decorations: true,
+      width: Math.round(geom.w),
+      height: Math.round(geom.h),
+      x: Math.round(geom.x),
+      y: Math.round(geom.y),
+    });
+    win.once('tauri://error', (e) => console.warn('Sticky window error', label, e?.payload ?? e));
+    return win;
+  } catch (err) {
+    console.warn('openStickyTauri failed', err);
+    return null;
+  }
 }
