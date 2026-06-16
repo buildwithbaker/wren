@@ -18,6 +18,9 @@ pub fn run() {
   }
 
   builder
+    // System-browser opener (used by the app footer links so the EXE never
+    // navigates the app window when a link is clicked).
+    .plugin(tauri_plugin_opener::init())
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
