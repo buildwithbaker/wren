@@ -1633,6 +1633,8 @@ export function createApp({ root, enableServiceWorker = false }) {
     const footer = document.createElement('footer');
     footer.className = 'sc-footer';
     footer.innerHTML = `
+      <a href="https://wren.buildwithbaker.io/download.html" target="_blank" rel="noopener" class="sc-footer-bwb">Desktop app</a>
+      <span class="sc-footer-dot">·</span>
       <a href="${KOFI}" target="_blank" rel="noopener" class="sc-footer-bwb">Build with Baker</a>
       <span class="sc-footer-dot">·</span>
       <a href="${KOFI}" target="_blank" rel="noopener" class="sc-footer-kofi">☕ Support on Ko-fi</a>`;
