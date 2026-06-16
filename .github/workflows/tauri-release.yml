@@ -1,0 +1,53 @@
+name: Release (Tauri desktop)
+
+# Cut a release by pushing a tag: `git tag v1.0.0 && git push origin v1.0.0`.
+# Branch protection guards `main`, not tags. Builds the unsigned Windows NSIS
+# installer and publishes it as a GitHub Release asset for the tag.
+on:
+  push:
+    tags:
+      - 'v*'
+
+# tauri-action needs write access to create/update the Release and upload assets.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      # tauri-action runs the frontend build (beforeBuildCommand = `npm run
+      # build`) then `tauri build`, creates/updates the Release for the tag, and
+      # uploads the NSIS installer. Unsigned — no signing secrets are referenced.
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Wren ${{ github.ref_name }}'
+          releaseBody: |
+            Wren desktop for Windows (x64), unsigned.
+
+            Download the `.exe` installer below. Windows SmartScreen will warn
+            because the app isn't code-signed yet — click **More info → Run
+            anyway**. Your notes stay on your computer. See the
+            [download page](https://wren.buildwithbaker.io/download.html) for details.
+          releaseDraft: false
+          prerelease: false
