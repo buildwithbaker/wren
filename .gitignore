@@ -6,6 +6,9 @@ dist-ssr/
 *.local
 .vite/
 
+# tauri (rust build artifacts)
+src-tauri/target/
+
 # env (commit the example only)
 .env
 .env.*

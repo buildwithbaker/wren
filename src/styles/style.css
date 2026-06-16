@@ -1466,6 +1466,17 @@ button {
 /* =========================================================================
    Kanban view (Phase C of Kanban SOW)
    ========================================================================= */
+/* Sidebar header row: view toggle (left) + always-on-top pin (right, Tauri). */
+.sc-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-right: 12px;
+}
+.sc-sidebar-head .sc-viewtoggle {
+  margin-right: 0;
+}
 .sc-viewtoggle {
   display: inline-flex;
   align-self: flex-start;
@@ -1807,6 +1818,35 @@ body.is-sticky .sc-editor-colorrow {
 }
 .sc-compact-expand:hover {
   border-color: var(--wr-accent);
+}
+/* Right-side group in the compact top bar (pin + expand), so the + stays left. */
+.sc-compact-bar-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Always-on-top pin toggle (Tauri desktop only; never rendered in the PWA). */
+.sc-compact-pin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--wr-border);
+  border-radius: 999px;
+  background: var(--wr-field-bg);
+  color: var(--wr-panel-text);
+  cursor: pointer;
+  transition: background var(--wr-trans), border-color var(--wr-trans),
+    color var(--wr-trans);
+}
+.sc-compact-pin:hover {
+  border-color: var(--wr-accent);
+}
+.sc-compact-pin[aria-pressed='true'] {
+  background: var(--wr-accent);
+  border-color: var(--wr-accent);
+  color: var(--wr-on-accent);
 }
 
 .sc-compact-search {

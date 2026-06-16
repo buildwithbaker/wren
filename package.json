@@ -16,12 +16,14 @@
     "build:ext": "vite build --config vite.config.extension.js",
     "build": "node scripts/gen-icons.mjs && vite build && vite build --config vite.config.extension.js",
     "preview": "vite preview",
+    "tauri": "tauri",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.11.0",
     "@tiptap/core": "^2.11.5",
     "@tiptap/extension-color": "^2.11.5",
     "@tiptap/extension-highlight": "^2.11.5",
@@ -36,6 +38,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.15.0",
+    "@tauri-apps/cli": "^2.11.2",
     "eslint": "^9.15.0",
     "globals": "^15.12.0",
     "jsdom": "^25.0.1",

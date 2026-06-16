@@ -28,6 +28,8 @@ table of the Build with Baker Repo Standard v2.0. Before creating any new file:
   oauth in src/oauth/, tags in src/tags/); new CSS -> src/styles/;
   new image/icon -> public/; build script -> scripts/;
   planning/research/spec doc -> docs/internal/.
+- src-tauri/ -> the Tauri (Rust) desktop crate; everything Tauri-related lives
+  under it.
 
 ## Code style
 - ES modules only (import/export), never require()
