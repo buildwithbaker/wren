@@ -12,6 +12,9 @@
     "core:window:allow-set-always-on-top",
     "core:window:allow-set-focus",
     "core:webview:allow-create-webview-window",
-    "opener:allow-open-url"
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://wren.buildwithbaker.io/*" }]
+    }
   ]
 }
