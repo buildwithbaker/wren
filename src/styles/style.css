@@ -1711,6 +1711,53 @@ body.is-sticky .sc-open-full-app {
 body.is-sticky #app {
   height: 100%;
 }
+/* When the custom title bar is present (Tauri), stack it above the editor and
+   let the editor fill the rest. */
+body.is-sticky.has-sticky-titlebar #app {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Custom slim title bar — Tauri sticky only. The native bar was removed
+   (decorations:false), so this draws the Wren logo + a drag region + a close
+   button. NO title text: the OS/taskbar title is set via setTitle() instead. */
+.sc-sticky-titlebar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  padding: 0 4px 0 10px;
+  background: var(--wr-note-bg, var(--wr-panel-bg));
+  -webkit-user-select: none;
+  user-select: none;
+}
+.sc-sticky-logo {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  display: block;
+  /* Clicks fall through to the bar's drag region. */
+  pointer-events: none;
+}
+.sc-sticky-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--wr-ink);
+  cursor: pointer;
+  transition: background var(--wr-trans);
+}
+.sc-sticky-close:hover {
+  background: rgba(0, 0, 0, 0.12);
+}
+
 /* Editor fills the viewport — no outer margin, no rounded floating panel. */
 body.is-sticky .sc-editor-surface {
   margin: 0;

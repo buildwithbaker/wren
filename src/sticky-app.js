@@ -32,6 +32,8 @@ import { createBroadcast } from './sync/broadcast.js';
 import { loadGeometry, saveGeometry, geometryEquals } from './sticky/geometry.js';
 import { addToRegistry, removeFromRegistry } from './sticky/registry.js';
 import { parseStickyParams } from './sticky/opener.js';
+import { buildStickyTitleBar } from './sticky/titlebar.js';
+import { isTauri } from './platform.js';
 
 const VALID_COLOR = new Set(CARD_COLORS.map((c) => c.id));
 const GEOM_POLL_MS = 1500;
@@ -202,6 +204,15 @@ export function createStickyApp({ root }) {
     note.revision = revision;
     root.replaceChildren();
 
+    // Tauri-only slim title bar (Wren logo + drag region + close). The native
+    // OS bar was removed in opener.js (decorations:false); null in the browser
+    // PWA/extension, which keeps its native window chrome.
+    const titlebar = buildStickyTitleBar({ onClose: closeWindow });
+    if (titlebar) {
+      document.body.classList.add('has-sticky-titlebar');
+      root.appendChild(titlebar);
+    }
+
     noteEditor = createNoteEditor({
       sticky: true,
       showBack: false,
@@ -312,7 +323,39 @@ export function createStickyApp({ root }) {
 
   function setDocTitle(title) {
     const t = (title || '').trim();
-    document.title = t ? `${t} — Wren` : 'Wren note';
+    const full = t ? `${t} — Wren` : 'Wren note';
+    document.title = full;
+    // The visible custom bar shows the Wren logo only, but the OS/taskbar still
+    // needs the right title — keep the native window title in sync on rename.
+    setNativeTitle(full);
+  }
+
+  // Mirror the document title onto the native Tauri window so the taskbar /
+  // window switcher stay correct (the custom bar intentionally shows no text).
+  // No-op outside Tauri; errors are logged, never thrown.
+  async function setNativeTitle(title) {
+    if (!isTauri()) return;
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      await getCurrentWindow().setTitle(title);
+    } catch (err) {
+      console.warn('Sticky setTitle failed', err);
+    }
+  }
+
+  // Close the sticky window. Under Tauri the native close button is gone with
+  // decorations:false, so close via the window API; falls back to window.close.
+  async function closeWindow() {
+    if (isTauri()) {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        await getCurrentWindow().close();
+        return;
+      } catch (err) {
+        console.warn('Sticky close failed', err);
+      }
+    }
+    window.close();
   }
 
   /* ---- Fallback screens ------------------------------------------------- */
