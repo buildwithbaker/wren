@@ -26,7 +26,14 @@ import {
   requestAccessToken,
   isSignedIn,
 } from './oauth/index.js';
-import { isSupported, parseNote, serializeNote, firstLineOf, CARD_COLORS } from './notes-store.js';
+import {
+  isSupported,
+  parseNote,
+  serializeNote,
+  firstLineOf,
+  getStoredDirHandle,
+  CARD_COLORS,
+} from './notes-store.js';
 import { createNoteEditor } from './ui/note-editor.js';
 import { createBroadcast } from './sync/broadcast.js';
 import { loadGeometry, saveGeometry, geometryEquals } from './sticky/geometry.js';
@@ -92,6 +99,20 @@ export function createStickyApp({ root }) {
       if (await fs.isReady()) {
         adapter = fs;
         return openNoteFlow();
+      }
+      // Brand-new install (no folder chosen yet): "fs" is now the unset default,
+      // so a sticky can boot before the user has set up storage. Send them to
+      // the main app to choose first, rather than prompting to re-grant a folder
+      // that doesn't exist.
+      let hasHandle = false;
+      try {
+        hasHandle = !!(await getStoredDirHandle());
+      } catch {
+        /* ignore — treat as brand-new */
+      }
+      if (!hasHandle) {
+        renderMessage(root, 'Open Wren and choose where your notes live first.', { openWren: true });
+        return;
       }
       // Fresh popup may hold the IndexedDB handle without granted permission —
       // a user gesture is required to re-grant. Mirror renderFsReconnect, slim.
