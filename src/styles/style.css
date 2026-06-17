@@ -1024,6 +1024,15 @@ button {
 .sc-footer-dot {
   opacity: 0.5;
 }
+/* "Shortcuts" footer entry is a button (opens the in-app help) styled to read
+   exactly like the footer links. */
+.sc-footer-btn {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
 /* Ko-fi support pill - matches the .kofi-button pattern on unistyle.io */
 .sc-footer-kofi {
   display: inline-block;
@@ -1162,6 +1171,96 @@ button {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* ---- Keyboard-shortcuts & desktop help dialog --------------------------- */
+.sc-help-modal {
+  max-width: 440px;
+  text-align: left;
+}
+.sc-help-subhead {
+  margin: 16px 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--wr-panel-muted);
+}
+.sc-help-subhead:first-of-type { margin-top: 8px; }
+.sc-kbd-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sc-kbd-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.sc-kbd {
+  flex: none;
+  min-width: 92px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  padding: 2px 6px;
+  border: 1px solid var(--wr-border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--wr-field-bg);
+  color: var(--wr-panel-text);
+  text-align: center;
+}
+.sc-kbd--err {
+  border-color: #c0392b;
+  color: #c0392b;
+}
+.sc-kbd-desc {
+  font-size: 13px;
+  color: var(--wr-panel-text);
+}
+.sc-help-note,
+.sc-help-warn {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--wr-panel-muted);
+}
+.sc-help-warn {
+  color: var(--wr-panel-text);
+  background: rgba(192, 57, 43, 0.08);
+  border-left: 3px solid #c0392b;
+  border-radius: 4px;
+  padding: 8px 10px;
+}
+.sc-help-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  margin: 8px 0;
+  cursor: pointer;
+}
+.sc-help-rebinds {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+.sc-rebind-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sc-rebind-label {
+  flex: 1;
+  font-size: 13px;
+}
+.sc-rebind-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.sc-rebind-btn.is-capturing {
+  outline: 2px solid var(--wr-accent);
 }
 
 @keyframes sc-fade {
