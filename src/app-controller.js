@@ -15,6 +15,7 @@ import {
   firstLineOf,
   exportNoteDownload,
   buildNoteFilename,
+  getStoredDirHandle,
   CARD_COLORS,
 } from './notes-store.js';
 import {
@@ -63,6 +64,15 @@ import {
 
 const KOFI = 'https://ko-fi.com/abaker421';
 const VIEW_MODE_KEY = 'wren.viewMode';
+
+// Drive is demoted to an opt-in, experimental backend (local is the default).
+// One label + one warning string, reused on every surface that can switch to
+// Drive (onboarding, sign-in screen, backend popover) so the messaging cannot
+// drift between them.
+const DRIVE_EXPERIMENTAL_LABEL = 'Cloud sync (experimental)';
+const DRIVE_EXPERIMENTAL_WARNING =
+  'Experimental — may not sync reliably across devices; expect occasional issues. ' +
+  'Your notes stay local unless you turn this on.';
 
 export function createApp({ root, enableServiceWorker = false }) {
   /** @type {import('./storage/StorageAdapter.js').StorageAdapter|null} */
@@ -278,7 +288,8 @@ export function createApp({ root, enableServiceWorker = false }) {
   /* ---- Boot ------------------------------------------------------------- */
 
   async function boot() {
-    // Resolve the configured backend (applies fs-migration heuristic).
+    // Resolve the configured backend. Unset installs default to local ("fs");
+    // an explicit stored "drive" is honored (existing Drive users keep Drive).
     const backend = await resolveBackend();
     if (backend === null) return renderStorageChoice();
 
@@ -291,10 +302,18 @@ export function createApp({ root, enableServiceWorker = false }) {
         await renderApp();
         return;
       }
-      // Has a handle but permission isn't granted; show reconnect.
-      // Or has no handle at all (rare — implies someone cleared the dir handle
-      // but kept the backend pref). Either way, ask the user to pick again.
-      return renderFsReconnect(fs);
+      // Not ready. Distinguish a brand-new install (no saved directory handle →
+      // local default with nothing chosen yet) from an existing FS user whose
+      // folder permission lapsed. The former lands on the storage-choice
+      // onboarding (local primary, Drive experimental); the latter reconnects.
+      let hasHandle = false;
+      try {
+        hasHandle = !!(await getStoredDirHandle());
+      } catch {
+        /* ignore — treat as brand-new */
+      }
+      if (hasHandle) return renderFsReconnect(fs);
+      return renderStorageChoice();
     }
 
     if (backend === ADAPTER_TYPES.DRIVE) {
@@ -343,8 +362,9 @@ export function createApp({ root, enableServiceWorker = false }) {
     card.innerHTML = `
       <img src="./icon.svg" alt="Wren" />
       <h1>Browser not supported</h1>
-      <p>Wren needs the <strong>File System Access API</strong> for local-file
-      storage, or you can use Drive sync from any browser.</p>`;
+      <p>Wren’s default local storage needs the <strong>File System Access API</strong>,
+      which this browser doesn’t provide. You can still use the experimental Cloud
+      sync from any browser.</p>`;
     if (isExtensionPopup()) {
       // Drive sign-in needs the remote GIS script, which MV3's CSP blocks in
       // the popup — offer the full app instead, where Drive works.
@@ -353,7 +373,7 @@ export function createApp({ root, enableServiceWorker = false }) {
       const driveBtn = document.createElement('button');
       driveBtn.type = 'button';
       driveBtn.className = 'sc-btn sc-btn--primary';
-      driveBtn.textContent = 'Use Google Drive';
+      driveBtn.textContent = 'Try Cloud sync (experimental)';
       driveBtn.addEventListener('click', () => renderDriveSignIn({ reason: 'fresh' }));
       card.appendChild(driveBtn);
     }
@@ -367,21 +387,19 @@ export function createApp({ root, enableServiceWorker = false }) {
     card.innerHTML = `
       <img src="./icon.svg" alt="Wren" />
       <h1>Where should your notes live?</h1>
-      <p>You can change this later from the app shell.</p>`;
+      <p>Wren is local-first — your notes are plain <code>.md</code> files on this
+      computer. You can change this later from the app shell.</p>`;
 
-    const grid = document.createElement('div');
-    grid.className = 'sc-choice-grid';
-
-    // Local files card.
+    // Local files — the default, primary path.
     const local = document.createElement('div');
-    local.className = 'sc-choice-card';
+    local.className = 'sc-choice-card sc-choice-card--primary';
     const localTitle = document.createElement('div');
     localTitle.className = 'sc-choice-card-title';
     localTitle.textContent = 'Save to my computer';
     const localSub = document.createElement('p');
     localSub.className = 'sc-choice-card-sub';
     localSub.textContent =
-      'Notes live as .md files on this PC. Browser must support the File System Access API. Won’t sync to other devices.';
+      'Notes live as .md files on this PC. No account needed. Browser must support the File System Access API.';
     const localBtn = document.createElement('button');
     localBtn.type = 'button';
     localBtn.className = 'sc-btn sc-btn--primary';
@@ -405,34 +423,42 @@ export function createApp({ root, enableServiceWorker = false }) {
       }
     });
     local.append(localTitle, localSub, localBtn);
+    card.appendChild(local);
 
-    // Drive card.
-    const drive = document.createElement('div');
-    drive.className = 'sc-choice-card';
-    const driveTitle = document.createElement('div');
-    driveTitle.className = 'sc-choice-card-title';
-    driveTitle.textContent = 'Save to Google Drive';
-    const driveSub = document.createElement('p');
-    driveSub.className = 'sc-choice-card-sub';
+    // Drive — demoted to a deliberate, collapsed "experimental" disclosure so a
+    // new user can't land on it by accident. Opening it is the intentional act.
+    const exp = document.createElement('details');
+    exp.className = 'sc-experimental';
+    const expSummary = document.createElement('summary');
+    expSummary.textContent = DRIVE_EXPERIMENTAL_LABEL;
+    exp.appendChild(expSummary);
+
+    const warn = document.createElement('p');
+    warn.className = 'sc-warn';
+    warn.textContent = DRIVE_EXPERIMENTAL_WARNING;
+    exp.appendChild(warn);
+
     if (isExtensionPopup()) {
       // Drive sign-in uses the remote GIS script, which MV3's CSP blocks in the
       // popup. Point users to the full app, where Drive sync works.
-      driveSub.textContent =
-        'Drive sync isn’t available in the extension popup. Open the full app to sign in and sync across devices.';
-      drive.append(driveTitle, driveSub, buildOpenFullAppButton());
+      const note = document.createElement('p');
+      note.className = 'sc-choice-card-sub';
+      note.textContent =
+        'Cloud sync isn’t available in the extension popup. Open the full app to turn it on.';
+      exp.append(note, buildOpenFullAppButton());
     } else {
+      const driveSub = document.createElement('p');
+      driveSub.className = 'sc-choice-card-sub';
       driveSub.textContent =
-        'Notes live in your Drive under a "Wren Notes" folder. Sync across phone and computer. Works in any browser.';
+        'Notes sync through your own Google Drive (a "Wren Notes" folder, narrow drive.file scope) so they reach your phone and other computers.';
       const driveBtn = document.createElement('button');
       driveBtn.type = 'button';
-      driveBtn.className = 'sc-btn sc-btn--primary';
-      driveBtn.textContent = 'Sign in to Google Drive';
+      driveBtn.className = 'sc-btn sc-btn--ghost';
+      driveBtn.textContent = 'Turn on Cloud sync';
       driveBtn.addEventListener('click', () => renderDriveSignIn({ reason: 'fresh' }));
-      drive.append(driveTitle, driveSub, driveBtn);
+      exp.append(driveSub, driveBtn);
     }
-
-    grid.append(local, drive);
-    card.appendChild(grid);
+    card.appendChild(exp);
 
     // Why-choose expandable.
     const details = document.createElement('details');
@@ -442,9 +468,9 @@ export function createApp({ root, enableServiceWorker = false }) {
     details.appendChild(summary);
     const ul = document.createElement('ul');
     ul.innerHTML = `
-      <li><strong>Local files</strong> never leave your computer. No account needed.</li>
-      <li><strong>Drive</strong> syncs your notes across devices, including phone.</li>
-      <li>Drive uses a narrow <code>drive.file</code> scope — Wren only sees its own "Wren Notes" folder, never the rest of your Drive.</li>
+      <li><strong>Local files</strong> never leave your computer. No account needed. This is the recommended default.</li>
+      <li><strong>Cloud sync (experimental)</strong> syncs your notes across devices, including phone — but it’s not fully reliable yet.</li>
+      <li>Cloud sync uses a narrow <code>drive.file</code> scope — Wren only sees its own "Wren Notes" folder, never the rest of your Drive.</li>
       <li>You can switch later from the chip in the sidebar header.</li>`;
     details.appendChild(ul);
     card.appendChild(details);
@@ -505,7 +531,7 @@ export function createApp({ root, enableServiceWorker = false }) {
         ? 'Sign back in to Google Drive'
         : reason === 'error'
           ? 'Could not connect to Google Drive'
-          : 'Connect Google Drive';
+          : 'Turn on Cloud sync (experimental)';
     const sub =
       reason === 'expired'
         ? 'Your previous session expired. Sign in again to load your notes.'
@@ -516,6 +542,16 @@ export function createApp({ root, enableServiceWorker = false }) {
       <img src="./icon.svg" alt="Wren" />
       <h1>${headline}</h1>
       <p>${sub}</p>`;
+
+    // Fresh opt-in only: spell out that Cloud sync is experimental. (The
+    // expired/error paths are existing Drive users reconnecting — no need to
+    // re-warn them on every reconnect.)
+    if (reason === 'fresh') {
+      const warn = document.createElement('p');
+      warn.className = 'sc-warn';
+      warn.textContent = DRIVE_EXPERIMENTAL_WARNING;
+      card.appendChild(warn);
+    }
 
     const signIn = document.createElement('button');
     signIn.className = 'sc-btn sc-btn--primary';
@@ -1566,32 +1602,36 @@ export function createApp({ root, enableServiceWorker = false }) {
     pop.style.top = `${rect.bottom + 6}px`;
     pop.style.left = `${rect.left}px`;
 
-    const switchItem = document.createElement('button');
-    switchItem.type = 'button';
-    switchItem.className = 'sc-popover-item';
-    switchItem.textContent = 'Switch backend…';
-    switchItem.addEventListener('click', async () => {
+    // Deterministic switch: persist the TARGET backend explicitly, never
+    // clearStoredBackend(). Clearing let resolveBackend()'s fs-migration
+    // heuristic re-infer "fs" from the leftover directory handle, so a
+    // local->Drive switch silently snapped back to local and Drive never
+    // appeared (the 2026-06-03 fix). Setting the target lands on it (a Drive
+    // target then routes to the experimental sign-in screen if needed).
+    const performSwitch = async (targetBackend, { title, message, confirmLabel }) => {
       pop.remove();
-      const target = isDrive ? 'local files' : 'Google Drive';
-      const ok = await confirmDialog({
-        title: 'Switch storage backend?',
-        message: `Wren will reload and start with no notes (this device only). Your existing notes stay where they are — you can switch back any time. Continue switching to ${target}?`,
-        confirmLabel: 'Switch',
-      });
+      const ok = await confirmDialog({ title, message, confirmLabel });
       if (!ok) return;
-      // Set the TARGET backend explicitly instead of clearing the preference.
-      // clearStoredBackend() let resolveBackend()'s fs-migration heuristic
-      // re-infer "fs" from the leftover directory handle, so a local->Drive
-      // switch silently snapped back to local and the Drive option never
-      // appeared. Setting the target deterministically lands on it (Drive boot
-      // then routes to sign-in if needed).
-      const targetBackend = isDrive ? ADAPTER_TYPES.FS : ADAPTER_TYPES.DRIVE;
       await setStoredBackend(targetBackend);
       window.location.reload();
-    });
-    pop.appendChild(switchItem);
+    };
 
     if (isDrive) {
+      // On Cloud sync → the prominent, recommended action is returning to local.
+      const toLocal = document.createElement('button');
+      toLocal.type = 'button';
+      toLocal.className = 'sc-popover-item';
+      toLocal.textContent = 'Switch to local files';
+      toLocal.addEventListener('click', () =>
+        performSwitch(ADAPTER_TYPES.FS, {
+          title: 'Switch to local files?',
+          message:
+            'Wren will reload and start with no notes on this device until you pick a folder. Your existing notes stay where they are — in your "Wren Notes" Drive folder — and you can switch back any time.',
+          confirmLabel: 'Switch',
+        })
+      );
+      pop.appendChild(toLocal);
+
       const disconnect = document.createElement('button');
       disconnect.type = 'button';
       disconnect.className = 'sc-popover-item sc-popover-item--danger';
@@ -1611,6 +1651,33 @@ export function createApp({ root, enableServiceWorker = false }) {
         window.location.reload();
       });
       pop.appendChild(disconnect);
+    } else {
+      // On local → switching to Drive is a deliberate, experimental act. Group
+      // it under a labeled "Experimental" section with the warning so it can't
+      // be flipped on by a stray click.
+      const label = document.createElement('div');
+      label.className = 'sc-popover-label';
+      label.textContent = 'Experimental';
+      pop.appendChild(label);
+
+      const warn = document.createElement('p');
+      warn.className = 'sc-popover-warn';
+      warn.textContent = DRIVE_EXPERIMENTAL_WARNING;
+      pop.appendChild(warn);
+
+      const toDrive = document.createElement('button');
+      toDrive.type = 'button';
+      toDrive.className = 'sc-popover-item';
+      toDrive.textContent = 'Turn on Cloud sync…';
+      toDrive.addEventListener('click', () =>
+        performSwitch(ADAPTER_TYPES.DRIVE, {
+          title: 'Turn on Cloud sync (experimental)?',
+          message:
+            'Cloud sync is experimental — it may not sync reliably across devices. Wren will reload and ask you to sign in to Google Drive. Your local notes stay in their folder; you can switch back to local any time.',
+          confirmLabel: 'Continue',
+        })
+      );
+      pop.appendChild(toDrive);
     }
 
     document.body.appendChild(pop);

@@ -142,8 +142,8 @@
   </ul>
   <p>All of this lives in your browser's local storage. Clearing your browser data will remove it. Wren cannot access this data from any other device.</p>
 
-  <h2>Google Drive integration (optional)</h2>
-  <p>If you choose to enable Google Drive sync, Wren requests OAuth permission for the <code>drive.file</code> scope. This scope:</p>
+  <h2>Google Drive integration (optional, experimental)</h2>
+  <p>Wren stores your notes locally by default. Cloud sync via Google Drive is an <strong>optional, experimental</strong> feature you turn on yourself — it is off unless you explicitly enable it, and your notes stay on your own computer until you do. If you choose to enable Google Drive sync, Wren requests OAuth permission for the <code>drive.file</code> scope. This scope:</p>
   <ul>
     <li>Lets Wren see, create, edit, and delete <strong>only files Wren itself created</strong> in your Drive. Wren cannot see your other Drive files.</li>
     <li>Creates a folder named "Wren Notes" in your Drive on first sync. All Wren notes are stored as <code>.md</code> files in that folder.</li>

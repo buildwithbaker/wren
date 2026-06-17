@@ -29,6 +29,35 @@ The active adapter is selected at startup based on user preference; Phase 1
 defaults to FS unchanged, so existing installs keep working with no visible
 diff.
 
+## Default backend: local-first, Drive experimental (2026-06-17)
+
+The intended storage model is **local by default, Drive opt-in and experimental**:
+
+- **A fresh / unconfigured install resolves to the local FileSystem backend.**
+  `resolveBackend()` returns `"fs"` when no backend has been explicitly stored —
+  there is no longer a `null` "nothing chosen" return that routed toward a
+  co-equal Drive prompt. A brand-new install with no directory handle defaults
+  to `"fs"` *without* persisting it (the user's first real action — picking a
+  folder or deliberately turning on Cloud sync — is what gets written).
+- **Existing Drive users are never downgraded.** An explicit stored `"drive"`
+  is honored verbatim. Only the unset case changed.
+- **The fs-migration heuristic is preserved.** Unset + an existing directory
+  handle still adopts and persists `"fs"` (the 2026-06-03 switch-snap-back fix
+  depends on this).
+- **Drive is presented as "Cloud sync (experimental)"** with a standing warning
+  ("may not sync reliably across devices…") on every surface that can switch to
+  it: the storage-choice onboarding (behind a deliberate collapsed disclosure),
+  the Drive sign-in screen, and the backend popover (under an "Experimental"
+  group). The "Use local files instead" escape is kept.
+- **Switching local ⇄ Drive stays deterministic** via `setStoredBackend(target)`
+  — never `clearStoredBackend()` for a switch, which is what caused the
+  local→Drive snap-back the 2026-06-03 fix addressed.
+
+Drive sync code is intentionally retained, not removed; this change is framing +
+default-resolution only. The label/warning copy lives as two constants in
+`src/app-controller.js` (`DRIVE_EXPERIMENTAL_LABEL` / `DRIVE_EXPERIMENTAL_WARNING`)
+so the messaging cannot drift between surfaces.
+
 ### File map
 
 | File | Purpose |

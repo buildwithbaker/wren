@@ -5,9 +5,18 @@
 // invokes this once per boot after deciding the backend and once again on
 // any backend switch.
 //
-// Migration: if no backend has been explicitly set BUT a directory handle
-// already exists in IndexedDB, treat the user as an existing FS user and
-// auto-set the preference to "fs" so the next boot is a clean fast path.
+// Default is LOCAL. An install with no explicit stored backend resolves to
+// "fs" — Drive is never a default a new user lands on (it's opt-in and
+// labeled experimental in the UI). Two unset sub-cases:
+//   1. A directory handle already exists in IndexedDB → treat the user as an
+//      existing FS user and persist "fs" so the next boot is a clean fast path
+//      (the fs-migration heuristic; the 2026-06-03 switch-snap-back fix relies
+//      on this staying intact).
+//   2. No handle either (brand-new install) → still default to "fs", but do
+//      NOT persist it, so the user's first real action (pick a folder, or
+//      deliberately opt into experimental Drive) is what gets written.
+// HARD RULE: an explicit stored "drive" is always honored verbatim — existing
+// Drive users are never downgraded to local.
 
 import { ADAPTER_TYPES, NoBackendConfiguredError } from './StorageAdapter.js';
 import { FileSystemAdapter } from './FileSystemAdapter.js';
@@ -16,11 +25,13 @@ import { getStoredBackend, setStoredBackend } from './backendPreference.js';
 import { getStoredDirHandle } from '../notes-store.js';
 
 /**
- * Read the stored backend preference, applying the migration heuristic for
- * existing FS-only users. Does NOT prompt the user or instantiate anything.
+ * Read the stored backend preference, applying the local default and the
+ * fs-migration heuristic. Does NOT prompt the user or instantiate anything.
  *
- * @returns {Promise<'fs'|'drive'|null>}
- *   null means "no backend chosen yet — route to storage-choice onboarding."
+ * @returns {Promise<'fs'|'drive'>}
+ *   - an explicit stored "drive"/"fs" is returned verbatim (Drive never downgraded)
+ *   - unset → "fs" (local default). If a directory handle already exists the
+ *     "fs" choice is persisted (migration); for a brand-new install it is not.
  */
 export async function resolveBackend() {
   const stored = await getStoredBackend();
@@ -35,9 +46,13 @@ export async function resolveBackend() {
       return ADAPTER_TYPES.FS;
     }
   } catch {
-    /* ignore — if IndexedDB is busted, treat as no choice */
+    /* ignore — if IndexedDB is busted, fall through to the local default */
   }
-  return null;
+
+  // Brand-new install: default to local without persisting. The storage-choice
+  // onboarding presents local as the primary path; opting into Drive is a
+  // deliberate, separately-persisted action.
+  return ADAPTER_TYPES.FS;
 }
 
 /**
