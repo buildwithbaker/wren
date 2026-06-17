@@ -12,6 +12,7 @@
 import { CARD_COLORS, firstLineOf } from '@/notes-store.js';
 import { getAllNamespaces, groupNotesByNamespace } from '@/tags/tag-parser.js';
 import { buildTagChips } from './tag-chips.js';
+import { isAiNote, buildAiBadge } from './ai-badge.js';
 
 const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
 const GROUPBY_KEY = 'wren.kanbanGroupBy';
@@ -174,7 +175,8 @@ export function createKanbanView({ getNotes, onNoteOpen, onNewNote, onMoveNote }
 
     const title = document.createElement('div');
     title.className = 'sc-kanban-card-title';
-    title.textContent = note.title || 'Untitled';
+    if (isAiNote(note)) title.appendChild(buildAiBadge());
+    title.append(note.title || 'Untitled');
 
     const preview = document.createElement('div');
     preview.className = 'sc-kanban-card-preview';

@@ -157,6 +157,52 @@ export function createNoteEditor({
   savedHint.setAttribute('aria-live', 'polite');
   colorRow.append(cardColor.element, savedHint);
 
+  // Provenance mini-panel (AI-write visibility P2): a single tucked, collapsible
+  // line showing when the note was last updated and by whom (you / AI). Reads the
+  // frontmatter provenance fields; falls back to the modified time — and hides
+  // entirely — for legacy notes with no usable timestamp. NOT a version history.
+  const provenanceEl = document.createElement('details');
+  provenanceEl.className = 'sc-provenance';
+  provenanceEl.hidden = true;
+  const provenanceSummary = document.createElement('summary');
+  provenanceSummary.className = 'sc-provenance-summary';
+  const provenanceDetail = document.createElement('div');
+  provenanceDetail.className = 'sc-provenance-detail';
+  provenanceEl.append(provenanceSummary, provenanceDetail);
+
+  function whoLabel(by) {
+    if (by === 'ai') return 'AI';
+    if (by === 'human') return 'you';
+    return '';
+  }
+
+  function updateProvenance(n) {
+    const lastWhen = formatModified(n?.lastEdited || n?.modified || '');
+    if (!lastWhen) {
+      provenanceEl.hidden = true;
+      provenanceEl.open = false;
+      return;
+    }
+    provenanceEl.hidden = false;
+    const editedWho = whoLabel(n.lastEditedBy);
+    provenanceSummary.textContent = editedWho
+      ? `Updated ${lastWhen} · by ${editedWho}`
+      : `Updated ${lastWhen}`;
+
+    provenanceDetail.replaceChildren();
+    const createdWho = whoLabel(n.createdBy);
+    const createdWhen = formatModified(n.created);
+    const rows = [];
+    if (createdWhen) rows.push(`Created ${createdWhen}${createdWho ? ` · by ${createdWho}` : ''}`);
+    rows.push(`Last edited ${lastWhen}${editedWho ? ` · by ${editedWho}` : ''}`);
+    for (const text of rows) {
+      const row = document.createElement('div');
+      row.className = 'sc-provenance-row';
+      row.textContent = text;
+      provenanceDetail.appendChild(row);
+    }
+  }
+
   // Tag editor row
   const tagEditor = createTagEditor({
     getSuggestions: () => getTagSuggestions?.() || [],
@@ -197,7 +243,7 @@ export function createNoteEditor({
   // Tag row is part of the full editor only — a sticky keeps slim chrome.
   if (sticky) tagEditor.element.hidden = true;
 
-  surface.append(head, colorRow, tagEditor.element, toolbarMount, bodyMount);
+  surface.append(head, colorRow, provenanceEl, tagEditor.element, toolbarMount, bodyMount);
   root.append(placeholder, surface);
 
   // --- save scheduling ------------------------------------------------------
@@ -215,7 +261,12 @@ export function createNoteEditor({
     if (!note) return;
     const target = note;
     await onSave?.(target);
-    if (note === target) setHint(`Saved ${formatModified(target.modified)}`);
+    // onSave (app-controller handleSave) stamped modified + human provenance on
+    // the same note object; reflect it in the panel + hint if still open.
+    if (note === target) {
+      updateProvenance(target);
+      setHint(`Saved ${formatModified(target.modified)}`);
+    }
   }
   // Flush any pending save immediately (e.g. when leaving the note).
   function flush() {
@@ -265,6 +316,7 @@ export function createNoteEditor({
     cardColor.setValue(note.color);
     applyColor(note.color);
     tagEditor.setTags(note.tags || []);
+    updateProvenance(note);
     setHint(readOnly ? 'Staged · read-only' : note.modified ? `Saved ${formatModified(note.modified)}` : '');
 
     editor = createEditor({

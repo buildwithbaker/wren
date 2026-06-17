@@ -7,6 +7,7 @@ import { getAllTags } from '@/tags/tag-parser.js';
 import { buildTagChips } from './tag-chips.js';
 import { formatModified } from './format.js';
 import { noteMatchesQuery } from './note-search.js';
+import { isAiNote, buildAiBadge } from './ai-badge.js';
 
 const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
 const FILTER_KEY = 'wren.filterTags';
@@ -311,7 +312,9 @@ export function createNotesList({
 
     const title = document.createElement('div');
     title.className = 'sc-card-title';
-    title.textContent = note.title || 'Untitled';
+    // Subtle AI badge before the title when the note is AI-created/edited.
+    if (isAiNote(note)) title.appendChild(buildAiBadge());
+    title.append(note.title || 'Untitled');
 
     const preview = document.createElement('div');
     preview.className = 'sc-card-preview';

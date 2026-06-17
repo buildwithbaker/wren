@@ -366,6 +366,52 @@ button {
   letter-spacing: 0.01em;
 }
 
+/* AI-provenance badge (AI-write visibility P1) — a subtle chip shown before the
+   title on cards (list / compact / kanban) when a note was created or last
+   edited by the AI. Outlined/muted, NOT the loud filled inbox chip. */
+.sc-ai-badge {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 5px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0 4px;
+  border-radius: 4px;
+  color: var(--wr-accent);
+  border: 1px solid var(--wr-accent-ring, var(--wr-accent));
+  opacity: 0.85;
+}
+
+/* Provenance mini-panel on the open note (AI-write visibility P2). Tucked,
+   muted, collapsible — a single line that expands to created/edited detail. */
+.sc-provenance {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  color: var(--wr-paper-muted);
+}
+.sc-provenance-summary {
+  cursor: pointer;
+  list-style: none;
+  display: inline-block;
+  padding: 2px 0;
+  letter-spacing: 0.01em;
+}
+.sc-provenance-summary::-webkit-details-marker { display: none; }
+.sc-provenance-summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 5px;
+  font-size: 9px;
+  transition: transform var(--wr-trans);
+}
+.sc-provenance[open] .sc-provenance-summary::before { transform: rotate(90deg); }
+.sc-provenance-detail {
+  margin: 2px 0 0 14px;
+  line-height: 1.5;
+}
+.sc-provenance-row { white-space: nowrap; }
+
 /* ---- Inbox (_inbox/) — AI write-back staging (phase 4) ------------------- */
 .sc-inbox {
   margin: 4px 10px 8px;

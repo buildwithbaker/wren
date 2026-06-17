@@ -17,6 +17,7 @@ import { buildTagChips } from './tag-chips.js';
 import { formatModified } from './format.js';
 import { noteMatchesQuery } from './note-search.js';
 import { createPinButton } from './pin-button.js';
+import { isAiNote, buildAiBadge } from './ai-badge.js';
 
 const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
 
@@ -124,7 +125,8 @@ export function createCompactView({ onSelect, onNew, onExpand } = {}) {
     head.className = 'sc-compact-card-head';
     const title = document.createElement('div');
     title.className = 'sc-compact-card-title';
-    title.textContent = note.title || 'Untitled';
+    if (isAiNote(note)) title.appendChild(buildAiBadge());
+    title.append(note.title || 'Untitled');
     const meta = document.createElement('div');
     meta.className = 'sc-compact-card-meta';
     meta.textContent = formatModified(note.modified);
