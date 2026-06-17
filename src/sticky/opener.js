@@ -172,7 +172,11 @@ export async function openStickyTauri(note, { cascadeIndex = 0 } = {}) {
       url,
       title: note.title || 'Wren note',
       alwaysOnTop: true,
-      decorations: true,
+      // No native title bar: the OS bar would show the default window icon and
+      // the title text. The sticky shell draws its own slim bar (Wren logo +
+      // close, no text — see src/sticky/titlebar.js). The OS/taskbar title is
+      // still set (here, and live on rename via getCurrentWindow().setTitle).
+      decorations: false,
       width: Math.round(geom.w),
       height: Math.round(geom.h),
       x: Math.round(geom.x),
