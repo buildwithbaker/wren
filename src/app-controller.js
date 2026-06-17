@@ -43,6 +43,8 @@ import { createCompactView } from './ui/compact-view.js';
 import { createPinButton } from './ui/pin-button.js';
 import { isTauri, openExternal } from './platform.js';
 import { applyWindowSize, watchResize, applyPinnedAtBoot } from './tauri-window.js';
+import { setupDesktopIntegration } from './desktop.js';
+import { openShortcutsDialog } from './ui/desktop-panel.js';
 import { confirmDialog } from './ui/dialog.js';
 import { addTagToNote, parseTag, getAllTags, getAllNamespaces } from './tags/tag-parser.js';
 import { getStoredTheme, cycleTheme, initTheme } from './theme.js';
@@ -90,6 +92,7 @@ export function createApp({ root, enableServiceWorker = false }) {
   let compactView = null;
   let viewToggleEl = null;
   let sidebarPin = null; // Expanded-view always-on-top toggle (Tauri only)
+  let desktopIntegration = null; // tray/hotkey/autostart bridge (Tauri only; stub in browser)
   // Session view: 'list' | 'kanban' | 'compact'. Only 'list'|'kanban' are ever
   // persisted (wren.viewMode = the "full mode" memory); 'compact' is a session-
   // only landing layer set on every launch and never written to localStorage.
@@ -740,8 +743,21 @@ export function createApp({ root, enableServiceWorker = false }) {
     // Restore the persisted always-on-top ("pin") state on launch (Tauri only).
     applyPinnedAtBoot();
     setupBroadcast();
+    setupDesktop();
     await loadNotes();
     if (effectiveViewMode() === 'kanban') kanbanView.refresh();
+  }
+
+  // Wire desktop quick-capture (tray "New note" event + global hotkeys +
+  // autostart) once. No-op stub in the browser PWA / extension. renderApp may
+  // run again (Drive reconnect), so guard against double-registering.
+  function setupDesktop() {
+    if (desktopIntegration) return;
+    setupDesktopIntegration({ onNewNote: () => handleNew() })
+      .then((api) => {
+        desktopIntegration = api;
+      })
+      .catch((err) => console.warn('Desktop integration setup failed', err));
   }
 
   /* ---- Cross-window sync (Sticky Float Phase 2) ----------------------- */
@@ -1769,6 +1785,20 @@ export function createApp({ root, enableServiceWorker = false }) {
       a.textContent = l.label;
       footer.appendChild(a);
     });
+    // In-app help: the full keyboard-shortcut reference (and, in the desktop
+    // app, the startup toggle + rebindable global hotkeys). A button, not a
+    // link, so the Tauri external-link interceptor below ignores it.
+    const dot = document.createElement('span');
+    dot.className = 'sc-footer-dot';
+    dot.textContent = '·';
+    const shortcutsBtn = document.createElement('button');
+    shortcutsBtn.type = 'button';
+    shortcutsBtn.className = 'sc-footer-bwb sc-footer-btn';
+    shortcutsBtn.textContent = 'Shortcuts';
+    shortcutsBtn.addEventListener('click', () =>
+      openShortcutsDialog({ desktop: desktopIntegration })
+    );
+    footer.append(dot, shortcutsBtn);
     // In the Tauri desktop app a plain target=_blank link would open/navigate a
     // webview; intercept and hand the URL to the system browser instead so the
     // app window stays put. PWA/extension keep the normal new-tab behavior.
