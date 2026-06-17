@@ -1016,6 +1016,11 @@ export function createApp({ root, enableServiceWorker = false }) {
               // index so it has summaries/due without extra reads.
               summary: parsed.summary || m.summary || '',
               due: parsed.due || '',
+              // Provenance (AI-write visibility) — drives the card AI badge and
+              // the open-note last-updated panel.
+              createdBy: parsed.createdBy || m.createdBy || '',
+              lastEditedBy: parsed.lastEditedBy || m.lastEditedBy || '',
+              lastEdited: parsed.lastEdited || m.lastEdited || '',
               firstLine: firstLineOf(parsed.body),
               revision: revision || m.revision,
             };
@@ -1094,6 +1099,9 @@ export function createApp({ root, enableServiceWorker = false }) {
         tags: parsed.tags || [],
         summary: parsed.summary || '',
         due: parsed.due || '',
+        createdBy: parsed.createdBy || '',
+        lastEditedBy: parsed.lastEditedBy || '',
+        lastEdited: parsed.lastEdited || '',
         firstLine: firstLineOf(parsed.body),
         revision: '',
         readOnly: true,
@@ -1143,15 +1151,25 @@ export function createApp({ root, enableServiceWorker = false }) {
       return;
     }
     const staged = inboxNotes.find((n) => n.id === inboxId);
+    const onDrive = adapter?.backendId() === ADAPTER_TYPES.DRIVE;
     const ok = await confirmDialog({
       title: 'Discard staged note?',
-      message: `"${(staged && staged.title) || 'Untitled'}" will be permanently deleted from the inbox. This cannot be undone.`,
+      message: `"${(staged && staged.title) || 'Untitled'}" will be removed from the inbox and moved to ${
+        onDrive ? "your Drive's trash" : 'the .trash folder'
+      }. Recover it from there if you change your mind.`,
       confirmLabel: 'Discard',
       danger: true,
     });
     if (!ok) return;
     try {
-      await adapter.deleteNote(inboxId);
+      // Soft-delete to match the MCP convention. discardInboxNote moves the file
+      // to .trash/ (FS) or Drive's trash (Drive); fall back to deleteNote if an
+      // adapter somehow predates it.
+      if (typeof adapter.discardInboxNote === 'function') {
+        await adapter.discardInboxNote(inboxId);
+      } else {
+        await adapter.deleteNote(inboxId);
+      }
     } catch (err) {
       if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
         showDriveDisconnected();
@@ -1262,6 +1280,10 @@ export function createApp({ root, enableServiceWorker = false }) {
         // Phase 2 index.
         summary: parsed.summary || '',
         due: parsed.due || '',
+        // Provenance — for the AI badge + last-updated panel.
+        createdBy: parsed.createdBy || '',
+        lastEditedBy: parsed.lastEditedBy || '',
+        lastEdited: parsed.lastEdited || '',
         firstLine: firstLineOf(parsed.body),
         revision,
       };
@@ -1288,7 +1310,22 @@ export function createApp({ root, enableServiceWorker = false }) {
     }
     try {
       const now = new Date().toISOString();
-      const seed = { title: '', body: '', color: 'default', created: now, modified: now, tags: [], summary: '', due: '', filename: '' };
+      // Stamp human provenance on app-created notes so they read as "by you" and
+      // never show the AI badge. (The MCP stamps created_by:'ai' on its writes.)
+      const seed = {
+        title: '',
+        body: '',
+        color: 'default',
+        created: now,
+        modified: now,
+        tags: [],
+        summary: '',
+        due: '',
+        createdBy: 'human',
+        lastEditedBy: 'human',
+        lastEdited: now,
+        filename: '',
+      };
       // serializeNote stamps a stable wrenId on first write; serialize `seed`
       // directly (not a throwaway copy) so we can carry that same logical id
       // onto the in-memory note below.
@@ -1309,6 +1346,9 @@ export function createApp({ root, enableServiceWorker = false }) {
         tags: seed.tags,
         summary: seed.summary,
         due: seed.due,
+        createdBy: seed.createdBy,
+        lastEditedBy: seed.lastEditedBy,
+        lastEdited: seed.lastEdited,
         firstLine: '',
         revision,
       };
@@ -1333,6 +1373,12 @@ export function createApp({ root, enableServiceWorker = false }) {
     }
     // Bump modified at write time (mirrors legacy notes-store.writeNote).
     note.modified = new Date().toISOString();
+    // This is a human edit in the app: stamp human provenance so the
+    // last-updated panel reads "by you" and an AI-edited note flips back to
+    // human on the next manual edit. created_by is preserved (an AI-CREATED
+    // note keeps its AI badge via created_by even after a human edits it).
+    note.lastEditedBy = 'human';
+    note.lastEdited = note.modified;
     const content = serializeNote(note);
     try {
       const { revision } = await adapter.writeNote(note.id, content);

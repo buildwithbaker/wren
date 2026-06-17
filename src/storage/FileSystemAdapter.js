@@ -22,6 +22,7 @@ import {
   uniqueNoteName,
   isReservedNoteName,
   INBOX_DIR,
+  TRASH_DIR,
 } from '../notes-store.js';
 import { ADAPTER_TYPES, ConflictError, AdapterAuthError } from './StorageAdapter.js';
 
@@ -143,6 +144,11 @@ export class FileSystemAdapter {
           modified,
           color: parsed.color,
           summary: parsed.summary || '',
+          // Provenance (MCP v2.1) — surfaced so cards can show the AI badge
+          // without re-reading the body. Absent on legacy notes.
+          createdBy: parsed.createdBy || '',
+          lastEditedBy: parsed.lastEditedBy || '',
+          lastEdited: parsed.lastEdited || '',
           // Revision for FS = mtime in ms (string for cross-backend symmetry).
           // Drive uses headRevisionId. Both are opaque to the sync layer.
           revision: String(file.lastModified),
@@ -287,6 +293,9 @@ export class FileSystemAdapter {
           modified,
           color: parsed.color,
           summary: parsed.summary || '',
+          createdBy: parsed.createdBy || '',
+          lastEditedBy: parsed.lastEditedBy || '',
+          lastEdited: parsed.lastEdited || '',
           revision: String(file.lastModified),
         });
       } catch {
@@ -327,6 +336,46 @@ export class FileSystemAdapter {
 
     const after = await destHandle.getFile();
     return { id: destName, revision: String(after.lastModified) };
+  }
+
+  /**
+   * Discard a staged note: SOFT-delete it by moving the file from `_inbox/` into
+   * the `.trash/` subfolder (created on demand) rather than hard-deleting, so the
+   * note is recoverable by a manual file move — matching the MCP convention
+   * (Drive's discard soft-deletes to its native trash). Uses the same
+   * write-new-then-delete-old move as promote, so a mid-failure never loses the
+   * file (at worst it stays staged). Collisions in `.trash/` get a " (N)" suffix.
+   *
+   * @param {string} noteId - an `_inbox/<filename>` id
+   * @returns {Promise<{id: string}>} the new `.trash/<filename>` id
+   */
+  async discardInboxNote(noteId) {
+    this._assertReady();
+    if (!isInboxId(noteId)) {
+      throw new Error(`discardInboxNote requires an _inbox/ id, got "${noteId}"`);
+    }
+    const inboxDir = await this._getInboxDirHandle({ create: false });
+    if (!inboxDir) throw new Error('_inbox/ subfolder not found');
+    const baseName = inboxBaseName(noteId);
+    const srcHandle = await inboxDir.getFileHandle(baseName);
+    const content = await (await srcHandle.getFile()).text();
+
+    const trashDir = await this._dirHandle.getDirectoryHandle(TRASH_DIR, { create: true });
+    const destName = await uniqueNoteName(baseName, async (name) => {
+      try {
+        await trashDir.getFileHandle(name);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    const destHandle = await trashDir.getFileHandle(destName, { create: true });
+    const writable = await destHandle.createWritable();
+    await writable.write(content);
+    await writable.close();
+    await inboxDir.removeEntry(baseName);
+
+    return { id: `${TRASH_DIR}/${destName}` };
   }
 
   /**

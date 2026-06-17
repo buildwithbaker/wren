@@ -236,6 +236,9 @@ export class DriveAdapter {
       let title = '';
       let color = 'default';
       let summary = '';
+      let createdBy = '';
+      let lastEditedBy = '';
+      let lastEdited = '';
       let created = f.createdTime || f.modifiedTime || new Date().toISOString();
       try {
         const text = await this._readFileContent(f.id);
@@ -244,6 +247,9 @@ export class DriveAdapter {
         title = fm.title || '';
         color = fm.color || 'default';
         summary = fm.summary || '';
+        createdBy = fm.createdBy || '';
+        lastEditedBy = fm.lastEditedBy || '';
+        lastEdited = fm.lastEdited || '';
         if (fm.created) created = fm.created;
       } catch {
         // Unreadable file - still surface its metadata.
@@ -259,6 +265,9 @@ export class DriveAdapter {
         modified: f.modifiedTime || created,
         color,
         summary,
+        createdBy,
+        lastEditedBy,
+        lastEdited,
         revision: f.headRevisionId || '',
         contentHash: f.md5Checksum || undefined,
       });
@@ -287,6 +296,9 @@ export class DriveAdapter {
       let title = '';
       let color = 'default';
       let summary = '';
+      let createdBy = '';
+      let lastEditedBy = '';
+      let lastEdited = '';
       let created = f.createdTime || f.modifiedTime || new Date().toISOString();
       try {
         const text = await this._readFileContent(f.id);
@@ -295,6 +307,9 @@ export class DriveAdapter {
         title = fm.title || '';
         color = fm.color || 'default';
         summary = fm.summary || '';
+        createdBy = fm.createdBy || '';
+        lastEditedBy = fm.lastEditedBy || '';
+        lastEdited = fm.lastEdited || '';
         if (fm.created) created = fm.created;
       } catch {
         // Unreadable staged file - still surface its metadata.
@@ -309,6 +324,9 @@ export class DriveAdapter {
         modified: f.modifiedTime || created,
         color,
         summary,
+        createdBy,
+        lastEditedBy,
+        lastEdited,
         revision: f.headRevisionId || '',
         contentHash: f.md5Checksum || undefined,
       });
@@ -538,6 +556,18 @@ export class DriveAdapter {
         body: JSON.stringify({ trashed: true }),
       }
     );
+  }
+
+  /**
+   * Discard a staged inbox note: soft-delete it. On Drive that is exactly
+   * deleteNote (PATCH trashed=true) — the file lands in Drive's native trash,
+   * recoverable for ~30d. Exposed under the same name as the FS adapter's
+   * `.trash/` move so app-controller can call one method regardless of backend.
+   *
+   * @param {string} noteId - the Drive file id of a staged note
+   */
+  async discardInboxNote(noteId) {
+    await this.deleteNote(noteId);
   }
 
   /**
@@ -795,7 +825,16 @@ function buildMultipart(boundary, metadata, content) {
  * the Drive fileId, which listNotes carries as the storage `id`).
  */
 function parseFrontmatterLite(text) {
-  const out = { id: '', title: '', color: 'default', created: '', summary: '' };
+  const out = {
+    id: '',
+    title: '',
+    color: 'default',
+    created: '',
+    summary: '',
+    createdBy: '',
+    lastEditedBy: '',
+    lastEdited: '',
+  };
   const fm = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text || '');
   if (!fm) return out;
   for (const line of fm[1].split(/\r?\n/)) {
@@ -815,6 +854,11 @@ function parseFrontmatterLite(text) {
     else if (key === 'color') out.color = val;
     else if (key === 'created') out.created = val;
     else if (key === 'summary') out.summary = val;
+    // Provenance (MCP v2.1). Only 'ai' | 'human' are meaningful for the *_by
+    // fields; anything else is treated as unknown (no badge).
+    else if (key === 'created_by') out.createdBy = val === 'ai' || val === 'human' ? val : '';
+    else if (key === 'last_edited_by') out.lastEditedBy = val === 'ai' || val === 'human' ? val : '';
+    else if (key === 'last_edited') out.lastEdited = val;
   }
   return out;
 }

@@ -227,6 +227,20 @@ export function serializeNote(note) {
   if (note.summary) {
     lines.push(`summary: ${JSON.stringify(note.summary)}`);
   }
+  // Provenance (MCP v2.1): preserve created_by / last_edited_by / last_edited on
+  // the parse→serialize round-trip so saving an AI-stamped note in the app never
+  // strips its provenance. Each line is written only when the field is present
+  // (legacy/app-only notes stay clean). The app stamps last_edited_by:'human' +
+  // last_edited on its own human edits (see app-controller handleSave/handleNew).
+  if (note.createdBy) {
+    lines.push(`created_by: ${note.createdBy}`);
+  }
+  if (note.lastEditedBy) {
+    lines.push(`last_edited_by: ${note.lastEditedBy}`);
+  }
+  if (note.lastEdited) {
+    lines.push(`last_edited: ${note.lastEdited}`);
+  }
   // tags: only written when non-empty — keeps tag-less notes' frontmatter clean.
   const tags = Array.isArray(note.tags)
     ? note.tags.filter((t) => typeof t === 'string' && t.trim().length > 0)
@@ -236,6 +250,14 @@ export function serializeNote(note) {
   }
   lines.push('---', '', note.body || '');
   return lines.join('\n');
+}
+
+// Provenance values stamped by the MCP write tools (v2.1). Only 'ai' | 'human'
+// are meaningful; anything else (or an absent key) is treated as unknown and
+// must NEVER render an AI badge — legacy notes have no provenance at all.
+const PROVENANCE_VALUES = new Set(['ai', 'human']);
+function normalizeProvenance(value) {
+  return PROVENANCE_VALUES.has(value) ? value : '';
 }
 
 export function parseNote(text, filename) {
@@ -249,6 +271,11 @@ export function parseNote(text, filename) {
   let due = '';
   let summary = '';
   let tags = [];
+  // Provenance (MCP v2.1): who created / last edited the note and when. Absent
+  // on legacy + app-only notes; surfaced for the AI badge + last-updated panel.
+  let createdBy = '';
+  let lastEditedBy = '';
+  let lastEdited = '';
   let body = text;
 
   const fm = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text);
@@ -279,6 +306,9 @@ export function parseNote(text, filename) {
       else if (key === 'color') color = val;
       else if (key === 'due') due = val;
       else if (key === 'summary') summary = val;
+      else if (key === 'created_by') createdBy = normalizeProvenance(val);
+      else if (key === 'last_edited_by') lastEditedBy = normalizeProvenance(val);
+      else if (key === 'last_edited') lastEdited = val;
     }
   }
 
@@ -294,6 +324,9 @@ export function parseNote(text, filename) {
     due,
     summary,
     tags,
+    createdBy,
+    lastEditedBy,
+    lastEdited,
     firstLine: firstLineOf(body),
   };
 }
@@ -350,6 +383,12 @@ export function isReservedNoteName(name) {
 // adapters and the index builder share one definition. Inbox notes surface only
 // through the dedicated listInboxNotes() adapter method.
 export const INBOX_DIR = '_inbox';
+
+// Reserved subfolder for soft-deleted notes. Discarding a staged inbox note
+// moves its file here instead of hard-deleting, matching the MCP convention
+// (the MCP / Drive both soft-delete: recoverable by a manual file move). There
+// is no in-app restore UI yet (out of scope) — this is the recoverable bin.
+export const TRASH_DIR = '.trash';
 
 // --- Note CRUD --------------------------------------------------------------
 

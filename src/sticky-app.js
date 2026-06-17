@@ -214,6 +214,11 @@ export function createStickyApp({ root }) {
       tags: parsed.tags || [],
       summary: parsed.summary || '',
       due: parsed.due || '',
+      // Provenance — carried through so a sticky save never strips an AI note's
+      // created_by / last_edited_by / last_edited frontmatter.
+      createdBy: parsed.createdBy || '',
+      lastEditedBy: parsed.lastEditedBy || '',
+      lastEdited: parsed.lastEdited || '',
       firstLine: firstLineOf(parsed.body),
       revision: '',
     };
@@ -265,6 +270,11 @@ export function createStickyApp({ root }) {
 
   async function handleSave(note) {
     note.modified = new Date().toISOString();
+    // A sticky edit is a human edit — stamp human provenance (mirrors the main
+    // app's handleSave) so last_edited stays truthful and AI-edited notes flip
+    // back to human. created_by is preserved.
+    note.lastEditedBy = 'human';
+    note.lastEdited = note.modified;
     try {
       // NOTE: a sticky deliberately does NOT rename-on-title (no
       // syncBackendFilename). Renaming changes the FS storage id, which would
