@@ -23,6 +23,7 @@ import {
   isReservedNoteName,
   INBOX_DIR,
   TRASH_DIR,
+  ARCHIVE_DIR,
 } from '../notes-store.js';
 import { ADAPTER_TYPES, ConflictError, AdapterAuthError } from './StorageAdapter.js';
 
@@ -35,6 +36,16 @@ function isInboxId(id) {
 }
 function inboxBaseName(id) {
   return id.slice(INBOX_ID_PREFIX.length);
+}
+
+// Archive-scoped ids work the same way: `_archive/<filename>` so readNote /
+// deleteNote can resolve to the archive subfolder. (Note Lifecycle B.)
+const ARCHIVE_ID_PREFIX = `${ARCHIVE_DIR}/`;
+function isArchiveId(id) {
+  return typeof id === 'string' && id.startsWith(ARCHIVE_ID_PREFIX);
+}
+function archiveBaseName(id) {
+  return id.slice(ARCHIVE_ID_PREFIX.length);
 }
 
 /**
@@ -229,6 +240,12 @@ export class FileSystemAdapter {
       await inboxDir.removeEntry(inboxBaseName(noteId));
       return;
     }
+    if (isArchiveId(noteId)) {
+      const archiveDir = await this._getArchiveDirHandle({ create: false });
+      if (!archiveDir) return;
+      await archiveDir.removeEntry(archiveBaseName(noteId));
+      return;
+    }
     await this._dirHandle.removeEntry(noteId);
   }
 
@@ -260,6 +277,13 @@ export class FileSystemAdapter {
         throw new Error(`_inbox/ subfolder not found for id "${noteId}"`);
       }
       return { dirHandle: inboxDir, name: inboxBaseName(noteId) };
+    }
+    if (isArchiveId(noteId)) {
+      const archiveDir = await this._getArchiveDirHandle({ create: false });
+      if (!archiveDir) {
+        throw new Error(`_archive/ subfolder not found for id "${noteId}"`);
+      }
+      return { dirHandle: archiveDir, name: archiveBaseName(noteId) };
     }
     return { dirHandle: this._dirHandle, name: noteId };
   }
@@ -376,6 +400,131 @@ export class FileSystemAdapter {
     await inboxDir.removeEntry(baseName);
 
     return { id: `${TRASH_DIR}/${destName}` };
+  }
+
+  // ---- Archive (_archive/) — Note Lifecycle B -------------------------------
+
+  /**
+   * Get the `_archive/` subfolder handle, or null when absent. With
+   * `{ create: false }` (the default) a missing subfolder returns null rather
+   * than creating it — listing must never create an empty `_archive/`.
+   */
+  async _getArchiveDirHandle({ create = false } = {}) {
+    try {
+      return await this._dirHandle.getDirectoryHandle(ARCHIVE_DIR, { create });
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Metadata for the `.md` files in `_archive/`. Returns [] when the subfolder
+   * is absent (and never creates it). Mirrors listNotes' shape, but each entry's
+   * id is `_archive/<filename>` and carries `archived: true`. Read from disk —
+   * archived notes are outside the indexed roots, so the catalog never has them.
+   */
+  async listArchiveNotes() {
+    this._assertReady();
+    const archiveDir = await this._getArchiveDirHandle({ create: false });
+    if (!archiveDir) return [];
+    const out = [];
+    for await (const entry of archiveDir.values()) {
+      if (entry.kind !== 'file') continue;
+      if (!entry.name.toLowerCase().endsWith('.md')) continue;
+      if (isReservedNoteName(entry.name)) continue;
+      try {
+        const file = await entry.getFile();
+        const text = await file.text();
+        const parsed = parseNote(text, entry.name);
+        const modified = parsed.modified || new Date(file.lastModified).toISOString();
+        out.push({
+          id: `${ARCHIVE_DIR}/${entry.name}`,
+          archived: true,
+          name: entry.name,
+          wrenId: parsed.wrenId || '',
+          title: parsed.title || '',
+          created: parsed.created || modified,
+          modified,
+          color: parsed.color,
+          summary: parsed.summary || '',
+          due: parsed.due || '',
+          createdBy: parsed.createdBy || '',
+          lastEditedBy: parsed.lastEditedBy || '',
+          lastEdited: parsed.lastEdited || '',
+          revision: String(file.lastModified),
+        });
+      } catch {
+        // Skip unreadable archived files.
+      }
+    }
+    out.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
+    return out;
+  }
+
+  /**
+   * Archive a top-level note: move its file into `_archive/` (created on demand)
+   * via the same write-new-then-delete-old move as promote, so a mid-failure
+   * never loses the file. Content is byte-preserved (frontmatter intact). The
+   * filename — including the `YYYY-MM-DD - Title.md` convention — is preserved,
+   * with a " (N)" suffix only on a collision. Returns the new `_archive/` id.
+   *
+   * @param {string} noteId - a top-level note id (filename)
+   * @returns {Promise<{id: string}>}
+   */
+  async archiveNote(noteId) {
+    this._assertReady();
+    if (isInboxId(noteId) || isArchiveId(noteId)) {
+      throw new Error(`archiveNote requires a top-level id, got "${noteId}"`);
+    }
+    const srcHandle = await this._dirHandle.getFileHandle(noteId);
+    const content = await (await srcHandle.getFile()).text();
+
+    const archiveDir = await this._dirHandle.getDirectoryHandle(ARCHIVE_DIR, { create: true });
+    const destName = await uniqueNoteName(noteId, async (name) => {
+      try {
+        await archiveDir.getFileHandle(name);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    const destHandle = await archiveDir.getFileHandle(destName, { create: true });
+    const writable = await destHandle.createWritable();
+    await writable.write(content);
+    await writable.close();
+    await this._dirHandle.removeEntry(noteId);
+
+    return { id: `${ARCHIVE_DIR}/${destName}` };
+  }
+
+  /**
+   * Unarchive: move an `_archive/<filename>` note back to the top level (the
+   * mirror of archiveNote), preserving the filename/`wrenId`. Returns the new
+   * top-level id + revision, so the caller can re-index and re-list it.
+   *
+   * @param {string} noteId - an `_archive/<filename>` id
+   * @returns {Promise<{id: string, revision: string}>}
+   */
+  async unarchiveNote(noteId) {
+    this._assertReady();
+    if (!isArchiveId(noteId)) {
+      throw new Error(`unarchiveNote requires an _archive/ id, got "${noteId}"`);
+    }
+    const archiveDir = await this._getArchiveDirHandle({ create: false });
+    if (!archiveDir) throw new Error('_archive/ subfolder not found');
+    const baseName = archiveBaseName(noteId);
+    const srcHandle = await archiveDir.getFileHandle(baseName);
+    const content = await (await srcHandle.getFile()).text();
+
+    const destName = await uniqueNoteName(baseName, (name) => this._fileExists(name));
+    const destHandle = await this._dirHandle.getFileHandle(destName, { create: true });
+    const writable = await destHandle.createWritable();
+    await writable.write(content);
+    await writable.close();
+    await archiveDir.removeEntry(baseName);
+
+    const after = await destHandle.getFile();
+    return { id: destName, revision: String(after.lastModified) };
   }
 
   /**

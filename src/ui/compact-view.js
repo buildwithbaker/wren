@@ -18,6 +18,7 @@ import { formatModified } from './format.js';
 import { noteMatchesQuery } from './note-search.js';
 import { createPinButton } from './pin-button.js';
 import { isAiNote, buildAiBadge } from './ai-badge.js';
+import { buildDueChip } from './due-chip.js';
 
 const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
 
@@ -137,6 +138,10 @@ export function createCompactView({ onSelect, onNew, onExpand } = {}) {
     preview.textContent = note.firstLine || 'No additional text';
 
     card.append(head, preview);
+
+    // Due-date chip (Note Lifecycle A2).
+    const dueChip = buildDueChip(note.due);
+    if (dueChip) card.appendChild(dueChip);
 
     // Tag chips — read-only here (no filter UI in compact v1). Chip clicks are
     // swallowed by buildTagChips only when onTagClick is passed; without it the

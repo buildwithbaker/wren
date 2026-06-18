@@ -12,6 +12,7 @@ import { confirmDialog } from './dialog.js';
 import { CARD_COLORS } from '@/notes-store.js';
 import { parseTag } from '@/tags/tag-parser.js';
 import { formatModified } from './format.js';
+import { dueStatus, normalizeDue } from '@/due.js';
 
 const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
 const SAVE_DELAY = 500;
@@ -20,6 +21,7 @@ export function createNoteEditor({
   onSave,
   onDelete,
   onExport,
+  onArchive,
   onBack,
   onPopOut,
   onTitleChange,
@@ -130,6 +132,21 @@ export function createNoteEditor({
     }
   });
 
+  // Archive (Note Lifecycle B2): move the note out of the main views into
+  // _archive/. Shown only when an onArchive handler is wired and the note is
+  // editable (hidden for read-only staged/archived views and in stickies).
+  const archiveBtn = document.createElement('button');
+  archiveBtn.type = 'button';
+  archiveBtn.className = 'sc-iconbtn';
+  archiveBtn.title = 'Archive note';
+  archiveBtn.setAttribute('aria-label', 'Archive note');
+  archiveBtn.innerHTML =
+    '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg>';
+  archiveBtn.hidden = !onArchive || sticky;
+  archiveBtn.addEventListener('click', () => {
+    if (note) onArchive?.(note);
+  });
+
   // Sticky chrome is slim: title + color + toolbar + body only. Hide export and
   // delete in a sticky window (those actions stay in the main app).
   if (sticky) {
@@ -137,7 +154,7 @@ export function createNoteEditor({
     deleteBtn.hidden = true;
   }
 
-  actions.append(popOutBtn, exportBtn, deleteBtn);
+  actions.append(popOutBtn, archiveBtn, exportBtn, deleteBtn);
   head.append(back, titleInput, actions);
 
   // Color picker row
@@ -152,10 +169,49 @@ export function createNoteEditor({
       scheduleSave();
     },
   });
+  // Due-date control (Note Lifecycle A1): a native date input writing the
+  // existing `due` frontmatter field (YYYY-MM-DD). The × clears it (removes the
+  // field). Reflects status (overdue/today/upcoming) via a class for tinting.
+  const dueWrap = document.createElement('div');
+  dueWrap.className = 'sc-due-control';
+  const dueLabel = document.createElement('span');
+  dueLabel.className = 'sc-due-label';
+  dueLabel.textContent = 'Due';
+  const dueInput = document.createElement('input');
+  dueInput.type = 'date';
+  dueInput.className = 'sc-due-input';
+  dueInput.setAttribute('aria-label', 'Due date');
+  const dueClear = document.createElement('button');
+  dueClear.type = 'button';
+  dueClear.className = 'sc-due-clear';
+  dueClear.textContent = '×';
+  dueClear.title = 'Clear due date';
+  dueClear.setAttribute('aria-label', 'Clear due date');
+  dueInput.addEventListener('change', () => {
+    if (!note) return;
+    note.due = dueInput.value || '';
+    updateDueControl();
+    scheduleSave();
+  });
+  dueClear.addEventListener('click', () => {
+    if (!note) return;
+    note.due = '';
+    dueInput.value = '';
+    updateDueControl();
+    scheduleSave();
+  });
+  dueWrap.append(dueLabel, dueInput, dueClear);
+
   const savedHint = document.createElement('span');
   savedHint.className = 'sc-saved-hint';
   savedHint.setAttribute('aria-live', 'polite');
-  colorRow.append(cardColor.element, savedHint);
+  colorRow.append(cardColor.element, dueWrap, savedHint);
+
+  function updateDueControl() {
+    const status = dueStatus(note?.due || '');
+    dueWrap.dataset.status = status; // '', 'overdue', 'today', 'upcoming'
+    dueClear.hidden = !(note && note.due);
+  }
 
   // Provenance mini-panel (AI-write visibility P2): a single tucked, collapsible
   // line showing when the note was last updated and by whom (you / AI). Reads the
@@ -298,7 +354,7 @@ export function createNoteEditor({
     bodyMount.replaceChildren();
   }
 
-  async function openNote(next, { focusTitle = false, readOnly = false } = {}) {
+  async function openNote(next, { focusTitle = false, readOnly = false, readOnlyLabel = 'Read-only' } = {}) {
     await flush();
     teardownEditor();
     note = next;
@@ -316,8 +372,15 @@ export function createNoteEditor({
     cardColor.setValue(note.color);
     applyColor(note.color);
     tagEditor.setTags(note.tags || []);
+    // Due control: read-only views (staged/archived) can't edit it.
+    dueInput.value = normalizeDue(note.due);
+    dueInput.disabled = readOnly;
+    updateDueControl();
+    dueWrap.hidden = readOnly;
+    // Archive is a normal-note action; hide it on read-only/sticky surfaces.
+    archiveBtn.hidden = !onArchive || sticky || readOnly;
     updateProvenance(note);
-    setHint(readOnly ? 'Staged · read-only' : note.modified ? `Saved ${formatModified(note.modified)}` : '');
+    setHint(readOnly ? readOnlyLabel : note.modified ? `Saved ${formatModified(note.modified)}` : '');
 
     editor = createEditor({
       element: bodyMount,
