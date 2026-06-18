@@ -24,6 +24,9 @@
     "autostart:allow-enable",
     "autostart:allow-disable",
     "autostart:allow-is-enabled",
+    "notification:allow-notify",
+    "notification:allow-is-permission-granted",
+    "notification:allow-request-permission",
     {
       "identifier": "opener:allow-open-url",
       "allow": [{ "url": "https://wren.buildwithbaker.io/*" }]

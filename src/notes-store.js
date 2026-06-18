@@ -390,6 +390,15 @@ export const INBOX_DIR = '_inbox';
 // is no in-app restore UI yet (out of scope) — this is the recoverable bin.
 export const TRASH_DIR = '.trash';
 
+// Reserved subfolder for ARCHIVED notes. Archiving moves a note's file here;
+// unarchiving moves it back to the top level. Because the app indexes only the
+// top level + `_inbox/`, an `_archive/` note is automatically excluded from the
+// notes list AND the `.wren-index.json` catalog with zero filter logic — the
+// whole point of the folder-move design. Distinct from `.trash/` (soft-delete)
+// and `_inbox/` (AI staging); the three never collide. Archived notes surface
+// only through the dedicated listArchiveNotes() adapter method.
+export const ARCHIVE_DIR = '_archive';
+
 // --- Note CRUD --------------------------------------------------------------
 
 export function slugify(title) {

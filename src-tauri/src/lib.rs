@@ -68,6 +68,9 @@ pub fn run() {
     // System-browser opener (used by the app footer links so the EXE never
     // navigates the app window when a link is clicked).
     .plugin(tauri_plugin_opener::init())
+    // Desktop notifications for due/overdue notes (Note Lifecycle A3). The
+    // frontend (desktop.js) checks permission and fires the notification.
+    .plugin(tauri_plugin_notification::init())
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(

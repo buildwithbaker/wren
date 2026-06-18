@@ -43,8 +43,9 @@ import { createCompactView } from './ui/compact-view.js';
 import { createPinButton } from './ui/pin-button.js';
 import { isTauri, openExternal } from './platform.js';
 import { applyWindowSize, watchResize, applyPinnedAtBoot } from './tauri-window.js';
-import { setupDesktopIntegration } from './desktop.js';
+import { setupDesktopIntegration, maybeNotifyDueNotes } from './desktop.js';
 import { openShortcutsDialog } from './ui/desktop-panel.js';
+import { openArchiveDialog } from './ui/archive-panel.js';
 import { confirmDialog } from './ui/dialog.js';
 import { addTagToNote, parseTag, getAllTags, getAllNamespaces } from './tags/tag-parser.js';
 import { getStoredTheme, cycleTheme, initTheme } from './theme.js';
@@ -81,6 +82,7 @@ export function createApp({ root, enableServiceWorker = false }) {
   let adapter = null;
   let notes = [];
   let inboxNotes = []; // staged _inbox/ notes (AI phase 4), kept separate
+  let archiveNotes = []; // _archive/ notes (Note Lifecycle B), loaded on demand
   let list = null;
   let noteEditor = null;
   let appEl = null;
@@ -678,6 +680,8 @@ export function createApp({ root, enableServiceWorker = false }) {
       onSelect: (noteId) => openNote(noteId),
       onNew: () => handleNew(),
       onPopOut: (noteId) => handlePopOut(noteId),
+      onArchive: (noteId) => handleArchive(noteId),
+      onArchiveOpen: () => openArchiveView(),
       onInboxSelect: (id) => openInboxNote(id),
       onInboxPromote: (id) => handlePromoteInbox(id),
       onInboxDiscard: (id) => handleDiscardInbox(id),
@@ -691,6 +695,7 @@ export function createApp({ root, enableServiceWorker = false }) {
       onSave: handleSave,
       onDelete: handleDelete,
       onExport: (note) => exportNoteDownload(note),
+      onArchive: (note) => handleArchive(note.id),
       onBack: () => {
         appEl.dataset.view = 'list';
         list.setActive(null);
@@ -758,6 +763,9 @@ export function createApp({ root, enableServiceWorker = false }) {
         desktopIntegration = api;
       })
       .catch((err) => console.warn('Desktop integration setup failed', err));
+    // Re-check due/overdue notes when the window regains focus (EXE only;
+    // no-op in the browser). The once-per-day guard prevents nagging.
+    window.addEventListener('focus', () => maybeNotifyDueNotes(notes));
   }
 
   /* ---- Cross-window sync (Sticky Float Phase 2) ----------------------- */
@@ -1064,11 +1072,140 @@ export function createApp({ root, enableServiceWorker = false }) {
     // Load staged inbox notes alongside the main list (best-effort — a failure
     // here must never break the main notes list).
     await loadInboxNotes();
+    // Load the _archive/ count for the sidebar entry (read from disk — archived
+    // notes are outside the indexed roots, so the catalog never lists them).
+    await loadArchiveNotes();
     // Refresh the AI-readable index after the initial (and any) full load so an
     // external agent sees a current manifest even if no edit has happened yet.
     regenerateIndex();
     // Write the AI contract doc once per session (missing/stale-version check).
     ensureAiContractDoc();
+    // Desktop reminder (EXE only): nudge for notes due today/overdue. No-op in
+    // the browser — cards already carry the visual due treatment.
+    maybeNotifyDueNotes(notes);
+  }
+
+  /* ---- Archive (_archive/) — Note Lifecycle B ------------------------- */
+
+  // Load the `_archive/` notes from disk into the archiveNotes collection and
+  // update the sidebar entry's count. Crash-safe like loadInboxNotes.
+  async function loadArchiveNotes() {
+    try {
+      if (!adapter || typeof adapter.listArchiveNotes !== 'function') {
+        archiveNotes = [];
+      } else {
+        const archived = await adapter.listArchiveNotes();
+        archiveNotes = (archived || []).map((m) => ({
+          ...m,
+          filename: m.name || m.id,
+          firstLine: '',
+          tags: m.tags || [],
+        }));
+      }
+    } catch (err) {
+      console.warn('Could not load archived notes (main list unaffected)', err);
+      archiveNotes = [];
+    }
+    if (list) list.setArchiveCount(archiveNotes.length);
+  }
+
+  // Archive a note: move its file to _archive/, then refresh. If it was open in
+  // the editor, drop back to the list (it's no longer in the main corpus).
+  async function handleArchive(noteId) {
+    if (isDriveDisconnected()) {
+      showDriveDisconnectedToast('Reconnect Drive to archive notes.');
+      return;
+    }
+    if (!adapter || typeof adapter.archiveNote !== 'function') return;
+    try {
+      await adapter.archiveNote(noteId);
+    } catch (err) {
+      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
+        showDriveDisconnected();
+        return;
+      }
+      console.error('Archive failed', err);
+      alert('Could not archive that note.');
+      return;
+    }
+    if (noteEditor.getNote && noteEditor.getNote()?.id === noteId) {
+      noteEditor.clear();
+      list.setActive(null);
+      appEl.dataset.view = 'list';
+    }
+    // Reload: the note leaves the main list + index, and the archive count bumps.
+    await loadNotes();
+  }
+
+  // Unarchive: move the file back to the top level. Returns true on success so
+  // the Archive dialog can drop the row. Refreshes the main list + index.
+  async function handleUnarchive(archiveId) {
+    if (isDriveDisconnected()) {
+      showDriveDisconnectedToast('Reconnect Drive to unarchive notes.');
+      return false;
+    }
+    if (!adapter || typeof adapter.unarchiveNote !== 'function') return false;
+    try {
+      await adapter.unarchiveNote(archiveId);
+    } catch (err) {
+      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
+        showDriveDisconnected();
+        return false;
+      }
+      console.error('Unarchive failed', err);
+      alert('Could not unarchive that note.');
+      return false;
+    }
+    await loadNotes();
+    return true;
+  }
+
+  // Open the Archive view (B3): a dialog listing _archive/ notes with open +
+  // unarchive. Notes are the already-loaded archiveNotes (read from disk).
+  function openArchiveView() {
+    openArchiveDialog({
+      notes: archiveNotes,
+      onOpen: (id) => openArchivedNote(id),
+      onUnarchive: (id) => handleUnarchive(id),
+    });
+  }
+
+  // Open an archived note read-only (mirrors openInboxNote). Editing happens
+  // after unarchiving; the file lives in _archive/ and isn't in the main list.
+  async function openArchivedNote(archiveId) {
+    try {
+      const { content } = await adapter.readNote(archiveId);
+      const parsed = parseNote(content, archiveId);
+      const fresh = {
+        id: archiveId,
+        archived: true,
+        wrenId: parsed.wrenId || '',
+        filename: archiveId,
+        title: parsed.title,
+        body: parsed.body,
+        color: parsed.color,
+        created: parsed.created,
+        modified: parsed.modified,
+        tags: parsed.tags || [],
+        summary: parsed.summary || '',
+        due: parsed.due || '',
+        createdBy: parsed.createdBy || '',
+        lastEditedBy: parsed.lastEditedBy || '',
+        lastEdited: parsed.lastEdited || '',
+        firstLine: firstLineOf(parsed.body),
+        revision: '',
+        readOnly: true,
+      };
+      await noteEditor.openNote(fresh, { readOnly: true, readOnlyLabel: 'Archived · read-only' });
+      list.setActive(archiveId);
+      appEl.dataset.view = 'editor';
+    } catch (err) {
+      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
+        showDriveDisconnected();
+        return;
+      }
+      console.warn('Could not open archived note', err);
+    }
   }
 
   /* ---- Inbox (_inbox/) — AI write-back staging (phase 4) -------------- */
@@ -1122,7 +1259,7 @@ export function createApp({ root, enableServiceWorker = false }) {
         revision: '',
         readOnly: true,
       };
-      await noteEditor.openNote(fresh, { readOnly: true });
+      await noteEditor.openNote(fresh, { readOnly: true, readOnlyLabel: 'Staged · read-only' });
       list.setActive(inboxId);
       appEl.dataset.view = 'editor';
     } catch (err) {

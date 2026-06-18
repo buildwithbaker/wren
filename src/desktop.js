@@ -12,6 +12,7 @@
 // recompile.
 
 import { isTauri } from './platform.js';
+import { isDueOrOverdue, todayStr } from './due.js';
 
 // Tray "New note" emits this; we listen and run the same handleNew() the in-app
 // button does. Must match EVENT_NEW_NOTE in src-tauri/src/lib.rs.
@@ -220,5 +221,57 @@ async function unregisterHotkey(accel) {
     if (await gs.isRegistered(accel)) await gs.unregister(accel);
   } catch (err) {
     console.warn('unregister failed', err);
+  }
+}
+
+// Once-per-calendar-day guard so focus/launch don't nag repeatedly.
+const DUE_NOTIFIED_KEY = 'wren.due.notifiedDate';
+
+/**
+ * Fire a desktop notification when notes are due today / overdue (Note
+ * Lifecycle A3, EXE-only). No-op in the browser PWA — the cards already carry
+ * the visual treatment, and no notification API is touched. At most one
+ * notification per calendar day; permission denial degrades silently.
+ *
+ * @param {Array<{due?: string, title?: string}>} notes - the live (top-level) notes
+ */
+export async function maybeNotifyDueNotes(notes) {
+  if (!isTauri()) return; // PWA: visual-only, never call the notification API
+  try {
+    const due = (notes || []).filter((n) => isDueOrOverdue(n?.due));
+    if (due.length === 0) return;
+
+    const today = todayStr();
+    let last = '';
+    try {
+      last = localStorage.getItem(DUE_NOTIFIED_KEY) || '';
+    } catch {
+      /* ignore */
+    }
+    if (last === today) return; // already nudged today
+
+    const mod = await import('@tauri-apps/plugin-notification');
+    let granted = await mod.isPermissionGranted();
+    if (!granted) {
+      const perm = await mod.requestPermission();
+      granted = perm === 'granted';
+    }
+    if (!granted) return; // denial → degrade silently
+
+    try {
+      localStorage.setItem(DUE_NOTIFIED_KEY, today);
+    } catch {
+      /* ignore */
+    }
+    const count = due.length;
+    const first = due[0];
+    const heading = count === 1 ? '1 note due' : `${count} notes due`;
+    const body =
+      count === 1
+        ? first.title || 'Untitled'
+        : `Including "${first.title || 'Untitled'}"`;
+    mod.sendNotification({ title: `Wren — ${heading}`, body });
+  } catch (err) {
+    console.warn('due notification failed', err);
   }
 }
