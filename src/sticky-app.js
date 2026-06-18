@@ -41,6 +41,7 @@ import { addToRegistry, removeFromRegistry } from './sticky/registry.js';
 import { parseStickyParams } from './sticky/opener.js';
 import { buildStickyTitleBar } from './sticky/titlebar.js';
 import { isTauri } from './platform.js';
+import { initTheme, applyTheme, getStoredTheme } from './theme.js';
 
 const VALID_COLOR = new Set(CARD_COLORS.map((c) => c.id));
 const GEOM_POLL_MS = 1500;
@@ -60,6 +61,16 @@ export function createStickyApp({ root }) {
   }
 
   document.body.classList.add('is-sticky');
+
+  // Mirror the main hub's theme (Light / Dark / Auto) rather than falling back
+  // to the OS setting — a popup note follows whatever the Wren app is set to.
+  // The choice lives in localStorage under 'wren.theme', shared across the PWA
+  // and every Tauri webview (same origin), so reading it here is enough. Re-apply
+  // live when the main app changes the theme while this popup is open.
+  initTheme();
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'wren.theme' || e.key === null) applyTheme(getStoredTheme());
+  });
 
   let adapter = null;
   let noteEditor = null;

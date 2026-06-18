@@ -1900,8 +1900,19 @@ export function createApp({ root, enableServiceWorker = false }) {
     const footer = document.createElement('footer');
     footer.className = 'sc-footer';
     const SITE = 'https://wren.buildwithbaker.io';
+    const desktop = isTauri();
     const links = [
-      { href: `${SITE}/download.html`, label: 'Download' },
+      // In the desktop app the "Download" link is pointless (you already have
+      // it). Show a static, non-clickable "Desktop version" indicator instead,
+      // with an info tooltip on hover. PWA/extension keep the real Download link.
+      desktop
+        ? {
+            label: 'Desktop version',
+            static: true,
+            title:
+              'You’re running the Wren desktop app for Windows. The web, extension, and desktop versions all share the same notes.',
+          }
+        : { href: `${SITE}/download.html`, label: 'Download' },
       { href: `${SITE}/guide.html`, label: 'Guide' },
       { href: `${SITE}/privacy.html`, label: 'Privacy' },
       { href: KOFI, label: 'Build with Baker' },
@@ -1913,6 +1924,16 @@ export function createApp({ root, enableServiceWorker = false }) {
         dot.className = 'sc-footer-dot';
         dot.textContent = '·';
         footer.appendChild(dot);
+      }
+      // Static (non-link) footer entry: a plain span the Tauri link interceptor
+      // ignores, with an info tooltip via the native title attribute.
+      if (l.static) {
+        const span = document.createElement('span');
+        span.className = 'sc-footer-static';
+        span.textContent = l.label;
+        if (l.title) span.title = l.title;
+        footer.appendChild(span);
+        return;
       }
       const a = document.createElement('a');
       a.href = l.href;
