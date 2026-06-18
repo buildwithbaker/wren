@@ -61,7 +61,7 @@ self.addEventListener('fetch', (event) => {
             cache.put(request, fresh.clone());
           }
           return fresh;
-        } catch (err) {
+        } catch {
           const cached = await cache.match(request);
           if (cached) return cached;
           if (request.mode === 'navigate') {
