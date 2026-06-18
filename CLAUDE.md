@@ -39,8 +39,9 @@ table of the Build with Baker Repo Standard v2.0. Before creating any new file:
 - dist/ and dist-extension/ are generated - never edit by hand
 - public/sw.js and public/manifest.json location is load-bearing. Vite copies
   public/ to the published root; a service worker MUST live at the published
-  root or its scope silently shrinks (GitHub Pages cannot send
-  Service-Worker-Allowed to widen it).
+  root or its scope silently shrinks - a worker served from a sub-path can only
+  control that sub-path, and you can't rely on a Service-Worker-Allowed header
+  to widen its scope.
 - The OAuth Client ID in src/oauth/gisClient.js is a PUBLIC web client ID and is
   safe in version control. Its Authorized JavaScript origins are registered in
   Google Cloud (project "Wren"): http://localhost:5173, http://localhost,

@@ -2,7 +2,7 @@
   "name": "Wren",
   "short_name": "Wren",
   "description": "Local-first sticky notes. Rich-text notes stored as Markdown files on your own PC.",
-  "id": "/?app=wren",
+  "id": "/",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
