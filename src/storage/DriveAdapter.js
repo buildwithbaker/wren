@@ -13,7 +13,13 @@
 // Decision provenance: KB Module 05 P1.3, P1.4, P1.8, P2b.3, P2b.4.
 
 import { ADAPTER_TYPES, ConflictError, AdapterAuthError } from './StorageAdapter.js';
-import { buildNoteFilename, uniqueNoteName, isReservedNoteName, INBOX_DIR } from '../notes-store.js';
+import {
+  buildNoteFilename,
+  uniqueNoteName,
+  isReservedNoteName,
+  INBOX_DIR,
+  ARCHIVE_DIR,
+} from '../notes-store.js';
 import {
   getAccessToken,
   requestAccessToken,
@@ -64,6 +70,12 @@ export class DriveAdapter {
      * @type {string|null}
      */
     this._inboxFolderId = null;
+    /**
+     * Resolved Drive file ID of the `_archive/` subfolder (Note Lifecycle B),
+     * once looked up or created. null = not yet resolved this session.
+     * @type {string|null}
+     */
+    this._archiveFolderId = null;
   }
 
   // ---- Lifecycle ---------------------------------------------------------
@@ -217,6 +229,148 @@ export class DriveAdapter {
     return this._inboxFolderId;
   }
 
+  // ---- Archive (_archive/) subfolder — Note Lifecycle B -----------------
+
+  /**
+   * Resolve the `_archive/` subfolder's Drive id. Mirrors
+   * _resolveOrCreateInboxFolder: returns null when absent unless `create:true`.
+   * @param {{create?: boolean}} [opts]
+   * @returns {Promise<string|null>}
+   */
+  async _resolveOrCreateArchiveFolder({ create = false } = {}) {
+    if (this._archiveFolderId) return this._archiveFolderId;
+    const escaped = ARCHIVE_DIR.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const hits = await this._listFiles(
+      `name='${escaped}' and '${this._folderId}' in parents and ` +
+        `mimeType='${FOLDER_MIME}' and trashed=false`,
+      'files(id,createdTime)'
+    );
+    if (hits.length > 0) {
+      const sorted = [...hits].sort((a, b) =>
+        (a.createdTime || '') < (b.createdTime || '') ? -1 : 1
+      );
+      this._archiveFolderId = sorted[0].id;
+      return this._archiveFolderId;
+    }
+    if (!create) return null;
+    const resp = await this._driveFetch(`${DRIVE_API}/files?fields=id`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: ARCHIVE_DIR,
+        mimeType: FOLDER_MIME,
+        parents: [this._folderId],
+      }),
+    });
+    const body = await resp.json();
+    this._archiveFolderId = body.id;
+    return this._archiveFolderId;
+  }
+
+  /**
+   * Metadata for notes in `_archive/`. Returns [] when the subfolder is absent.
+   * Drive ids are location-independent, so each entry's id is the raw file id
+   * (round-trips for readNote without a prefix); the `archived: true` flag marks
+   * it. Mirrors listInboxNotes.
+   */
+  async listArchiveNotes() {
+    this._assertReady();
+    const archiveFolderId = await this._resolveOrCreateArchiveFolder({ create: false });
+    if (!archiveFolderId) return [];
+    const qExpr = `'${archiveFolderId}' in parents and trashed=false and mimeType='${NOTE_MIME}'`;
+    const files = await this._listFiles(qExpr);
+
+    const out = [];
+    for (const f of files) {
+      if (isReservedNoteName(f.name)) continue;
+      let wrenId = '';
+      let title = '';
+      let color = 'default';
+      let summary = '';
+      let due = '';
+      let createdBy = '';
+      let lastEditedBy = '';
+      let lastEdited = '';
+      let created = f.createdTime || f.modifiedTime || new Date().toISOString();
+      try {
+        const text = await this._readFileContent(f.id);
+        const fm = parseFrontmatterLite(text);
+        wrenId = fm.id || '';
+        title = fm.title || '';
+        color = fm.color || 'default';
+        summary = fm.summary || '';
+        due = fm.due || '';
+        createdBy = fm.createdBy || '';
+        lastEditedBy = fm.lastEditedBy || '';
+        lastEdited = fm.lastEdited || '';
+        if (fm.created) created = fm.created;
+      } catch {
+        // Unreadable archived file - still surface its metadata.
+      }
+      out.push({
+        id: f.id,
+        archived: true,
+        wrenId,
+        name: f.name || '',
+        title,
+        created,
+        modified: f.modifiedTime || created,
+        color,
+        summary,
+        due,
+        createdBy,
+        lastEditedBy,
+        lastEdited,
+        revision: f.headRevisionId || '',
+        contentHash: f.md5Checksum || undefined,
+      });
+    }
+    out.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
+    return out;
+  }
+
+  /**
+   * Archive a note: a Drive parent move into `_archive/` (addParents=archive,
+   * removeParents=root). The file id is unchanged (no content copy), so the
+   * frontmatter is trivially preserved. Returns the same id + current revision.
+   *
+   * @param {string} noteId - the Drive file id of a top-level note
+   * @returns {Promise<{id: string, revision: string}>}
+   */
+  async archiveNote(noteId) {
+    this._assertReady();
+    const archiveFolderId = await this._resolveOrCreateArchiveFolder({ create: true });
+    const resp = await this._driveFetch(
+      `${DRIVE_API}/files/${encodeURIComponent(noteId)}` +
+        `?addParents=${encodeURIComponent(archiveFolderId)}` +
+        `&removeParents=${encodeURIComponent(this._folderId)}` +
+        `&fields=id,headRevisionId`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{}' }
+    );
+    const meta = await resp.json();
+    return { id: meta.id || noteId, revision: meta.headRevisionId || '' };
+  }
+
+  /**
+   * Unarchive: the mirror parent move (addParents=root, removeParents=archive).
+   * @param {string} noteId - the Drive file id of an archived note
+   * @returns {Promise<{id: string, revision: string}>}
+   */
+  async unarchiveNote(noteId) {
+    this._assertReady();
+    const archiveFolderId = await this._resolveOrCreateArchiveFolder({ create: false });
+    if (!archiveFolderId) throw new Error('_archive/ subfolder not found');
+    const resp = await this._driveFetch(
+      `${DRIVE_API}/files/${encodeURIComponent(noteId)}` +
+        `?addParents=${encodeURIComponent(this._folderId)}` +
+        `&removeParents=${encodeURIComponent(archiveFolderId)}` +
+        `&fields=id,headRevisionId`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{}' }
+    );
+    const meta = await resp.json();
+    return { id: meta.id || noteId, revision: meta.headRevisionId || '' };
+  }
+
   // ---- StorageAdapter interface ----------------------------------------
 
   async listNotes() {
@@ -236,6 +390,9 @@ export class DriveAdapter {
       let title = '';
       let color = 'default';
       let summary = '';
+      let createdBy = '';
+      let lastEditedBy = '';
+      let lastEdited = '';
       let created = f.createdTime || f.modifiedTime || new Date().toISOString();
       try {
         const text = await this._readFileContent(f.id);
@@ -244,6 +401,9 @@ export class DriveAdapter {
         title = fm.title || '';
         color = fm.color || 'default';
         summary = fm.summary || '';
+        createdBy = fm.createdBy || '';
+        lastEditedBy = fm.lastEditedBy || '';
+        lastEdited = fm.lastEdited || '';
         if (fm.created) created = fm.created;
       } catch {
         // Unreadable file - still surface its metadata.
@@ -259,6 +419,9 @@ export class DriveAdapter {
         modified: f.modifiedTime || created,
         color,
         summary,
+        createdBy,
+        lastEditedBy,
+        lastEdited,
         revision: f.headRevisionId || '',
         contentHash: f.md5Checksum || undefined,
       });
@@ -287,6 +450,9 @@ export class DriveAdapter {
       let title = '';
       let color = 'default';
       let summary = '';
+      let createdBy = '';
+      let lastEditedBy = '';
+      let lastEdited = '';
       let created = f.createdTime || f.modifiedTime || new Date().toISOString();
       try {
         const text = await this._readFileContent(f.id);
@@ -295,6 +461,9 @@ export class DriveAdapter {
         title = fm.title || '';
         color = fm.color || 'default';
         summary = fm.summary || '';
+        createdBy = fm.createdBy || '';
+        lastEditedBy = fm.lastEditedBy || '';
+        lastEdited = fm.lastEdited || '';
         if (fm.created) created = fm.created;
       } catch {
         // Unreadable staged file - still surface its metadata.
@@ -309,6 +478,9 @@ export class DriveAdapter {
         modified: f.modifiedTime || created,
         color,
         summary,
+        createdBy,
+        lastEditedBy,
+        lastEdited,
         revision: f.headRevisionId || '',
         contentHash: f.md5Checksum || undefined,
       });
@@ -538,6 +710,18 @@ export class DriveAdapter {
         body: JSON.stringify({ trashed: true }),
       }
     );
+  }
+
+  /**
+   * Discard a staged inbox note: soft-delete it. On Drive that is exactly
+   * deleteNote (PATCH trashed=true) — the file lands in Drive's native trash,
+   * recoverable for ~30d. Exposed under the same name as the FS adapter's
+   * `.trash/` move so app-controller can call one method regardless of backend.
+   *
+   * @param {string} noteId - the Drive file id of a staged note
+   */
+  async discardInboxNote(noteId) {
+    await this.deleteNote(noteId);
   }
 
   /**
@@ -795,7 +979,17 @@ function buildMultipart(boundary, metadata, content) {
  * the Drive fileId, which listNotes carries as the storage `id`).
  */
 function parseFrontmatterLite(text) {
-  const out = { id: '', title: '', color: 'default', created: '', summary: '' };
+  const out = {
+    id: '',
+    title: '',
+    color: 'default',
+    created: '',
+    summary: '',
+    due: '',
+    createdBy: '',
+    lastEditedBy: '',
+    lastEdited: '',
+  };
   const fm = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text || '');
   if (!fm) return out;
   for (const line of fm[1].split(/\r?\n/)) {
@@ -815,6 +1009,12 @@ function parseFrontmatterLite(text) {
     else if (key === 'color') out.color = val;
     else if (key === 'created') out.created = val;
     else if (key === 'summary') out.summary = val;
+    else if (key === 'due') out.due = val;
+    // Provenance (MCP v2.1). Only 'ai' | 'human' are meaningful for the *_by
+    // fields; anything else is treated as unknown (no badge).
+    else if (key === 'created_by') out.createdBy = val === 'ai' || val === 'human' ? val : '';
+    else if (key === 'last_edited_by') out.lastEditedBy = val === 'ai' || val === 'human' ? val : '';
+    else if (key === 'last_edited') out.lastEdited = val;
   }
   return out;
 }

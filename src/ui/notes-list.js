@@ -4,7 +4,11 @@
 
 import { CARD_COLORS } from '@/notes-store.js';
 import { getAllTags } from '@/tags/tag-parser.js';
+import { buildTagChips } from './tag-chips.js';
 import { formatModified } from './format.js';
+import { noteMatchesQuery } from './note-search.js';
+import { isAiNote, buildAiBadge } from './ai-badge.js';
+import { buildDueChip } from './due-chip.js';
 
 const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
 const FILTER_KEY = 'wren.filterTags';
@@ -12,6 +16,9 @@ const FILTER_KEY = 'wren.filterTags';
 export function createNotesList({
   onSelect,
   onNew,
+  onPopOut,
+  onArchive,
+  onArchiveOpen,
   compact = false,
   onInboxSelect,
   onInboxPromote,
@@ -36,6 +43,22 @@ export function createNotesList({
     '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg><span>New Note</span>';
   newBtn.addEventListener('click', () => onNew?.());
   header.appendChild(newBtn);
+
+  // Archive entry (Note Lifecycle B3): opens the Archive view. Hidden until at
+  // least one note is archived (set via setArchiveCount); shows a count badge.
+  const archiveBtn = document.createElement('button');
+  archiveBtn.type = 'button';
+  archiveBtn.className = 'sc-archive-entry';
+  archiveBtn.title = 'View archived notes';
+  archiveBtn.setAttribute('aria-label', 'View archived notes');
+  archiveBtn.hidden = true;
+  const archiveCountEl = document.createElement('span');
+  archiveCountEl.className = 'sc-archive-entry-count';
+  archiveBtn.innerHTML =
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg><span>Archive</span>';
+  archiveBtn.appendChild(archiveCountEl);
+  archiveBtn.addEventListener('click', () => onArchiveOpen?.());
+  if (onArchiveOpen) header.appendChild(archiveBtn);
 
   // Search
   const searchWrap = document.createElement('div');
@@ -78,13 +101,9 @@ export function createNotesList({
         if (!noteTags.includes(ft)) return false;
       }
     }
-    // Text query against title + preview.
-    if (query) {
-      const title = (note.title || '').toLowerCase();
-      const preview = (note.firstLine || '').toLowerCase();
-      if (!title.includes(query) && !preview.includes(query)) return false;
-    }
-    return true;
+    // Text query against title + preview (shared predicate, reused by the
+    // compact view so both stay in lockstep).
+    return noteMatchesQuery(note, query);
   }
 
   function render() {
@@ -312,7 +331,9 @@ export function createNotesList({
 
     const title = document.createElement('div');
     title.className = 'sc-card-title';
-    title.textContent = note.title || 'Untitled';
+    // Subtle AI badge before the title when the note is AI-created/edited.
+    if (isAiNote(note)) title.appendChild(buildAiBadge());
+    title.append(note.title || 'Untitled');
 
     const preview = document.createElement('div');
     preview.className = 'sc-card-preview';
@@ -322,7 +343,68 @@ export function createNotesList({
     meta.className = 'sc-card-meta';
     meta.textContent = formatModified(note.modified);
 
-    card.append(title, preview, meta);
+    card.append(title, preview);
+    // Due-date chip (Note Lifecycle A2) — null when the note has no due date.
+    const dueChip = buildDueChip(note.due);
+    if (dueChip) card.appendChild(dueChip);
+    // Tag chips (Sticky Float Phase 1): visible per-note tag feedback. Chip
+    // click adds the tag to the AND-filter instead of opening the note.
+    const chips = buildTagChips(note.tags, { onTagClick: (tag) => addFilterTag(tag) });
+    if (chips) card.appendChild(chips);
+    card.appendChild(meta);
+
+    // Archive affordance (Note Lifecycle B2): a hover icon mirroring the pop-out
+    // span. Stops propagation so it archives rather than opening the note.
+    if (onArchive) {
+      const arch = document.createElement('span');
+      arch.className = 'sc-card-archive';
+      arch.setAttribute('role', 'button');
+      arch.tabIndex = 0;
+      arch.title = 'Archive note';
+      arch.setAttribute('aria-label', 'Archive note');
+      arch.innerHTML =
+        '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg>';
+      const doArchive = (e) => {
+        e.stopPropagation();
+        onArchive(note.id);
+      };
+      arch.addEventListener('click', doArchive);
+      arch.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          doArchive(e);
+        }
+      });
+      card.appendChild(arch);
+    }
+
+    // Pop-out affordance (Sticky Float Phase 2): a small icon shown on hover.
+    // It is a role=button span (not a nested <button>, which would be invalid
+    // inside the card button) and stops propagation so it never opens the note,
+    // matching the tag-chip discipline above.
+    if (onPopOut) {
+      const pop = document.createElement('span');
+      pop.className = 'sc-card-popout';
+      pop.setAttribute('role', 'button');
+      pop.tabIndex = 0;
+      pop.title = 'Pop out into its own window';
+      pop.setAttribute('aria-label', 'Pop out note into its own window');
+      pop.innerHTML =
+        '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 4h6v6" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 4l-8 8" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      pop.addEventListener('click', (e) => {
+        e.stopPropagation();
+        onPopOut(note.id);
+      });
+      pop.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          e.stopPropagation();
+          onPopOut(note.id);
+        }
+      });
+      card.appendChild(pop);
+    }
+
     card.addEventListener('click', () => onSelect?.(note.id));
     return card;
   }
@@ -349,6 +431,11 @@ export function createNotesList({
     setInboxNotes(next) {
       inboxNotes = next || [];
       renderInbox();
+    },
+    setArchiveCount(n) {
+      const count = Number(n) || 0;
+      archiveBtn.hidden = count === 0;
+      archiveCountEl.textContent = count > 0 ? String(count) : '';
     },
     setActive(id) {
       activeId = id;

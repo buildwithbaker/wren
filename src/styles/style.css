@@ -193,7 +193,10 @@ button {
 .sc-app {
   flex: 1;
   display: grid;
-  grid-template-columns: 280px 1fr;
+  /* minmax(0, 1fr) lets the content column shrink below its intrinsic
+     min-content width so a narrow window never forces a horizontal scrollbar. */
+  grid-template-columns: 280px minmax(0, 1fr);
+  min-width: 0;
   min-height: 0;
 }
 
@@ -202,6 +205,7 @@ button {
   border-right: 1px solid var(--wr-border);
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -365,6 +369,52 @@ button {
   margin-top: 7px;
   letter-spacing: 0.01em;
 }
+
+/* AI-provenance badge (AI-write visibility P1) — a subtle chip shown before the
+   title on cards (list / compact / kanban) when a note was created or last
+   edited by the AI. Outlined/muted, NOT the loud filled inbox chip. */
+.sc-ai-badge {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 5px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0 4px;
+  border-radius: 4px;
+  color: var(--wr-accent);
+  border: 1px solid var(--wr-accent-ring, var(--wr-accent));
+  opacity: 0.85;
+}
+
+/* Provenance mini-panel on the open note (AI-write visibility P2). Tucked,
+   muted, collapsible — a single line that expands to created/edited detail. */
+.sc-provenance {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  color: var(--wr-paper-muted);
+}
+.sc-provenance-summary {
+  cursor: pointer;
+  list-style: none;
+  display: inline-block;
+  padding: 2px 0;
+  letter-spacing: 0.01em;
+}
+.sc-provenance-summary::-webkit-details-marker { display: none; }
+.sc-provenance-summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 5px;
+  font-size: 9px;
+  transition: transform var(--wr-trans);
+}
+.sc-provenance[open] .sc-provenance-summary::before { transform: rotate(90deg); }
+.sc-provenance-detail {
+  margin: 2px 0 0 14px;
+  line-height: 1.5;
+}
+.sc-provenance-row { white-space: nowrap; }
 
 /* ---- Inbox (_inbox/) — AI write-back staging (phase 4) ------------------- */
 .sc-inbox {
@@ -645,6 +695,48 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Mini tag chips on note cards (sidebar list + Kanban) — Sticky Float Phase 1.
+   Same visual language as .sc-tag-chip, scaled down for card density. */
+.sc-mtags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.sc-mtag {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  max-width: 100%;
+  padding: 1px 7px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  border-radius: 999px;
+  background: var(--wr-accent-tint);
+  color: var(--wr-accent-dark);
+  border: 1px solid var(--wr-border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sc-mtag__ns {
+  opacity: 0.62;
+}
+.sc-mtag__val {
+  font-weight: 600;
+}
+.sc-mtag--clickable {
+  cursor: pointer;
+  transition: border-color var(--wr-trans);
+}
+.sc-mtag--clickable:hover,
+.sc-mtag--clickable:focus-visible {
+  border-color: var(--wr-accent-dark);
+  outline: none;
+}
+.sc-mtag--more {
+  opacity: 0.8;
 }
 .sc-tag-remove {
   display: inline-grid;
@@ -936,6 +1028,23 @@ button {
 .sc-footer-dot {
   opacity: 0.5;
 }
+/* Static (non-link) footer entry — e.g. the desktop "Desktop version"
+   indicator. Reads like footer text, not a link; the help cursor hints the
+   hover tooltip and there is no hover underline or link color. */
+.sc-footer-static {
+  color: var(--wr-panel-muted);
+  font-weight: 600;
+  cursor: help;
+}
+/* "Shortcuts" footer entry is a button (opens the in-app help) styled to read
+   exactly like the footer links. */
+.sc-footer-btn {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
 /* Ko-fi support pill - matches the .kofi-button pattern on unistyle.io */
 .sc-footer-kofi {
   display: inline-block;
@@ -1076,6 +1185,96 @@ button {
   gap: 8px;
 }
 
+/* ---- Keyboard-shortcuts & desktop help dialog --------------------------- */
+.sc-help-modal {
+  max-width: 440px;
+  text-align: left;
+}
+.sc-help-subhead {
+  margin: 16px 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--wr-panel-muted);
+}
+.sc-help-subhead:first-of-type { margin-top: 8px; }
+.sc-kbd-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sc-kbd-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.sc-kbd {
+  flex: none;
+  min-width: 92px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  padding: 2px 6px;
+  border: 1px solid var(--wr-border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--wr-field-bg);
+  color: var(--wr-panel-text);
+  text-align: center;
+}
+.sc-kbd--err {
+  border-color: #c0392b;
+  color: #c0392b;
+}
+.sc-kbd-desc {
+  font-size: 13px;
+  color: var(--wr-panel-text);
+}
+.sc-help-note,
+.sc-help-warn {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--wr-panel-muted);
+}
+.sc-help-warn {
+  color: var(--wr-panel-text);
+  background: rgba(192, 57, 43, 0.08);
+  border-left: 3px solid #c0392b;
+  border-radius: 4px;
+  padding: 8px 10px;
+}
+.sc-help-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  margin: 8px 0;
+  cursor: pointer;
+}
+.sc-help-rebinds {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+.sc-rebind-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sc-rebind-label {
+  flex: 1;
+  font-size: 13px;
+}
+.sc-rebind-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.sc-rebind-btn.is-capturing {
+  outline: 2px solid var(--wr-accent);
+}
+
 @keyframes sc-fade {
   from {
     opacity: 0;
@@ -1105,7 +1304,7 @@ button {
    ========================================================================= */
 @media (max-width: 640px) {
   .sc-app {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .sc-sidebar {
     border-right: 0;
@@ -1249,6 +1448,45 @@ button {
 }
 .sc-choice-why li { margin-bottom: 4px; }
 
+/* Local card is the default/primary path on the storage-choice screen. */
+.sc-choice-card--primary {
+  max-width: 460px;
+  margin: 24px auto 0;
+  border-color: var(--wr-primary);
+}
+
+/* Deliberate, collapsed "experimental" disclosure for opting into Drive. */
+.sc-experimental {
+  max-width: 460px;
+  margin: 14px auto 0;
+  border: 1px dashed var(--wr-border);
+  border-radius: var(--wr-radius-panel);
+  padding: 8px 16px;
+  font-size: 13.5px;
+  text-align: left;
+}
+.sc-experimental summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--wr-panel-text);
+  padding: 6px 0;
+}
+.sc-experimental .sc-btn { margin-top: 4px; }
+
+/* Inline experimental warning copy, reused on every Drive opt-in surface. */
+.sc-warn {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--wr-panel-text);
+  background: rgba(192, 57, 43, 0.08);
+  border-left: 3px solid #c0392b;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin: 10px auto;
+  max-width: 460px;
+  text-align: left;
+}
+
 /* Backend indicator chip — lives inside the sidebar brand row */
 .sc-backend-chip {
   display: inline-flex;
@@ -1294,6 +1532,26 @@ button {
 }
 .sc-popover-item:hover { background: var(--wr-field-bg); }
 .sc-popover-item--danger { color: #B5281C; }
+/* "Experimental" group label + warning inside the backend popover. */
+.sc-popover-label {
+  padding: 8px 12px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--wr-panel-muted);
+}
+.sc-popover-warn {
+  margin: 0 8px 4px;
+  padding: 6px 8px;
+  max-width: 240px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--wr-panel-text);
+  background: rgba(192, 57, 43, 0.08);
+  border-left: 3px solid #c0392b;
+  border-radius: 4px;
+}
 
 /* Drive-disconnected banner */
 .sc-drive-banner {
@@ -1424,6 +1682,17 @@ button {
 /* =========================================================================
    Kanban view (Phase C of Kanban SOW)
    ========================================================================= */
+/* Sidebar header row: view toggle (left) + always-on-top pin (right, Tauri). */
+.sc-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-right: 12px;
+}
+.sc-sidebar-head .sc-viewtoggle {
+  margin-right: 0;
+}
 .sc-viewtoggle {
   display: inline-flex;
   align-self: flex-start;
@@ -1582,5 +1851,552 @@ button {
   }
   .sc-btn--primary:hover {
     background: #3A5BA8;
+  }
+}
+
+/* =========================================================================
+   Sticky Float Phase 2 — pop-out affordances, restore bar, sticky window
+   ========================================================================= */
+
+/* Pop-out icon on sidebar cards — revealed on hover/focus. The card is a
+   button; this is a role=button span (stops propagation in JS) sitting in the
+   top-right corner. Reuses --wr- tokens only. */
+.sc-card {
+  position: relative;
+}
+.sc-card-popout {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--wr-radius-sm);
+  color: var(--wr-ink);
+  background: rgba(42, 53, 64, 0.06);
+  opacity: 0;
+  transition: opacity var(--wr-trans), background var(--wr-trans);
+}
+.sc-card:hover .sc-card-popout,
+.sc-card-popout:focus-visible {
+  opacity: 0.8;
+}
+.sc-card-popout:hover {
+  opacity: 1;
+  background: rgba(42, 53, 64, 0.14);
+}
+
+/* Archive hover affordance — mirrors the pop-out, offset so they don't overlap. */
+.sc-card-archive {
+  position: absolute;
+  top: 8px;
+  right: 40px;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--wr-radius-sm);
+  color: var(--wr-ink);
+  background: rgba(42, 53, 64, 0.06);
+  opacity: 0;
+  transition: opacity var(--wr-trans), background var(--wr-trans);
+}
+.sc-card:hover .sc-card-archive,
+.sc-card-archive:focus-visible {
+  opacity: 0.8;
+}
+.sc-card-archive:hover {
+  opacity: 1;
+  background: rgba(42, 53, 64, 0.14);
+}
+
+/* ---- Due-date chip on cards (Note Lifecycle A2) ------------------------- */
+.sc-due-chip {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  padding: 1px 7px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+}
+.sc-due-chip--upcoming {
+  color: var(--wr-paper-muted);
+  background: rgba(42, 53, 64, 0.07);
+}
+.sc-due-chip--today {
+  color: #8a5a00;
+  background: rgba(214, 158, 46, 0.18);
+  border-color: rgba(214, 158, 46, 0.4);
+}
+.sc-due-chip--overdue {
+  color: #fff;
+  background: #c0392b;
+}
+
+/* ---- Due-date control in the editor (Note Lifecycle A1) ----------------- */
+.sc-due-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--wr-paper-muted);
+}
+.sc-due-label {
+  font-weight: 600;
+}
+.sc-due-input {
+  font: inherit;
+  padding: 3px 6px;
+  border: 1px solid var(--wr-border);
+  border-radius: var(--wr-radius-sm);
+  background: var(--wr-field-bg);
+  color: var(--wr-ink);
+}
+.sc-due-control[data-status='overdue'] .sc-due-input {
+  border-color: #c0392b;
+  color: #c0392b;
+}
+.sc-due-clear {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--wr-paper-muted);
+  padding: 0 2px;
+}
+.sc-due-clear:hover {
+  color: var(--wr-ink);
+}
+
+/* ---- Archive entry in the sidebar list head (Note Lifecycle B3) --------- */
+.sc-archive-entry {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 7px 12px;
+  border: 1px solid var(--wr-border);
+  border-radius: var(--wr-radius-sm);
+  background: none;
+  color: var(--wr-ink);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background var(--wr-trans);
+}
+.sc-archive-entry:hover {
+  background: var(--wr-field-bg);
+}
+.sc-archive-entry-count {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--wr-accent);
+  color: var(--wr-on-accent);
+  font-size: 11px;
+  text-align: center;
+}
+
+/* ---- Archive dialog (Note Lifecycle B3) --------------------------------- */
+.sc-archive-modal {
+  max-width: 480px;
+  text-align: left;
+}
+.sc-archive-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 52vh;
+  overflow-y: auto;
+  margin: 4px 0 16px;
+}
+.sc-archive-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--wr-border);
+  border-radius: var(--wr-radius-sm);
+}
+.sc-archive-row-main {
+  flex: 1;
+  min-width: 0;
+}
+.sc-archive-row-title {
+  font-weight: 650;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sc-archive-row-meta {
+  font-size: 12px;
+  color: var(--wr-panel-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sc-archive-row-actions {
+  flex: none;
+  display: flex;
+  gap: 6px;
+}
+.sc-archive-btn {
+  padding: 5px 10px;
+  font-size: 12.5px;
+}
+
+/* Restore-stickies bar — above the sidebar, full app width. Mirrors the
+   drive-banner placement (grid-column 1 / -1). */
+.sc-restore-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  font-size: 13px;
+  background: var(--wr-brown-soft, var(--wr-field-bg));
+  color: var(--wr-panel-text);
+  border-bottom: 1px solid var(--wr-border);
+}
+.sc-restore-bar-text {
+  font-weight: 600;
+}
+.sc-restore-bar .sc-btn {
+  padding: 6px 12px;
+  font-size: 12.5px;
+}
+.sc-restore-bar .sc-btn--ghost {
+  margin-left: auto;
+}
+
+/* ---- Sticky window (body.is-sticky) ------------------------------------
+   Slim, chromeless single-note shell. Hide the app-shell furniture, collapse
+   the editor surface to fill the whole window, and tint the window in the
+   note color via --wr-note-bg (set on body by sticky-app.js). */
+body.is-sticky {
+  background: var(--wr-note-bg, var(--wr-page-bg));
+}
+body.is-sticky .sc-footer,
+body.is-sticky .sc-theme-toggle,
+body.is-sticky .sc-install-button,
+body.is-sticky .sc-open-full-app {
+  display: none !important;
+}
+body.is-sticky #app {
+  height: 100%;
+}
+/* When the custom title bar is present (Tauri), stack it above the editor and
+   let the editor fill the rest. */
+body.is-sticky.has-sticky-titlebar #app {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Custom slim title bar — Tauri sticky only. The native bar was removed
+   (decorations:false), so this draws the Wren logo + a drag region + a close
+   button. NO title text: the OS/taskbar title is set via setTitle() instead. */
+.sc-sticky-titlebar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  padding: 0 4px 0 10px;
+  background: var(--wr-note-bg, var(--wr-panel-bg));
+  -webkit-user-select: none;
+  user-select: none;
+}
+.sc-sticky-logo {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  display: block;
+  /* Clicks fall through to the bar's drag region. */
+  pointer-events: none;
+}
+.sc-sticky-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--wr-ink);
+  cursor: pointer;
+  transition: background var(--wr-trans);
+}
+.sc-sticky-close:hover {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+/* Editor fills the viewport — no outer margin, no rounded floating panel. */
+body.is-sticky .sc-editor-surface {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* Slim header: tighter padding for the small window. */
+body.is-sticky .sc-editor-head {
+  padding: 8px 10px 6px;
+}
+body.is-sticky .sc-title-input {
+  font-size: 17px;
+}
+body.is-sticky .sc-editor-colorrow {
+  padding: 0 10px 8px;
+}
+
+/* Fallback screens inside a sticky (grant access / Drive reconnect / not
+   found). Centered compact card; reuses .sc-screen-card. */
+.sc-sticky-screen {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+.sc-sticky-card {
+  max-width: 320px;
+  padding: 24px 20px;
+}
+.sc-sticky-card h1 {
+  font-size: 17px;
+}
+.sc-sticky-card p {
+  font-size: 13px;
+}
+.sc-sticky-card .sc-btn {
+  width: 100%;
+}
+
+/* =========================================================================
+   Compact View — third view mode (Sticky Notes hub panel)
+   A narrow single-column stack of mini cards. Default landing layer; shown
+   when .sc-app[data-view='compact']. Light-mode tokens only, no new colors.
+   ========================================================================= */
+.sc-app[data-view='compact'] {
+  grid-template-columns: 1fr;
+}
+.sc-app[data-view='compact'] .sc-sidebar,
+.sc-app[data-view='compact'] .sc-main {
+  display: none;
+}
+
+.sc-compact {
+  /* Fixed-width docked column; full background fills the rest of the grid. */
+  width: 340px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--wr-panel-bg);
+  border-right: 1px solid var(--wr-border);
+}
+
+.sc-compact-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 12px 8px;
+}
+.sc-compact-new {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: var(--wr-radius-sm);
+  background: var(--wr-accent);
+  color: var(--wr-on-accent);
+  box-shadow: var(--wr-shadow-sm);
+  cursor: pointer;
+  transition: background var(--wr-trans), transform var(--wr-trans);
+}
+.sc-compact-new:hover {
+  background: var(--wr-accent-dark);
+}
+.sc-compact-new:active {
+  transform: translateY(1px);
+}
+.sc-compact-expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border: 1px solid var(--wr-border);
+  border-radius: 999px;
+  background: var(--wr-field-bg);
+  color: var(--wr-panel-text);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--wr-trans), border-color var(--wr-trans);
+}
+.sc-compact-expand:hover {
+  border-color: var(--wr-accent);
+}
+/* Right-side group in the compact top bar (pin + expand), so the + stays left. */
+.sc-compact-bar-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Always-on-top pin toggle (Tauri desktop only; never rendered in the PWA). */
+.sc-compact-pin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--wr-border);
+  border-radius: 999px;
+  background: var(--wr-field-bg);
+  color: var(--wr-panel-text);
+  cursor: pointer;
+  transition: background var(--wr-trans), border-color var(--wr-trans),
+    color var(--wr-trans);
+}
+.sc-compact-pin:hover {
+  border-color: var(--wr-accent);
+}
+.sc-compact-pin[aria-pressed='true'] {
+  background: var(--wr-accent);
+  border-color: var(--wr-accent);
+  color: var(--wr-on-accent);
+}
+
+.sc-compact-search {
+  position: relative;
+  margin: 0 12px 8px;
+  display: flex;
+  align-items: center;
+}
+.sc-compact-search svg {
+  position: absolute;
+  left: 10px;
+  color: var(--wr-panel-muted);
+  pointer-events: none;
+}
+.sc-compact-search-input {
+  width: 100%;
+  padding: 8px 10px 8px 32px;
+  border: 1px solid var(--wr-border);
+  border-radius: var(--wr-radius-sm);
+  background: var(--wr-field-bg);
+  color: var(--wr-panel-text);
+  font-size: 14px;
+}
+.sc-compact-search-input::placeholder {
+  color: var(--wr-panel-muted);
+}
+.sc-compact-search-input:focus-visible {
+  outline: none;
+  border-color: var(--wr-accent);
+  box-shadow: 0 0 0 3px var(--wr-accent-ring);
+}
+
+.sc-compact-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+/* Mini card — denser than the sidebar card; a left color strip stands in for
+   the sidebar card's full-surface tint. */
+.sc-compact-card {
+  position: relative;
+  text-align: left;
+  border: 1px solid var(--wr-border);
+  border-radius: var(--wr-radius-card);
+  padding: 9px 11px 9px 16px;
+  background: var(--wr-page-bg);
+  color: var(--wr-ink);
+  box-shadow: var(--wr-shadow-sm);
+  cursor: pointer;
+  transition: box-shadow var(--wr-trans), transform var(--wr-trans);
+  overflow: hidden;
+}
+.sc-compact-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: var(--sc-strip, var(--wr-note-default));
+}
+.sc-compact-card:hover {
+  box-shadow: var(--wr-shadow-md);
+  transform: translateY(-1px);
+}
+.sc-compact-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sc-compact-card-title {
+  font-weight: 650;
+  font-size: 13.5px;
+  color: var(--wr-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sc-compact-card-meta {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--wr-paper-muted);
+  letter-spacing: 0.01em;
+}
+.sc-compact-card-preview {
+  font-size: 12px;
+  color: var(--wr-paper-muted);
+  margin-top: 3px;
+  /* Clamp the start-of-note preview to ~2 lines. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+.sc-compact-card .sc-mtags {
+  margin-top: 6px;
+}
+
+.sc-compact-empty {
+  text-align: center;
+  padding: 28px 12px;
+}
+.sc-compact-empty-h {
+  font-weight: 600;
+  color: var(--wr-panel-text);
+}
+.sc-compact-empty-b {
+  font-size: 13px;
+  color: var(--wr-panel-muted);
+  margin-top: 4px;
+}
+
+/* Below 640px the column goes full-width but stays single-column. */
+@media (max-width: 640px) {
+  .sc-compact {
+    width: 100%;
+    border-right: 0;
   }
 }

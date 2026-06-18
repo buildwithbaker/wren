@@ -48,6 +48,70 @@ describe('serializeNote / parseNote round-trip', () => {
   });
 });
 
+describe('provenance (created_by / last_edited_by / last_edited)', () => {
+  const fm = (extra) =>
+    `---\nid: wren-abc\ntitle: "T"\ncreated: 2026-01-01T00:00:00.000Z\nmodified: 2026-01-02T00:00:00.000Z\n${extra}---\n\nbody`;
+
+  it('parses present provenance fields', () => {
+    const parsed = parseNote(
+      fm('created_by: ai\nlast_edited_by: human\nlast_edited: 2026-01-03T00:00:00.000Z\n'),
+      'n.md'
+    );
+    expect(parsed.createdBy).toBe('ai');
+    expect(parsed.lastEditedBy).toBe('human');
+    expect(parsed.lastEdited).toBe('2026-01-03T00:00:00.000Z');
+  });
+
+  it('absent provenance parses to empty strings (legacy notes, never a badge)', () => {
+    const parsed = parseNote(fm(''), 'n.md');
+    expect(parsed.createdBy).toBe('');
+    expect(parsed.lastEditedBy).toBe('');
+    expect(parsed.lastEdited).toBe('');
+  });
+
+  it('rejects out-of-vocabulary *_by values (only ai|human are kept)', () => {
+    const parsed = parseNote(fm('created_by: robot\nlast_edited_by: bot\n'), 'n.md');
+    expect(parsed.createdBy).toBe('');
+    expect(parsed.lastEditedBy).toBe('');
+  });
+
+  it('serialize writes provenance only when present', () => {
+    const withProv = serializeNote({
+      title: 'x',
+      body: 'b',
+      created: '2026-01-01T00:00:00.000Z',
+      modified: '2026-01-01T00:00:00.000Z',
+      createdBy: 'ai',
+      lastEditedBy: 'human',
+      lastEdited: '2026-01-03T00:00:00.000Z',
+    });
+    expect(withProv).toMatch(/\ncreated_by: ai\n/);
+    expect(withProv).toMatch(/\nlast_edited_by: human\n/);
+    expect(withProv).toMatch(/\nlast_edited: 2026-01-03T00:00:00.000Z\n/);
+
+    const without = serializeNote({ title: 'x', body: 'b', created: '', modified: '' });
+    expect(without).not.toMatch(/created_by:/);
+    expect(without).not.toMatch(/last_edited_by:/);
+    expect(without).not.toMatch(/\nlast_edited:/);
+  });
+
+  it('round-trips provenance through serialize -> parse (no stripping on save)', () => {
+    const text = serializeNote({
+      title: 'AI note',
+      body: 'body',
+      created: '2026-01-01T00:00:00.000Z',
+      modified: '2026-01-02T00:00:00.000Z',
+      createdBy: 'ai',
+      lastEditedBy: 'ai',
+      lastEdited: '2026-01-02T00:00:00.000Z',
+    });
+    const parsed = parseNote(text, 'ai.md');
+    expect(parsed.createdBy).toBe('ai');
+    expect(parsed.lastEditedBy).toBe('ai');
+    expect(parsed.lastEdited).toBe('2026-01-02T00:00:00.000Z');
+  });
+});
+
 describe('firstLineOf', () => {
   it('strips a heading marker', () => {
     expect(firstLineOf('# My Title\n\nrest')).toBe('My Title');

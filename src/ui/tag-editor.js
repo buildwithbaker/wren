@@ -42,6 +42,11 @@ export function createTagEditor({ onAdd, onRemove, getSuggestions } = {}) {
   datalist.id = listId;
   input.setAttribute('list', listId);
 
+  // Mirror of the datalist contents, used by the input handler's
+  // commit-on-pick exact-match check (cheaper than querying the DOM per
+  // keystroke). Refreshed alongside the datalist in refreshSuggestions().
+  let currentSuggestions = new Set();
+
   form.append(input, datalist);
 
   form.addEventListener('submit', (e) => {
@@ -49,12 +54,27 @@ export function createTagEditor({ onAdd, onRemove, getSuggestions } = {}) {
     commitInput();
   });
   // Selecting a datalist option fires 'input'; commit immediately when the
-  // typed value exactly matches a full suggestion so picking is one action.
+  // typed value exactly matches a full VALID suggestion so picking is one
+  // action. Namespace prefixes ("status:") are suggestions too but are not
+  // valid tags — leave those in the input so the user can type the value.
+  // (Bug fixed 2026-06-11: this commit-on-pick was promised by the original
+  // comment but never implemented — picked tags were silently discarded.)
   input.addEventListener('input', () => {
     input.classList.remove('is-invalid');
+    const raw = input.value.trim();
+    if (raw && currentSuggestions.has(raw) && isValidTag(raw)) {
+      commitInput();
+    }
+  });
+  // Commit a pending valid tag when focus leaves the input — typing a tag and
+  // clicking elsewhere previously discarded it silently. Invalid partial text
+  // is left in place (no is-invalid flash on a mere focus change).
+  input.addEventListener('blur', () => {
+    const raw = input.value.trim();
+    if (raw && isValidTag(raw)) commitInput({ refocus: false });
   });
 
-  function commitInput() {
+  function commitInput({ refocus = true } = {}) {
     const raw = input.value.trim();
     if (!raw) return;
     if (!isValidTag(raw)) {
@@ -64,7 +84,7 @@ export function createTagEditor({ onAdd, onRemove, getSuggestions } = {}) {
     input.value = '';
     input.classList.remove('is-invalid');
     onAdd?.(raw);
-    input.focus();
+    if (refocus) input.focus();
   }
 
   root.append(chips, form);
@@ -110,6 +130,7 @@ export function createTagEditor({ onAdd, onRemove, getSuggestions } = {}) {
   // ("status:") so the user can start a namespace and get its values next.
   function refreshSuggestions() {
     const suggestions = getSuggestions?.() || [];
+    currentSuggestions = new Set(suggestions);
     datalist.replaceChildren();
     for (const s of suggestions) {
       const opt = document.createElement('option');

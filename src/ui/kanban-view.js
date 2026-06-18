@@ -11,6 +11,9 @@
 
 import { CARD_COLORS, firstLineOf } from '@/notes-store.js';
 import { getAllNamespaces, groupNotesByNamespace } from '@/tags/tag-parser.js';
+import { buildTagChips } from './tag-chips.js';
+import { isAiNote, buildAiBadge } from './ai-badge.js';
+import { buildDueChip } from './due-chip.js';
 
 const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
 const GROUPBY_KEY = 'wren.kanbanGroupBy';
@@ -173,13 +176,21 @@ export function createKanbanView({ getNotes, onNoteOpen, onNewNote, onMoveNote }
 
     const title = document.createElement('div');
     title.className = 'sc-kanban-card-title';
-    title.textContent = note.title || 'Untitled';
+    if (isAiNote(note)) title.appendChild(buildAiBadge());
+    title.append(note.title || 'Untitled');
 
     const preview = document.createElement('div');
     preview.className = 'sc-kanban-card-preview';
     preview.textContent = note.firstLine || firstLineOf(note.body || '') || 'No additional text';
 
     card.append(title, preview);
+    // Due-date chip (Note Lifecycle A2).
+    const dueChip = buildDueChip(note.due);
+    if (dueChip) card.appendChild(dueChip);
+    // Tag chips (Sticky Float Phase 1): display-only on the board — the column
+    // already encodes the grouping tag; chips show the note's full tag set.
+    const chips = buildTagChips(note.tags);
+    if (chips) card.appendChild(chips);
     card.addEventListener('click', () => onNoteOpen?.(note.id));
 
     wireCardDrag(card, note);

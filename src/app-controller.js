@@ -15,6 +15,7 @@ import {
   firstLineOf,
   exportNoteDownload,
   buildNoteFilename,
+  getStoredDirHandle,
   CARD_COLORS,
 } from './notes-store.js';
 import {
@@ -38,10 +39,20 @@ import {
 import { createNotesList } from './ui/notes-list.js';
 import { createNoteEditor } from './ui/note-editor.js';
 import { createKanbanView } from './ui/kanban-view.js';
+import { createCompactView } from './ui/compact-view.js';
+import { createPinButton } from './ui/pin-button.js';
+import { isTauri, openExternal } from './platform.js';
+import { applyWindowSize, watchResize, applyPinnedAtBoot } from './tauri-window.js';
+import { setupDesktopIntegration, maybeNotifyDueNotes } from './desktop.js';
+import { openShortcutsDialog } from './ui/desktop-panel.js';
+import { openArchiveDialog } from './ui/archive-panel.js';
 import { confirmDialog } from './ui/dialog.js';
 import { addTagToNote, parseTag, getAllTags, getAllNamespaces } from './tags/tag-parser.js';
 import { getStoredTheme, cycleTheme, initTheme } from './theme.js';
 import { getSyncState, setSyncState, clearSyncState } from './sync/syncStateStore.js';
+import { createBroadcast } from './sync/broadcast.js';
+import { openSticky } from './sticky/opener.js';
+import { readRegistry, clearRegistry } from './sticky/registry.js';
 import {
   buildIndexJson,
   buildIndexMarkdown,
@@ -57,11 +68,21 @@ import {
 const KOFI = 'https://ko-fi.com/abaker421';
 const VIEW_MODE_KEY = 'wren.viewMode';
 
+// Drive is demoted to an opt-in, experimental backend (local is the default).
+// One label + one warning string, reused on every surface that can switch to
+// Drive (onboarding, sign-in screen, backend popover) so the messaging cannot
+// drift between them.
+const DRIVE_EXPERIMENTAL_LABEL = 'Cloud sync (experimental)';
+const DRIVE_EXPERIMENTAL_WARNING =
+  'Experimental — may not sync reliably across devices; expect occasional issues. ' +
+  'Your notes stay local unless you turn this on.';
+
 export function createApp({ root, enableServiceWorker = false }) {
   /** @type {import('./storage/StorageAdapter.js').StorageAdapter|null} */
   let adapter = null;
   let notes = [];
   let inboxNotes = []; // staged _inbox/ notes (AI phase 4), kept separate
+  let archiveNotes = []; // _archive/ notes (Note Lifecycle B), loaded on demand
   let list = null;
   let noteEditor = null;
   let appEl = null;
@@ -70,9 +91,18 @@ export function createApp({ root, enableServiceWorker = false }) {
   let backendChipEl = null;
   let driveBannerEl = null;
   let kanbanView = null;
+  let compactView = null;
   let viewToggleEl = null;
-  let viewMode = loadViewMode(); // 'list' | 'kanban'
+  let sidebarPin = null; // Expanded-view always-on-top toggle (Tauri only)
+  let desktopIntegration = null; // tray/hotkey/autostart bridge (Tauri only; stub in browser)
+  // Session view: 'list' | 'kanban' | 'compact'. Only 'list'|'kanban' are ever
+  // persisted (wren.viewMode = the "full mode" memory); 'compact' is a session-
+  // only landing layer set on every launch and never written to localStorage.
+  let viewMode = loadViewMode(); // boot value is the stored full mode
   let lastEffectiveMode = null;
+  // Live cross-window note sync (Sticky Float Phase 2). Created once on first
+  // renderApp; peers' saves refresh the list/editor here.
+  let broadcast = null;
 
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
@@ -85,9 +115,9 @@ export function createApp({ root, enableServiceWorker = false }) {
   mountOpenFullApp();
 
   // View-mode keyboard shortcuts (only act once the app shell is mounted).
-  // NOTE: Ctrl+1/Ctrl+2 are browser tab-switch shortcuts in a normal tab; in
-  // the standalone PWA window (the primary full-app context) there are no tabs
-  // so the override is harmless. Documented as a known caveat.
+  // NOTE: Ctrl+1/Ctrl+2/Ctrl+3 are browser tab-switch shortcuts in a normal
+  // tab; in the standalone PWA window (the primary full-app context) there are
+  // no tabs so the override is harmless. Documented as a known caveat.
   window.addEventListener('keydown', (e) => {
     if (!kanbanView) return;
     if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
@@ -97,6 +127,9 @@ export function createApp({ root, enableServiceWorker = false }) {
     } else if (e.key === '2') {
       e.preventDefault();
       setViewMode('kanban');
+    } else if (e.key === '3') {
+      e.preventDefault();
+      setViewMode('compact');
     }
   });
 
@@ -260,7 +293,8 @@ export function createApp({ root, enableServiceWorker = false }) {
   /* ---- Boot ------------------------------------------------------------- */
 
   async function boot() {
-    // Resolve the configured backend (applies fs-migration heuristic).
+    // Resolve the configured backend. Unset installs default to local ("fs");
+    // an explicit stored "drive" is honored (existing Drive users keep Drive).
     const backend = await resolveBackend();
     if (backend === null) return renderStorageChoice();
 
@@ -273,10 +307,18 @@ export function createApp({ root, enableServiceWorker = false }) {
         await renderApp();
         return;
       }
-      // Has a handle but permission isn't granted; show reconnect.
-      // Or has no handle at all (rare — implies someone cleared the dir handle
-      // but kept the backend pref). Either way, ask the user to pick again.
-      return renderFsReconnect(fs);
+      // Not ready. Distinguish a brand-new install (no saved directory handle →
+      // local default with nothing chosen yet) from an existing FS user whose
+      // folder permission lapsed. The former lands on the storage-choice
+      // onboarding (local primary, Drive experimental); the latter reconnects.
+      let hasHandle = false;
+      try {
+        hasHandle = !!(await getStoredDirHandle());
+      } catch {
+        /* ignore — treat as brand-new */
+      }
+      if (hasHandle) return renderFsReconnect(fs);
+      return renderStorageChoice();
     }
 
     if (backend === ADAPTER_TYPES.DRIVE) {
@@ -325,8 +367,9 @@ export function createApp({ root, enableServiceWorker = false }) {
     card.innerHTML = `
       <img src="./icon.svg" alt="Wren" />
       <h1>Browser not supported</h1>
-      <p>Wren needs the <strong>File System Access API</strong> for local-file
-      storage, or you can use Drive sync from any browser.</p>`;
+      <p>Wren’s default local storage needs the <strong>File System Access API</strong>,
+      which this browser doesn’t provide. You can still use the experimental Cloud
+      sync from any browser.</p>`;
     if (isExtensionPopup()) {
       // Drive sign-in needs the remote GIS script, which MV3's CSP blocks in
       // the popup — offer the full app instead, where Drive works.
@@ -335,7 +378,7 @@ export function createApp({ root, enableServiceWorker = false }) {
       const driveBtn = document.createElement('button');
       driveBtn.type = 'button';
       driveBtn.className = 'sc-btn sc-btn--primary';
-      driveBtn.textContent = 'Use Google Drive';
+      driveBtn.textContent = 'Try Cloud sync (experimental)';
       driveBtn.addEventListener('click', () => renderDriveSignIn({ reason: 'fresh' }));
       card.appendChild(driveBtn);
     }
@@ -349,21 +392,19 @@ export function createApp({ root, enableServiceWorker = false }) {
     card.innerHTML = `
       <img src="./icon.svg" alt="Wren" />
       <h1>Where should your notes live?</h1>
-      <p>You can change this later from the app shell.</p>`;
+      <p>Wren is local-first — your notes are plain <code>.md</code> files on this
+      computer. You can change this later from the app shell.</p>`;
 
-    const grid = document.createElement('div');
-    grid.className = 'sc-choice-grid';
-
-    // Local files card.
+    // Local files — the default, primary path.
     const local = document.createElement('div');
-    local.className = 'sc-choice-card';
+    local.className = 'sc-choice-card sc-choice-card--primary';
     const localTitle = document.createElement('div');
     localTitle.className = 'sc-choice-card-title';
     localTitle.textContent = 'Save to my computer';
     const localSub = document.createElement('p');
     localSub.className = 'sc-choice-card-sub';
     localSub.textContent =
-      'Notes live as .md files on this PC. Browser must support the File System Access API. Won’t sync to other devices.';
+      'Notes live as .md files on this PC. No account needed. Browser must support the File System Access API.';
     const localBtn = document.createElement('button');
     localBtn.type = 'button';
     localBtn.className = 'sc-btn sc-btn--primary';
@@ -387,34 +428,42 @@ export function createApp({ root, enableServiceWorker = false }) {
       }
     });
     local.append(localTitle, localSub, localBtn);
+    card.appendChild(local);
 
-    // Drive card.
-    const drive = document.createElement('div');
-    drive.className = 'sc-choice-card';
-    const driveTitle = document.createElement('div');
-    driveTitle.className = 'sc-choice-card-title';
-    driveTitle.textContent = 'Save to Google Drive';
-    const driveSub = document.createElement('p');
-    driveSub.className = 'sc-choice-card-sub';
+    // Drive — demoted to a deliberate, collapsed "experimental" disclosure so a
+    // new user can't land on it by accident. Opening it is the intentional act.
+    const exp = document.createElement('details');
+    exp.className = 'sc-experimental';
+    const expSummary = document.createElement('summary');
+    expSummary.textContent = DRIVE_EXPERIMENTAL_LABEL;
+    exp.appendChild(expSummary);
+
+    const warn = document.createElement('p');
+    warn.className = 'sc-warn';
+    warn.textContent = DRIVE_EXPERIMENTAL_WARNING;
+    exp.appendChild(warn);
+
     if (isExtensionPopup()) {
       // Drive sign-in uses the remote GIS script, which MV3's CSP blocks in the
       // popup. Point users to the full app, where Drive sync works.
-      driveSub.textContent =
-        'Drive sync isn’t available in the extension popup. Open the full app to sign in and sync across devices.';
-      drive.append(driveTitle, driveSub, buildOpenFullAppButton());
+      const note = document.createElement('p');
+      note.className = 'sc-choice-card-sub';
+      note.textContent =
+        'Cloud sync isn’t available in the extension popup. Open the full app to turn it on.';
+      exp.append(note, buildOpenFullAppButton());
     } else {
+      const driveSub = document.createElement('p');
+      driveSub.className = 'sc-choice-card-sub';
       driveSub.textContent =
-        'Notes live in your Drive under a "Wren Notes" folder. Sync across phone and computer. Works in any browser.';
+        'Notes sync through your own Google Drive (a "Wren Notes" folder, narrow drive.file scope) so they reach your phone and other computers.';
       const driveBtn = document.createElement('button');
       driveBtn.type = 'button';
-      driveBtn.className = 'sc-btn sc-btn--primary';
-      driveBtn.textContent = 'Sign in to Google Drive';
+      driveBtn.className = 'sc-btn sc-btn--ghost';
+      driveBtn.textContent = 'Turn on Cloud sync';
       driveBtn.addEventListener('click', () => renderDriveSignIn({ reason: 'fresh' }));
-      drive.append(driveTitle, driveSub, driveBtn);
+      exp.append(driveSub, driveBtn);
     }
-
-    grid.append(local, drive);
-    card.appendChild(grid);
+    card.appendChild(exp);
 
     // Why-choose expandable.
     const details = document.createElement('details');
@@ -424,9 +473,9 @@ export function createApp({ root, enableServiceWorker = false }) {
     details.appendChild(summary);
     const ul = document.createElement('ul');
     ul.innerHTML = `
-      <li><strong>Local files</strong> never leave your computer. No account needed.</li>
-      <li><strong>Drive</strong> syncs your notes across devices, including phone.</li>
-      <li>Drive uses a narrow <code>drive.file</code> scope — Wren only sees its own "Wren Notes" folder, never the rest of your Drive.</li>
+      <li><strong>Local files</strong> never leave your computer. No account needed. This is the recommended default.</li>
+      <li><strong>Cloud sync (experimental)</strong> syncs your notes across devices, including phone — but it’s not fully reliable yet.</li>
+      <li>Cloud sync uses a narrow <code>drive.file</code> scope — Wren only sees its own "Wren Notes" folder, never the rest of your Drive.</li>
       <li>You can switch later from the chip in the sidebar header.</li>`;
     details.appendChild(ul);
     card.appendChild(details);
@@ -487,7 +536,7 @@ export function createApp({ root, enableServiceWorker = false }) {
         ? 'Sign back in to Google Drive'
         : reason === 'error'
           ? 'Could not connect to Google Drive'
-          : 'Connect Google Drive';
+          : 'Turn on Cloud sync (experimental)';
     const sub =
       reason === 'expired'
         ? 'Your previous session expired. Sign in again to load your notes.'
@@ -498,6 +547,16 @@ export function createApp({ root, enableServiceWorker = false }) {
       <img src="./icon.svg" alt="Wren" />
       <h1>${headline}</h1>
       <p>${sub}</p>`;
+
+    // Fresh opt-in only: spell out that Cloud sync is experimental. (The
+    // expired/error paths are existing Drive users reconnecting — no need to
+    // re-warn them on every reconnect.)
+    if (reason === 'fresh') {
+      const warn = document.createElement('p');
+      warn.className = 'sc-warn';
+      warn.textContent = DRIVE_EXPERIMENTAL_WARNING;
+      card.appendChild(warn);
+    }
 
     const signIn = document.createElement('button');
     signIn.className = 'sc-btn sc-btn--primary';
@@ -598,14 +657,31 @@ export function createApp({ root, enableServiceWorker = false }) {
     driveBannerEl = buildDriveBanner();
     if (driveBannerEl) appEl.appendChild(driveBannerEl);
 
+    const restoreBar = buildRestoreBar();
+    if (restoreBar) appEl.appendChild(restoreBar);
+
     const sidebar = document.createElement('aside');
     sidebar.className = 'sc-sidebar';
     sidebar.appendChild(buildBrand());
-    sidebar.appendChild(buildViewToggle());
+    // Header row: view toggle on the left; the always-on-top pin on the right
+    // (Tauri only — createPinButton is null in the PWA, so the row just holds
+    // the toggle as before).
+    sidebarPin = createPinButton();
+    if (sidebarPin) {
+      const headRow = document.createElement('div');
+      headRow.className = 'sc-sidebar-head';
+      headRow.append(buildViewToggle(), sidebarPin.element);
+      sidebar.appendChild(headRow);
+    } else {
+      sidebar.appendChild(buildViewToggle());
+    }
 
     list = createNotesList({
       onSelect: (noteId) => openNote(noteId),
       onNew: () => handleNew(),
+      onPopOut: (noteId) => handlePopOut(noteId),
+      onArchive: (noteId) => handleArchive(noteId),
+      onArchiveOpen: () => openArchiveView(),
       onInboxSelect: (id) => openInboxNote(id),
       onInboxPromote: (id) => handlePromoteInbox(id),
       onInboxDiscard: (id) => handleDiscardInbox(id),
@@ -619,10 +695,12 @@ export function createApp({ root, enableServiceWorker = false }) {
       onSave: handleSave,
       onDelete: handleDelete,
       onExport: (note) => exportNoteDownload(note),
+      onArchive: (note) => handleArchive(note.id),
       onBack: () => {
         appEl.dataset.view = 'list';
         list.setActive(null);
       },
+      onPopOut: (note) => handlePopOut(note),
       getTagSuggestions: tagSuggestions,
       showBack: true,
     });
@@ -638,14 +716,179 @@ export function createApp({ root, enableServiceWorker = false }) {
       },
       onMoveNote: handleKanbanMove,
     });
+    // Compact view is a full-width sibling of the two-panel layout, shown when
+    // data-view='compact'. Card click / + / Expand all route back to the stored
+    // full mode (loadViewMode → list|kanban) and then take the normal path.
+    compactView = createCompactView({
+      onSelect: (id) => {
+        setViewMode(loadViewMode());
+        openNote(id);
+      },
+      onNew: () => {
+        setViewMode(loadViewMode());
+        handleNew();
+      },
+      onExpand: () => setViewMode(loadViewMode()),
+    });
     main.append(noteEditor.element, kanbanView.element);
 
-    appEl.append(sidebar, main);
+    appEl.append(sidebar, main, compactView.element);
     root.append(appEl, buildFooter());
 
+    // Default landing view: every launch opens in Compact regardless of the
+    // stored full mode. Session-only — assign viewMode directly (not via
+    // setViewMode, which is equivalent here, but the intent is "land, don't
+    // persist"). The stored list|kanban preference is untouched.
+    viewMode = 'compact';
     applyViewMode();
+    // Tauri desktop shell: land small (Compact) and persist manual resizes per
+    // view. Both calls no-op in the browser PWA / extension (isTauri() false).
+    applyWindowSize('compact');
+    watchResize(() => effectiveViewMode());
+    // Restore the persisted always-on-top ("pin") state on launch (Tauri only).
+    applyPinnedAtBoot();
+    setupBroadcast();
+    setupDesktop();
     await loadNotes();
     if (effectiveViewMode() === 'kanban') kanbanView.refresh();
+  }
+
+  // Wire desktop quick-capture (tray "New note" event + global hotkeys +
+  // autostart) once. No-op stub in the browser PWA / extension. renderApp may
+  // run again (Drive reconnect), so guard against double-registering.
+  function setupDesktop() {
+    if (desktopIntegration) return;
+    setupDesktopIntegration({ onNewNote: () => handleNew() })
+      .then((api) => {
+        desktopIntegration = api;
+      })
+      .catch((err) => console.warn('Desktop integration setup failed', err));
+    // Re-check due/overdue notes when the window regains focus (EXE only;
+    // no-op in the browser). The once-per-day guard prevents nagging.
+    window.addEventListener('focus', () => maybeNotifyDueNotes(notes));
+  }
+
+  /* ---- Cross-window sync (Sticky Float Phase 2) ----------------------- */
+
+  // Create the shared channel once (renderApp may run again on Drive reconnect).
+  function setupBroadcast() {
+    if (broadcast) return;
+    broadcast = createBroadcast();
+    broadcast.onNoteSaved((msg) => handleRemoteNoteSaved(msg));
+  }
+
+  // A peer window (a sticky, or another tab) saved a note. Re-read it via the
+  // adapter, refresh the in-memory model + sidebar + board, and — if it's the
+  // note open in the editor with no pending local edits — re-open it silently.
+  // Last-write-wins; no conflict UI (consistent with Drive Phase 2b.1).
+  async function handleRemoteNoteSaved(msg) {
+    if (!adapter || isDriveDisconnected()) return;
+    const target =
+      notes.find((n) => n.id === msg.id) ||
+      (msg.wrenId ? notes.find((n) => n.wrenId === msg.wrenId) : null);
+    if (!target) return; // unknown note (e.g. created elsewhere) — caught on next load
+    try {
+      const { content, revision, name } = await adapter.readNote(target.id);
+      const parsed = parseNote(content, target.id);
+      const idx = notes.findIndex((n) => n.id === target.id);
+      if (idx === -1) return;
+      const updated = {
+        ...notes[idx],
+        wrenId: parsed.wrenId || notes[idx].wrenId,
+        filename: name || notes[idx].filename,
+        title: parsed.title,
+        body: parsed.body,
+        color: parsed.color,
+        created: parsed.created || notes[idx].created,
+        modified: parsed.modified || notes[idx].modified,
+        tags: parsed.tags || [],
+        summary: parsed.summary || '',
+        due: parsed.due || '',
+        firstLine: firstLineOf(parsed.body),
+        revision: revision || notes[idx].revision,
+      };
+      notes[idx] = updated;
+      notes.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
+      list.setNotes(notes);
+      compactView?.setNotes(notes);
+      list.setActive(noteEditor.getNote()?.id || null);
+      if (effectiveViewMode() === 'kanban') kanbanView.refresh();
+      const open = noteEditor.getNote();
+      if (open && open.id === updated.id && !noteEditor.hasPendingSave()) {
+        await noteEditor.openNote(updated);
+        list.setActive(updated.id);
+      }
+      regenerateIndex();
+    } catch (err) {
+      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
+        showDriveDisconnected();
+        return;
+      }
+      console.warn('Remote note-saved refresh failed', err);
+    }
+  }
+
+  /* ---- Pop-out (Sticky Float Phase 2) --------------------------------- */
+
+  // Open a note in its own floating sticky window. Accepts a note object (from
+  // the editor header button) or a note id (from a sidebar card). Flushes the
+  // editor first when popping out the currently-open note, then returns the
+  // main editor to the empty/list state — the note now "lives" in the sticky.
+  async function handlePopOut(noteOrId) {
+    const id = typeof noteOrId === 'string' ? noteOrId : noteOrId?.id;
+    const note = notes.find((n) => n.id === id) || (typeof noteOrId === 'object' ? noteOrId : null);
+    if (!note) return;
+    const open = noteEditor.getNote();
+    const isOpenNote = open && open.id === note.id;
+    if (isOpenNote) await noteEditor.flush();
+    const win = openSticky(note);
+    if (!win) {
+      showToast('Allow pop-ups for Wren to use stickies.');
+      return;
+    }
+    if (isOpenNote) {
+      noteEditor.clear();
+      list.setActive(null);
+      appEl.dataset.view = 'list';
+    }
+  }
+
+  // Restore bar (Sticky Float Phase 2). Shown above the sidebar when the open-
+  // sticky registry is non-empty (best-effort: after a full browser restart the
+  // registry persists, so this is the "you had stickies open" signal). The
+  // restore click opens ALL of them inside one user gesture so popup blockers
+  // permit the batch; "Dismiss" clears the registry.
+  function buildRestoreBar() {
+    const open = readRegistry();
+    if (!open || open.length === 0) return null;
+    const bar = document.createElement('div');
+    bar.className = 'sc-restore-bar';
+    const text = document.createElement('span');
+    text.className = 'sc-restore-bar-text';
+    text.textContent = `Restore ${open.length} sticky${open.length === 1 ? '' : ' notes'}`;
+    const restore = document.createElement('button');
+    restore.type = 'button';
+    restore.className = 'sc-btn sc-btn--primary';
+    restore.textContent = 'Restore';
+    restore.addEventListener('click', () => {
+      let blocked = false;
+      open.forEach((entry, i) => {
+        const win = openSticky({ id: entry.id, wrenId: entry.wrenId }, { cascadeIndex: i });
+        if (!win) blocked = true;
+      });
+      if (blocked) showToast('Allow pop-ups for Wren to restore all stickies.');
+      bar.remove();
+    });
+    const dismiss = document.createElement('button');
+    dismiss.type = 'button';
+    dismiss.className = 'sc-btn sc-btn--ghost';
+    dismiss.textContent = 'Dismiss';
+    dismiss.addEventListener('click', () => {
+      clearRegistry();
+      bar.remove();
+    });
+    bar.append(text, restore, dismiss);
+    return bar;
   }
 
   /* ---- View mode (list | kanban) -------------------------------------- */
@@ -659,31 +902,56 @@ export function createApp({ root, enableServiceWorker = false }) {
   }
 
   // Below 640px (e.g. extension popup) Kanban is out of scope — force list.
+  // Compact is exempt from that downgrade: it is already the narrow layout.
   function effectiveViewMode() {
+    if (viewMode === 'compact') return 'compact';
     if (window.matchMedia('(max-width: 640px)').matches) return 'list';
     return viewMode;
   }
 
   function setViewMode(mode) {
-    viewMode = mode === 'kanban' ? 'kanban' : 'list';
-    try {
-      localStorage.setItem(VIEW_MODE_KEY, viewMode);
-    } catch {
-      /* ignore */
+    if (mode === 'compact') {
+      // Session-only landing layer — never written to wren.viewMode.
+      viewMode = 'compact';
+    } else {
+      viewMode = mode === 'kanban' ? 'kanban' : 'list';
+      try {
+        localStorage.setItem(VIEW_MODE_KEY, viewMode);
+      } catch {
+        /* ignore */
+      }
     }
     applyViewMode();
+    // Resize the native window to match the new view (Tauri only; no-op in the
+    // browser). Hooked here — at explicit transitions — rather than in
+    // applyViewMode so the 640px breakpoint resize handler can't fight a manual
+    // drag.
+    applyWindowSize(viewMode === 'compact' ? 'compact' : 'expanded');
   }
 
   function applyViewMode() {
-    if (!noteEditor || !kanbanView) return;
+    if (!noteEditor || !kanbanView || !compactView) return;
     const mode = effectiveViewMode();
+    const compact = mode === 'compact';
     const kanban = mode === 'kanban';
     // Use style.display (not [hidden]) — both panels set display:flex, which
     // would otherwise win over the hidden attribute.
-    noteEditor.element.style.display = kanban ? 'none' : '';
+    noteEditor.element.style.display = compact || kanban ? 'none' : '';
     kanbanView.element.style.display = kanban ? '' : 'none';
-    if (appEl) appEl.dataset.viewmode = mode;
+    compactView.element.style.display = compact ? '' : 'none';
+    if (appEl) {
+      appEl.dataset.viewmode = mode;
+      // data-view drives the <=640px single-panel toggle (list|editor) and now
+      // the compact full-width layout. Only flip it for the compact transition
+      // so an open editor's data-view='editor' is preserved otherwise.
+      if (compact) appEl.dataset.view = 'compact';
+      else if (appEl.dataset.view === 'compact') appEl.dataset.view = 'list';
+    }
     if (kanban) kanbanView.refresh();
+    if (compact) compactView.setNotes(notes);
+    // Keep the Expanded-view pin in sync with the persisted state (it may have
+    // been toggled from the Compact bar while the sidebar was hidden).
+    sidebarPin?.sync();
     updateViewToggle(mode);
     lastEffectiveMode = mode;
   }
@@ -703,7 +971,13 @@ export function createApp({ root, enableServiceWorker = false }) {
     kanbanBtn.innerHTML =
       '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="11" rx="1"/><rect x="17" y="4" width="4" height="14" rx="1"/></svg><span>Kanban</span>';
     kanbanBtn.addEventListener('click', () => setViewMode('kanban'));
-    wrap.append(listBtn, kanbanBtn);
+    const compactBtn = document.createElement('button');
+    compactBtn.type = 'button';
+    compactBtn.dataset.mode = 'compact';
+    compactBtn.innerHTML =
+      '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="3" width="12" height="5" rx="1"/><rect x="6" y="11" width="12" height="5" rx="1"/><rect x="6" y="19" width="12" height="2" rx="1"/></svg><span>Compact</span>';
+    compactBtn.addEventListener('click', () => setViewMode('compact'));
+    wrap.append(listBtn, kanbanBtn, compactBtn);
     viewToggleEl = wrap;
     return wrap;
   }
@@ -766,6 +1040,11 @@ export function createApp({ root, enableServiceWorker = false }) {
               // index so it has summaries/due without extra reads.
               summary: parsed.summary || m.summary || '',
               due: parsed.due || '',
+              // Provenance (AI-write visibility) — drives the card AI badge and
+              // the open-note last-updated panel.
+              createdBy: parsed.createdBy || m.createdBy || '',
+              lastEditedBy: parsed.lastEditedBy || m.lastEditedBy || '',
+              lastEdited: parsed.lastEdited || m.lastEdited || '',
               firstLine: firstLineOf(parsed.body),
               revision: revision || m.revision,
             };
@@ -789,14 +1068,144 @@ export function createApp({ root, enableServiceWorker = false }) {
       notes = [];
     }
     list.setNotes(notes);
+    compactView?.setNotes(notes);
     // Load staged inbox notes alongside the main list (best-effort — a failure
     // here must never break the main notes list).
     await loadInboxNotes();
+    // Load the _archive/ count for the sidebar entry (read from disk — archived
+    // notes are outside the indexed roots, so the catalog never lists them).
+    await loadArchiveNotes();
     // Refresh the AI-readable index after the initial (and any) full load so an
     // external agent sees a current manifest even if no edit has happened yet.
     regenerateIndex();
     // Write the AI contract doc once per session (missing/stale-version check).
     ensureAiContractDoc();
+    // Desktop reminder (EXE only): nudge for notes due today/overdue. No-op in
+    // the browser — cards already carry the visual due treatment.
+    maybeNotifyDueNotes(notes);
+  }
+
+  /* ---- Archive (_archive/) — Note Lifecycle B ------------------------- */
+
+  // Load the `_archive/` notes from disk into the archiveNotes collection and
+  // update the sidebar entry's count. Crash-safe like loadInboxNotes.
+  async function loadArchiveNotes() {
+    try {
+      if (!adapter || typeof adapter.listArchiveNotes !== 'function') {
+        archiveNotes = [];
+      } else {
+        const archived = await adapter.listArchiveNotes();
+        archiveNotes = (archived || []).map((m) => ({
+          ...m,
+          filename: m.name || m.id,
+          firstLine: '',
+          tags: m.tags || [],
+        }));
+      }
+    } catch (err) {
+      console.warn('Could not load archived notes (main list unaffected)', err);
+      archiveNotes = [];
+    }
+    if (list) list.setArchiveCount(archiveNotes.length);
+  }
+
+  // Archive a note: move its file to _archive/, then refresh. If it was open in
+  // the editor, drop back to the list (it's no longer in the main corpus).
+  async function handleArchive(noteId) {
+    if (isDriveDisconnected()) {
+      showDriveDisconnectedToast('Reconnect Drive to archive notes.');
+      return;
+    }
+    if (!adapter || typeof adapter.archiveNote !== 'function') return;
+    try {
+      await adapter.archiveNote(noteId);
+    } catch (err) {
+      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
+        showDriveDisconnected();
+        return;
+      }
+      console.error('Archive failed', err);
+      alert('Could not archive that note.');
+      return;
+    }
+    if (noteEditor.getNote && noteEditor.getNote()?.id === noteId) {
+      noteEditor.clear();
+      list.setActive(null);
+      appEl.dataset.view = 'list';
+    }
+    // Reload: the note leaves the main list + index, and the archive count bumps.
+    await loadNotes();
+  }
+
+  // Unarchive: move the file back to the top level. Returns true on success so
+  // the Archive dialog can drop the row. Refreshes the main list + index.
+  async function handleUnarchive(archiveId) {
+    if (isDriveDisconnected()) {
+      showDriveDisconnectedToast('Reconnect Drive to unarchive notes.');
+      return false;
+    }
+    if (!adapter || typeof adapter.unarchiveNote !== 'function') return false;
+    try {
+      await adapter.unarchiveNote(archiveId);
+    } catch (err) {
+      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
+        showDriveDisconnected();
+        return false;
+      }
+      console.error('Unarchive failed', err);
+      alert('Could not unarchive that note.');
+      return false;
+    }
+    await loadNotes();
+    return true;
+  }
+
+  // Open the Archive view (B3): a dialog listing _archive/ notes with open +
+  // unarchive. Notes are the already-loaded archiveNotes (read from disk).
+  function openArchiveView() {
+    openArchiveDialog({
+      notes: archiveNotes,
+      onOpen: (id) => openArchivedNote(id),
+      onUnarchive: (id) => handleUnarchive(id),
+    });
+  }
+
+  // Open an archived note read-only (mirrors openInboxNote). Editing happens
+  // after unarchiving; the file lives in _archive/ and isn't in the main list.
+  async function openArchivedNote(archiveId) {
+    try {
+      const { content } = await adapter.readNote(archiveId);
+      const parsed = parseNote(content, archiveId);
+      const fresh = {
+        id: archiveId,
+        archived: true,
+        wrenId: parsed.wrenId || '',
+        filename: archiveId,
+        title: parsed.title,
+        body: parsed.body,
+        color: parsed.color,
+        created: parsed.created,
+        modified: parsed.modified,
+        tags: parsed.tags || [],
+        summary: parsed.summary || '',
+        due: parsed.due || '',
+        createdBy: parsed.createdBy || '',
+        lastEditedBy: parsed.lastEditedBy || '',
+        lastEdited: parsed.lastEdited || '',
+        firstLine: firstLineOf(parsed.body),
+        revision: '',
+        readOnly: true,
+      };
+      await noteEditor.openNote(fresh, { readOnly: true, readOnlyLabel: 'Archived · read-only' });
+      list.setActive(archiveId);
+      appEl.dataset.view = 'editor';
+    } catch (err) {
+      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
+        showDriveDisconnected();
+        return;
+      }
+      console.warn('Could not open archived note', err);
+    }
   }
 
   /* ---- Inbox (_inbox/) — AI write-back staging (phase 4) -------------- */
@@ -843,11 +1252,14 @@ export function createApp({ root, enableServiceWorker = false }) {
         tags: parsed.tags || [],
         summary: parsed.summary || '',
         due: parsed.due || '',
+        createdBy: parsed.createdBy || '',
+        lastEditedBy: parsed.lastEditedBy || '',
+        lastEdited: parsed.lastEdited || '',
         firstLine: firstLineOf(parsed.body),
         revision: '',
         readOnly: true,
       };
-      await noteEditor.openNote(fresh, { readOnly: true });
+      await noteEditor.openNote(fresh, { readOnly: true, readOnlyLabel: 'Staged · read-only' });
       list.setActive(inboxId);
       appEl.dataset.view = 'editor';
     } catch (err) {
@@ -892,15 +1304,25 @@ export function createApp({ root, enableServiceWorker = false }) {
       return;
     }
     const staged = inboxNotes.find((n) => n.id === inboxId);
+    const onDrive = adapter?.backendId() === ADAPTER_TYPES.DRIVE;
     const ok = await confirmDialog({
       title: 'Discard staged note?',
-      message: `"${(staged && staged.title) || 'Untitled'}" will be permanently deleted from the inbox. This cannot be undone.`,
+      message: `"${(staged && staged.title) || 'Untitled'}" will be removed from the inbox and moved to ${
+        onDrive ? "your Drive's trash" : 'the .trash folder'
+      }. Recover it from there if you change your mind.`,
       confirmLabel: 'Discard',
       danger: true,
     });
     if (!ok) return;
     try {
-      await adapter.deleteNote(inboxId);
+      // Soft-delete to match the MCP convention. discardInboxNote moves the file
+      // to .trash/ (FS) or Drive's trash (Drive); fall back to deleteNote if an
+      // adapter somehow predates it.
+      if (typeof adapter.discardInboxNote === 'function') {
+        await adapter.discardInboxNote(inboxId);
+      } else {
+        await adapter.deleteNote(inboxId);
+      }
     } catch (err) {
       if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
         showDriveDisconnected();
@@ -1011,6 +1433,10 @@ export function createApp({ root, enableServiceWorker = false }) {
         // Phase 2 index.
         summary: parsed.summary || '',
         due: parsed.due || '',
+        // Provenance — for the AI badge + last-updated panel.
+        createdBy: parsed.createdBy || '',
+        lastEditedBy: parsed.lastEditedBy || '',
+        lastEdited: parsed.lastEdited || '',
         firstLine: firstLineOf(parsed.body),
         revision,
       };
@@ -1037,7 +1463,22 @@ export function createApp({ root, enableServiceWorker = false }) {
     }
     try {
       const now = new Date().toISOString();
-      const seed = { title: '', body: '', color: 'default', created: now, modified: now, tags: [], summary: '', due: '', filename: '' };
+      // Stamp human provenance on app-created notes so they read as "by you" and
+      // never show the AI badge. (The MCP stamps created_by:'ai' on its writes.)
+      const seed = {
+        title: '',
+        body: '',
+        color: 'default',
+        created: now,
+        modified: now,
+        tags: [],
+        summary: '',
+        due: '',
+        createdBy: 'human',
+        lastEditedBy: 'human',
+        lastEdited: now,
+        filename: '',
+      };
       // serializeNote stamps a stable wrenId on first write; serialize `seed`
       // directly (not a throwaway copy) so we can carry that same logical id
       // onto the in-memory note below.
@@ -1058,6 +1499,9 @@ export function createApp({ root, enableServiceWorker = false }) {
         tags: seed.tags,
         summary: seed.summary,
         due: seed.due,
+        createdBy: seed.createdBy,
+        lastEditedBy: seed.lastEditedBy,
+        lastEdited: seed.lastEdited,
         firstLine: '',
         revision,
       };
@@ -1082,6 +1526,12 @@ export function createApp({ root, enableServiceWorker = false }) {
     }
     // Bump modified at write time (mirrors legacy notes-store.writeNote).
     note.modified = new Date().toISOString();
+    // This is a human edit in the app: stamp human provenance so the
+    // last-updated panel reads "by you" and an AI-edited note flips back to
+    // human on the next manual edit. created_by is preserved (an AI-CREATED
+    // note keeps its AI badge via created_by even after a human edits it).
+    note.lastEditedBy = 'human';
+    note.lastEdited = note.modified;
     const content = serializeNote(note);
     try {
       const { revision } = await adapter.writeNote(note.id, content);
@@ -1104,6 +1554,8 @@ export function createApp({ root, enableServiceWorker = false }) {
     // Covers both content saves and any rename that syncBackendFilename applied
     // (filename/id changes are already reflected on the in-memory note above).
     regenerateIndex();
+    // Notify any open sticky/peer window holding this note (Sticky Phase 2).
+    broadcast?.postNoteSaved(note);
   }
 
   /**
@@ -1234,6 +1686,7 @@ export function createApp({ root, enableServiceWorker = false }) {
       list.setNotes(notes);
       kanbanView.refresh();
       regenerateIndex();
+      if (n) broadcast?.postNoteSaved(n);
     } catch (err) {
       if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
         showDriveDisconnected();
@@ -1275,13 +1728,17 @@ export function createApp({ root, enableServiceWorker = false }) {
     }
   }
 
-  function showDriveDisconnectedToast(msg) {
-    // Lightweight toast: temporary div, auto-removes. No persistent state.
+  // Lightweight toast: temporary div, auto-removes. No persistent state.
+  function showToast(msg) {
     const toast = document.createElement('div');
     toast.className = 'sc-toast';
     toast.textContent = msg;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 3200);
+  }
+
+  function showDriveDisconnectedToast(msg) {
+    showToast(msg);
   }
 
   function buildDriveBanner() {
@@ -1344,32 +1801,36 @@ export function createApp({ root, enableServiceWorker = false }) {
     pop.style.top = `${rect.bottom + 6}px`;
     pop.style.left = `${rect.left}px`;
 
-    const switchItem = document.createElement('button');
-    switchItem.type = 'button';
-    switchItem.className = 'sc-popover-item';
-    switchItem.textContent = 'Switch backend…';
-    switchItem.addEventListener('click', async () => {
+    // Deterministic switch: persist the TARGET backend explicitly, never
+    // clearStoredBackend(). Clearing let resolveBackend()'s fs-migration
+    // heuristic re-infer "fs" from the leftover directory handle, so a
+    // local->Drive switch silently snapped back to local and Drive never
+    // appeared (the 2026-06-03 fix). Setting the target lands on it (a Drive
+    // target then routes to the experimental sign-in screen if needed).
+    const performSwitch = async (targetBackend, { title, message, confirmLabel }) => {
       pop.remove();
-      const target = isDrive ? 'local files' : 'Google Drive';
-      const ok = await confirmDialog({
-        title: 'Switch storage backend?',
-        message: `Wren will reload and start with no notes (this device only). Your existing notes stay where they are — you can switch back any time. Continue switching to ${target}?`,
-        confirmLabel: 'Switch',
-      });
+      const ok = await confirmDialog({ title, message, confirmLabel });
       if (!ok) return;
-      // Set the TARGET backend explicitly instead of clearing the preference.
-      // clearStoredBackend() let resolveBackend()'s fs-migration heuristic
-      // re-infer "fs" from the leftover directory handle, so a local->Drive
-      // switch silently snapped back to local and the Drive option never
-      // appeared. Setting the target deterministically lands on it (Drive boot
-      // then routes to sign-in if needed).
-      const targetBackend = isDrive ? ADAPTER_TYPES.FS : ADAPTER_TYPES.DRIVE;
       await setStoredBackend(targetBackend);
       window.location.reload();
-    });
-    pop.appendChild(switchItem);
+    };
 
     if (isDrive) {
+      // On Cloud sync → the prominent, recommended action is returning to local.
+      const toLocal = document.createElement('button');
+      toLocal.type = 'button';
+      toLocal.className = 'sc-popover-item';
+      toLocal.textContent = 'Switch to local files';
+      toLocal.addEventListener('click', () =>
+        performSwitch(ADAPTER_TYPES.FS, {
+          title: 'Switch to local files?',
+          message:
+            'Wren will reload and start with no notes on this device until you pick a folder. Your existing notes stay where they are — in your "Wren Notes" Drive folder — and you can switch back any time.',
+          confirmLabel: 'Switch',
+        })
+      );
+      pop.appendChild(toLocal);
+
       const disconnect = document.createElement('button');
       disconnect.type = 'button';
       disconnect.className = 'sc-popover-item sc-popover-item--danger';
@@ -1389,6 +1850,33 @@ export function createApp({ root, enableServiceWorker = false }) {
         window.location.reload();
       });
       pop.appendChild(disconnect);
+    } else {
+      // On local → switching to Drive is a deliberate, experimental act. Group
+      // it under a labeled "Experimental" section with the warning so it can't
+      // be flipped on by a stray click.
+      const label = document.createElement('div');
+      label.className = 'sc-popover-label';
+      label.textContent = 'Experimental';
+      pop.appendChild(label);
+
+      const warn = document.createElement('p');
+      warn.className = 'sc-popover-warn';
+      warn.textContent = DRIVE_EXPERIMENTAL_WARNING;
+      pop.appendChild(warn);
+
+      const toDrive = document.createElement('button');
+      toDrive.type = 'button';
+      toDrive.className = 'sc-popover-item';
+      toDrive.textContent = 'Turn on Cloud sync…';
+      toDrive.addEventListener('click', () =>
+        performSwitch(ADAPTER_TYPES.DRIVE, {
+          title: 'Turn on Cloud sync (experimental)?',
+          message:
+            'Cloud sync is experimental — it may not sync reliably across devices. Wren will reload and ask you to sign in to Google Drive. Your local notes stay in their folder; you can switch back to local any time.',
+          confirmLabel: 'Continue',
+        })
+      );
+      pop.appendChild(toDrive);
     }
 
     document.body.appendChild(pop);
@@ -1411,10 +1899,75 @@ export function createApp({ root, enableServiceWorker = false }) {
   function buildFooter() {
     const footer = document.createElement('footer');
     footer.className = 'sc-footer';
-    footer.innerHTML = `
-      <a href="${KOFI}" target="_blank" rel="noopener" class="sc-footer-bwb">Build with Baker</a>
-      <span class="sc-footer-dot">·</span>
-      <a href="${KOFI}" target="_blank" rel="noopener" class="sc-footer-kofi">☕ Support on Ko-fi</a>`;
+    const SITE = 'https://wren.buildwithbaker.io';
+    const desktop = isTauri();
+    const links = [
+      // In the desktop app the "Download" link is pointless (you already have
+      // it). Show a static, non-clickable "Desktop version" indicator instead,
+      // with an info tooltip on hover. PWA/extension keep the real Download link.
+      desktop
+        ? {
+            label: 'Desktop version',
+            static: true,
+            title:
+              'You’re running the Wren desktop app for Windows. The web, extension, and desktop versions all share the same notes.',
+          }
+        : { href: `${SITE}/download.html`, label: 'Download' },
+      { href: `${SITE}/guide.html`, label: 'Guide' },
+      { href: `${SITE}/privacy.html`, label: 'Privacy' },
+      { href: KOFI, label: 'Build with Baker' },
+      { href: KOFI, label: '☕ Support on Ko-fi', cls: 'sc-footer-kofi' },
+    ];
+    links.forEach((l, i) => {
+      if (i) {
+        const dot = document.createElement('span');
+        dot.className = 'sc-footer-dot';
+        dot.textContent = '·';
+        footer.appendChild(dot);
+      }
+      // Static (non-link) footer entry: a plain span the Tauri link interceptor
+      // ignores, with an info tooltip via the native title attribute.
+      if (l.static) {
+        const span = document.createElement('span');
+        span.className = 'sc-footer-static';
+        span.textContent = l.label;
+        if (l.title) span.title = l.title;
+        footer.appendChild(span);
+        return;
+      }
+      const a = document.createElement('a');
+      a.href = l.href;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.className = l.cls || 'sc-footer-bwb';
+      a.textContent = l.label;
+      footer.appendChild(a);
+    });
+    // In-app help: the full keyboard-shortcut reference (and, in the desktop
+    // app, the startup toggle + rebindable global hotkeys). A button, not a
+    // link, so the Tauri external-link interceptor below ignores it.
+    const dot = document.createElement('span');
+    dot.className = 'sc-footer-dot';
+    dot.textContent = '·';
+    const shortcutsBtn = document.createElement('button');
+    shortcutsBtn.type = 'button';
+    shortcutsBtn.className = 'sc-footer-bwb sc-footer-btn';
+    shortcutsBtn.textContent = 'Shortcuts';
+    shortcutsBtn.addEventListener('click', () =>
+      openShortcutsDialog({ desktop: desktopIntegration })
+    );
+    footer.append(dot, shortcutsBtn);
+    // In the Tauri desktop app a plain target=_blank link would open/navigate a
+    // webview; intercept and hand the URL to the system browser instead so the
+    // app window stays put. PWA/extension keep the normal new-tab behavior.
+    if (isTauri()) {
+      footer.addEventListener('click', (e) => {
+        const a = e.target.closest('a');
+        if (!a || !footer.contains(a)) return;
+        e.preventDefault();
+        openExternal(a.href);
+      });
+    }
     return footer;
   }
 

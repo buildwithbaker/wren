@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Download Wren for Windows — the desktop app</title>
+<meta name="description" content="Download the Wren desktop app for Windows: a small always-on-top notes window that expands to the full app, plus floating always-on-top stickies. Your notes stay on your computer.">
+<link rel="canonical" href="https://wren.buildwithbaker.io/download.html" />
+<style>
+  :root {
+    --ink: #2E2A24;
+    --muted: #7A7064;
+    --brown: #A8542C;
+    --indigo: #2B4A8B;
+    --bg: #FAF4EA;
+    --panel: #FFFFFF;
+    --border: #E5DACA;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .container { max-width: 720px; margin: 0 auto; padding: 48px 24px; }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .brand-mark { width: 34px; height: 34px; border-radius: 8px; }
+  .brand-name { font-weight: 700; font-size: 22px; letter-spacing: -0.01em; color: var(--brown); }
+  h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; margin: 24px 0 8px; }
+  .lede { color: var(--muted); font-size: 17px; margin-bottom: 28px; }
+  h2 { font-size: 20px; font-weight: 600; margin: 32px 0 12px; color: var(--ink); border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+  p, li { color: var(--ink); }
+  a { color: var(--indigo); text-decoration: none; font-weight: 500; }
+  a:hover { text-decoration: underline; }
+  ul, ol { padding-left: 24px; }
+  li { margin: 8px 0; }
+  code { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 0.9em; background: #F1E8DB; padding: 1px 5px; border-radius: 4px; }
+  .callout { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--brown); border-radius: 0 12px 12px 0; padding: 16px 20px; margin: 20px 0; }
+  .callout strong { color: var(--brown); }
+  .download-cta { text-align: center; margin: 32px 0 8px; }
+  .btn-download {
+    display: inline-block;
+    background: var(--brown);
+    color: #fff;
+    font-weight: 700;
+    font-size: 17px;
+    padding: 14px 32px;
+    border-radius: 12px;
+    text-decoration: none;
+    box-shadow: 0 2px 8px rgba(168, 84, 44, 0.25);
+  }
+  .btn-download:hover { background: #934628; text-decoration: none; }
+  .download-sub { color: var(--muted); font-size: 14px; margin-top: 10px; }
+  .footer { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; }
+  .footer a { color: var(--indigo); }
+  .kofi { display: inline-block; background: #FF5E5B; color: #fff; padding: 3px 10px; border-radius: 12px; font-weight: 600; font-size: 13px; text-decoration: none; }
+  .kofi:hover { background: #E54845; text-decoration: none; }
+</style>
+<link rel="stylesheet" href="/site-nav.css">
+</head>
+<body>
+<nav class="site-nav" aria-label="Primary">
+  <a class="site-nav-brand" href="/"><img src="/icon.svg" alt="" width="28" height="28"><span>Wren</span></a>
+  <div class="site-nav-links">
+    <a href="/download.html" aria-current="page">Download</a>
+    <a href="/guide.html">Guide</a>
+    <a href="/privacy.html">Privacy</a>
+  </div>
+</nav>
+<hr class="site-nav-divider">
+<div class="container">
+
+  <h1>Wren for Windows</h1>
+  <p class="lede">The desktop app: a small notes window that floats on top of your work and expands to the full app when you need it — plus tear-off sticky notes that stay on top. An optional companion to the web app. Your notes stay on your computer.</p>
+
+  <div class="download-cta">
+    <a class="btn-download" href="https://github.com/buildwithbaker/wren/releases/latest">Download for Windows</a>
+    <p class="download-sub">Free · Windows 10 / 11 (64-bit) · opens the latest release</p>
+  </div>
+
+  <div class="callout">
+    <strong>First launch — Windows SmartScreen.</strong> Windows may show <em>"Windows protected your PC."</em> Click <strong>More info → Run anyway</strong>. This is expected for now because the app isn't code-signed yet — your notes stay on your computer.
+  </div>
+
+  <h2>What the desktop app is</h2>
+  <p>Wren desktop runs the same app you know from the web, in its own native window:</p>
+  <ul>
+    <li><strong>Lands small, in Compact view</strong> — a narrow, always-reachable list of your notes, like a desk-side panel.</li>
+    <li><strong>Expands to the full app</strong> — click <strong>Expand</strong> and the window grows into the full two-panel editor; collapse back to Compact anytime.</li>
+    <li><strong>Keep-on-top pin</strong> — pin the whole window so it floats above your browser, editor, or Word while you work.</li>
+    <li><strong>Floating sticky notes</strong> — pop any note out into its own small always-on-top window. Open as many as you like; they sync live with the main app.</li>
+  </ul>
+  <p>It's an <strong>optional companion</strong> to the Wren web app and Chrome extension — all three read and write the same plain <code>.md</code> files in the folder you choose. Nothing is uploaded; your notes never leave your computer.</p>
+
+  <h2>System requirements</h2>
+  <ul>
+    <li><strong>Windows 10 or 11</strong>, 64-bit (x64).</li>
+    <li>About 15 MB of disk space. No account, no login.</li>
+  </ul>
+
+  <h2>Install</h2>
+  <ol>
+    <li>Click <strong>Download for Windows</strong> above and run the <code>.exe</code> installer.</li>
+    <li>If SmartScreen appears, choose <strong>More info → Run anyway</strong> (see the note above).</li>
+    <li>Launch Wren, then choose the folder where your notes live (or point it at the same folder you already use with the web app or extension).</li>
+  </ol>
+
+  <h2>Updates</h2>
+  <p>Updates are <strong>manual for now</strong>: when a new version ships, come back to this page and download the latest installer — it installs over the old one and your notes are untouched. (Automatic updates will come once the app is code-signed.)</p>
+
+  <div class="footer">
+    <p>Wren is built by Adam Baker under the Build with Baker creator brand. Questions or issues: <a href="https://github.com/buildwithbaker/wren/issues" target="_blank" rel="noopener">github.com/buildwithbaker/wren/issues</a>.</p>
+    <p><a href="https://wren.buildwithbaker.io">Wren</a> &middot; <a href="/guide.html">Guide</a> &middot; <a href="/mcp.html">MCP server</a> &middot; <a href="/privacy.html">Privacy</a> &middot; <a href="https://buildwithbaker.com" target="_blank" rel="noopener">Build with Baker</a> &middot; <a class="kofi" href="https://ko-fi.com/abaker421" target="_blank" rel="noopener">Support on Ko-fi</a></p>
+  </div>
+
+</div>
+</body>
+</html>

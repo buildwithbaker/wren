@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wren guide — views, shortcuts, stickies, and storage</title>
+<meta name="description" content="How to use Wren: the three views (List, Kanban, Compact) and their shortcuts, the always-on-top pin and floating stickies on desktop, the editor toolbar, tags and colors, and where your notes live.">
+<link rel="canonical" href="https://wren.buildwithbaker.io/guide.html" />
+<style>
+  :root {
+    --ink: #2E2A24;
+    --muted: #7A7064;
+    --brown: #A8542C;
+    --indigo: #2B4A8B;
+    --bg: #FAF4EA;
+    --panel: #FFFFFF;
+    --border: #E5DACA;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .container { max-width: 720px; margin: 0 auto; padding: 40px 24px; }
+  h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; margin: 16px 0 8px; }
+  .lede { color: var(--muted); font-size: 17px; margin-bottom: 28px; }
+  h2 { font-size: 21px; font-weight: 600; margin: 36px 0 12px; color: var(--ink); border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+  h3 { font-size: 16px; font-weight: 600; margin: 20px 0 4px; }
+  p, li { color: var(--ink); }
+  a { color: var(--indigo); text-decoration: none; font-weight: 500; }
+  a:hover { text-decoration: underline; }
+  ul, ol { padding-left: 24px; }
+  li { margin: 7px 0; }
+  code { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 0.9em; background: #F1E8DB; padding: 1px 5px; border-radius: 4px; }
+  kbd {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.82em;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    padding: 2px 7px;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .callout { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--brown); border-radius: 0 12px 12px 0; padding: 16px 20px; margin: 20px 0; }
+  .callout strong { color: var(--brown); }
+  .desktop-tag { display: inline-block; font-size: 12px; font-weight: 600; color: var(--brown); background: rgba(168,84,44,0.1); border-radius: 999px; padding: 1px 9px; margin-left: 6px; vertical-align: middle; }
+  .swatches { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; padding: 0; list-style: none; }
+  .swatches li { margin: 0; }
+  .swatch { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px 4px 4px; font-size: 14px; background: var(--panel); }
+  .swatch .dot { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--border); display: inline-block; }
+  .footer { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; }
+  .footer a { color: var(--indigo); }
+  .kofi { display: inline-block; background: #FF5E5B; color: #fff; padding: 3px 10px; border-radius: 12px; font-weight: 600; font-size: 13px; text-decoration: none; }
+  .kofi:hover { background: #E54845; text-decoration: none; }
+</style>
+<link rel="stylesheet" href="/site-nav.css">
+</head>
+<body>
+<nav class="site-nav" aria-label="Primary">
+  <a class="site-nav-brand" href="/"><img src="/icon.svg" alt="" width="28" height="28"><span>Wren</span></a>
+  <div class="site-nav-links">
+    <a href="/download.html">Download</a>
+    <a href="/guide.html" aria-current="page">Guide</a>
+    <a href="/privacy.html">Privacy</a>
+  </div>
+</nav>
+<hr class="site-nav-divider">
+<div class="container">
+
+  <h1>Using Wren</h1>
+  <p class="lede">Wren is a sticky-notes app: rich-text notes saved as plain Markdown files on your own computer. Here's how to get around — the views and shortcuts, the desktop window tricks, writing and organizing notes, and where your notes live.</p>
+
+  <div class="callout">
+    <strong>Same notes everywhere.</strong> The web app, the Chrome extension, and the desktop app all read and write the <em>same</em> <code>.md</code> files in the folder you choose. Nothing is uploaded — your notes stay on your computer (or your own Google Drive, if you connect it).
+  </div>
+
+  <h2>Three ways to see your notes</h2>
+  <p>Wren has three views. Switch with the <strong>List · Kanban · Compact</strong> toggle in the sidebar header, or with keyboard shortcuts:</p>
+  <ul>
+    <li><strong>Compact</strong> <kbd>Ctrl</kbd>+<kbd>3</kbd> — a narrow single-column stack of your notes, like a desk-side panel. <strong>This is where Wren opens every time.</strong> Click a card to open it, or hit <strong>Expand</strong> to jump into the full app.</li>
+    <li><strong>List</strong> <kbd>Ctrl</kbd>+<kbd>1</kbd> — the full two-panel app: your notes on the left, the editor on the right.</li>
+    <li><strong>Kanban</strong> <kbd>Ctrl</kbd>+<kbd>2</kbd> — a board that groups notes into columns by tag (see <a href="#organizing">Organizing</a>). Drag cards between columns to retag them.</li>
+  </ul>
+  <p>List and Kanban are remembered as your "full" view; Compact is always the landing view and isn't saved as a preference.</p>
+
+  <h2>Keep Wren in reach <span class="desktop-tag">Desktop app</span></h2>
+  <p>These two are unique to the <a href="/download.html">desktop app</a> for Windows — a browser tab can't float above other windows.</p>
+  <h3>Pin on top</h3>
+  <p>Click the <strong>pin</strong> in the Compact bar (or the Expanded sidebar) to keep the whole Wren window <strong>always on top</strong> of your other apps — handy while you reference a note. Click again to unpin. The choice is remembered between launches.</p>
+  <h3>Floating sticky notes</h3>
+  <p>Pop any note out into its <strong>own small window</strong> that floats on top of everything. Open as many as you like — each sticky edits live and syncs with the main app instantly. Re-popping a note that's already open just brings its window to the front. Close a sticky and it remembers where it was.</p>
+  <p>(In the web app, "pop out" opens a normal browser window — it just can't stay always-on-top, which is a browser limitation.)</p>
+
+  <h3>System tray &amp; quick capture</h3>
+  <p>The desktop app lives in your <strong>system tray</strong>. Closing the window doesn't quit Wren — it tucks it into the tray so it stays a keystroke away. The tray icon's menu has <strong>New note</strong>, <strong>Show / hide all</strong>, and <strong>Quit</strong>; left-clicking the tray icon shows or hides Wren.</p>
+  <p>Two <strong>global hotkeys</strong> work even when Wren isn't the focused app:</p>
+  <ul>
+    <li><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd> — new note from anywhere (brings Wren forward and starts a fresh note).</li>
+    <li><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>W</kbd> — show / hide Wren.</li>
+  </ul>
+  <p>If another app already owns one of those combos, Wren skips that one and notes it in the in-app <strong>Shortcuts</strong> panel rather than failing — and you can rebind either hotkey there.</p>
+
+  <h3>Launch at startup</h3>
+  <p>Turn on <strong>Launch Wren at startup</strong> in the Shortcuts panel to have Wren start with Windows. It's <strong>off by default</strong> — Wren never adds a startup item unless you ask. Toggle it off to remove the login item.</p>
+
+  <h2 id="shortcuts">All keyboard shortcuts</h2>
+  <p>The full set — also available any time from the <strong>Shortcuts</strong> link in the app footer (which is where the desktop startup toggle and hotkey rebinding live):</p>
+  <ul>
+    <li><strong>Views:</strong> <kbd>Ctrl</kbd>+<kbd>1</kbd> List · <kbd>Ctrl</kbd>+<kbd>2</kbd> Kanban · <kbd>Ctrl</kbd>+<kbd>3</kbd> Compact.</li>
+    <li><strong>Formatting</strong> (in the editor): <kbd>Ctrl</kbd>+<kbd>B</kbd> bold · <kbd>Ctrl</kbd>+<kbd>I</kbd> italic · <kbd>Ctrl</kbd>+<kbd>U</kbd> underline.</li>
+    <li><strong>Global</strong> (desktop app only): <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd> new note · <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>W</kbd> show / hide.</li>
+  </ul>
+
+  <h2>Writing a note</h2>
+  <p>Notes are rich text that round-trips to Markdown. The editor toolbar gives you:</p>
+  <ul>
+    <li><strong>Text styles:</strong> bold <kbd>Ctrl</kbd>+<kbd>B</kbd>, italic <kbd>Ctrl</kbd>+<kbd>I</kbd>, underline <kbd>Ctrl</kbd>+<kbd>U</kbd>, and strikethrough.</li>
+    <li><strong>Headings:</strong> H1, H2, H3.</li>
+    <li><strong>Lists:</strong> bullet, numbered, and checkable task lists.</li>
+    <li><strong>Links:</strong> add or remove a link on the selected text.</li>
+    <li><strong>Color:</strong> text color and highlight.</li>
+  </ul>
+  <p>Edits autosave as you type — there's no save button. The note's title comes from the first line.</p>
+
+  <h2 id="organizing">Organizing your notes</h2>
+  <ul>
+    <li><strong>Search</strong> — the search box in List and Compact filters your notes by title and text as you type.</li>
+    <li><strong>Tags</strong> — tags are namespaced as <code>namespace:value</code> (for example <code>status:todo</code> or <code>project:wren</code>). Add them in the editor; a tag without a colon is treated as uncategorized.</li>
+    <li><strong>Kanban grouping</strong> — the Kanban board builds its columns from a tag namespace, so <code>status:todo</code> / <code>status:doing</code> / <code>status:done</code> become three columns. Drag a card to a new column to change its value in that namespace.</li>
+    <li><strong>Colors</strong> — give a note one of seven colors to scan your list faster:
+      <ul class="swatches">
+        <li><span class="swatch"><span class="dot" style="background:#EFF2F7"></span>Default</span></li>
+        <li><span class="swatch"><span class="dot" style="background:#E8EEF8"></span>Slate</span></li>
+        <li><span class="swatch"><span class="dot" style="background:#FFF4DC"></span>Amber</span></li>
+        <li><span class="swatch"><span class="dot" style="background:#FDECEA"></span>Red</span></li>
+        <li><span class="swatch"><span class="dot" style="background:#EAF7E6"></span>Green</span></li>
+        <li><span class="swatch"><span class="dot" style="background:#FDEEF5"></span>Rose</span></li>
+        <li><span class="swatch"><span class="dot" style="background:#F0EBFA"></span>Purple</span></li>
+      </ul>
+    </li>
+  </ul>
+
+  <h2>Where your notes live</h2>
+  <p>Your notes are plain <code>.md</code> files (Markdown with a little front-matter for title, color, and tags) — readable in any editor, yours to keep. By default they're stored locally on your computer:</p>
+  <ul>
+    <li><strong>On your computer (default)</strong> — Wren writes the files straight into a folder you pick, using your browser's File System Access. Nothing leaves your machine. This is how Wren works out of the box.</li>
+    <li><strong>Cloud sync via Google Drive (optional, experimental)</strong> — you can turn this on to keep your notes in a "Wren Notes" folder in your own Drive (scope <code>drive.file</code>, so Wren only ever touches files it created) and reach them across devices. It's still experimental: sync may not be fully reliable across devices yet, so local storage stays the recommended default.</li>
+  </ul>
+  <p>Wren starts on local storage. You can turn on the experimental Cloud sync — and switch back to local — from the storage chip in the app shell. Full detail on what's stored and what isn't is in the <a href="/privacy.html">privacy policy</a>.</p>
+
+  <h2>Get Wren</h2>
+  <ul>
+    <li><strong>Web app (PWA)</strong> — open <a href="https://wren.buildwithbaker.io">wren.buildwithbaker.io</a> and use the <strong>Install</strong> button (or your browser's install option) to add it like an app. Works offline.</li>
+    <li><strong>Chrome extension</strong> — a single-panel popup version for quick capture from the toolbar.</li>
+    <li><strong>Desktop app (Windows)</strong> — the native window with the always-on-top pin and floating stickies. <a href="/download.html">Download it here</a>.</li>
+  </ul>
+  <p>All three share the same notes folder, so use whichever fits the moment.</p>
+
+  <div class="footer">
+    <p>Wren is built by Adam Baker under the Build with Baker creator brand. Questions or issues: <a href="https://github.com/buildwithbaker/wren/issues" target="_blank" rel="noopener">github.com/buildwithbaker/wren/issues</a>.</p>
+    <p><a href="https://wren.buildwithbaker.io">Wren</a> &middot; <a href="/download.html">Download</a> &middot; <a href="/mcp.html">MCP server</a> &middot; <a href="/privacy.html">Privacy</a> &middot; <a href="https://buildwithbaker.com" target="_blank" rel="noopener">Build with Baker</a> &middot; <a class="kofi" href="https://ko-fi.com/abaker421" target="_blank" rel="noopener">Support on Ko-fi</a></p>
+  </div>
+
+</div>
+</body>
+</html>

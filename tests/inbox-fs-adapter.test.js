@@ -154,4 +154,31 @@ describe('FileSystemAdapter inbox round-trip', () => {
     // Root file untouched.
     expect((await adapter.listNotes()).map((n) => n.id)).toEqual(['existing.md']);
   });
+
+  it('discardInboxNote soft-deletes the staged file into .trash/ (content preserved)', async () => {
+    const res = await adapter.discardInboxNote('_inbox/staged.md');
+    expect(res.id).toBe('.trash/staged.md');
+    // Gone from the inbox:
+    expect(await adapter.listInboxNotes()).toHaveLength(0);
+    // Landed in .trash/ with its original content (recoverable by a file move):
+    const trash = root._subdirs['.trash'];
+    expect(trash).toBeTruthy();
+    expect('staged.md' in trash._files).toBe(true);
+    expect(trash._files['staged.md'].content).toContain('staged body');
+    // Main corpus untouched.
+    expect((await adapter.listNotes()).map((n) => n.id)).toEqual(['existing.md']);
+  });
+
+  it('discardInboxNote resolves a name collision in .trash/ with a " (N)" suffix', async () => {
+    // Pre-seed a colliding file in .trash/.
+    root._subdirs['.trash'] = makeDirHandle({ 'staged.md': { content: 'old', mtime: 1 } }, {});
+    const res = await adapter.discardInboxNote('_inbox/staged.md');
+    expect(res.id).toMatch(/^\.trash\/staged \(\d+\)\.md$/);
+    // Original trashed file is untouched.
+    expect(root._subdirs['.trash']._files['staged.md'].content).toBe('old');
+  });
+
+  it('discardInboxNote rejects a non-inbox id', async () => {
+    await expect(adapter.discardInboxNote('existing.md')).rejects.toThrow(/_inbox\//);
+  });
 });

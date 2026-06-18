@@ -99,14 +99,19 @@
   }
   .callout strong { color: var(--brown); }
 </style>
+<link rel="stylesheet" href="/site-nav.css">
 </head>
 <body>
-<div class="container">
-
-  <div class="brand">
-    <span class="brand-mark">W</span>
-    <span class="brand-name">Wren</span>
+<nav class="site-nav" aria-label="Primary">
+  <a class="site-nav-brand" href="/"><img src="/icon.svg" alt="" width="28" height="28"><span>Wren</span></a>
+  <div class="site-nav-links">
+    <a href="/download.html">Download</a>
+    <a href="/guide.html">Guide</a>
+    <a href="/privacy.html" aria-current="page">Privacy</a>
   </div>
+</nav>
+<hr class="site-nav-divider">
+<div class="container">
 
   <h1>Privacy Policy</h1>
   <p class="effective">Effective: June 1, 2026</p>
@@ -137,8 +142,8 @@
   </ul>
   <p>All of this lives in your browser's local storage. Clearing your browser data will remove it. Wren cannot access this data from any other device.</p>
 
-  <h2>Google Drive integration (optional)</h2>
-  <p>If you choose to enable Google Drive sync, Wren requests OAuth permission for the <code>drive.file</code> scope. This scope:</p>
+  <h2>Google Drive integration (optional, experimental)</h2>
+  <p>Wren stores your notes locally by default. Cloud sync via Google Drive is an <strong>optional, experimental</strong> feature you turn on yourself — it is off unless you explicitly enable it, and your notes stay on your own computer until you do. If you choose to enable Google Drive sync, Wren requests OAuth permission for the <code>drive.file</code> scope. This scope:</p>
   <ul>
     <li>Lets Wren see, create, edit, and delete <strong>only files Wren itself created</strong> in your Drive. Wren cannot see your other Drive files.</li>
     <li>Creates a folder named "Wren Notes" in your Drive on first sync. All Wren notes are stored as <code>.md</code> files in that folder.</li>
@@ -196,7 +201,7 @@
 
   <div class="footer">
     <p>Wren is open source under the MIT License. Source: <a href="https://github.com/buildwithbaker/wren" target="_blank" rel="noopener">github.com/buildwithbaker/wren</a>.</p>
-    <p><a href="https://buildwithbaker.com" target="_blank" rel="noopener">Build with Baker</a> · <a href="https://ko-fi.com/abaker421" target="_blank" rel="noopener">Support on Ko-fi</a></p>
+    <p><a href="/guide.html">Guide</a> · <a href="/download.html">Download</a> · <a href="/mcp.html">MCP server</a> · <a href="https://buildwithbaker.com" target="_blank" rel="noopener">Build with Baker</a> · <a href="https://ko-fi.com/abaker421" target="_blank" rel="noopener">Support on Ko-fi</a></p>
   </div>
 
 </div>
