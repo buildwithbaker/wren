@@ -29,7 +29,7 @@
     "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-opener": "^2.5.4",
     "@tiptap/core": "^2.11.5",
-    "@tiptap/extension-color": "^2.11.5",
+    "@tiptap/extension-color": "^3.27.1",
     "@tiptap/extension-highlight": "^2.11.5",
     "@tiptap/extension-link": "^2.11.5",
     "@tiptap/extension-task-item": "^2.11.5",
