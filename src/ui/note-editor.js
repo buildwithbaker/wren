@@ -82,22 +82,68 @@ export function createNoteEditor({
   const actions = document.createElement('div');
   actions.className = 'sc-editor-actions';
 
-  // Pop-out button (Sticky Float Phase 2) — opens the note in its own floating
-  // window. Main app only: hidden in sticky mode (a sticky can't pop itself
-  // out) and when no onPopOut handler was wired.
-  const popOutBtn = document.createElement('button');
-  popOutBtn.type = 'button';
-  popOutBtn.className = 'sc-iconbtn';
-  popOutBtn.title = 'Pop out into its own window';
-  popOutBtn.setAttribute('aria-label', 'Pop out note into its own window');
-  popOutBtn.innerHTML =
-    '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 4h6v6" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 4l-8 8" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  popOutBtn.hidden = sticky || !onPopOut;
-  popOutBtn.addEventListener('click', async () => {
+  // Overflow ("more") menu (Sticky Float Phase 2). Currently holds a single
+  // action — Pop out into its own window — kept out of the main action row so
+  // export / Archive / Delete read as the primary actions. Main app only:
+  // hidden in sticky mode (a sticky can't pop itself out) and when no onPopOut
+  // handler was wired.
+  const moreWrap = document.createElement('div');
+  moreWrap.className = 'sc-editor-more';
+  const moreBtn = document.createElement('button');
+  moreBtn.type = 'button';
+  moreBtn.className = 'sc-iconbtn';
+  moreBtn.title = 'More actions';
+  moreBtn.setAttribute('aria-label', 'More actions');
+  moreBtn.setAttribute('aria-haspopup', 'menu');
+  moreBtn.setAttribute('aria-expanded', 'false');
+  moreBtn.innerHTML =
+    '<svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor" stroke="none" aria-hidden="true"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>';
+  const moreMenu = document.createElement('div');
+  moreMenu.className = 'sc-editor-more-menu';
+  moreMenu.setAttribute('role', 'menu');
+  moreMenu.hidden = true;
+  const popOutItem = document.createElement('button');
+  popOutItem.type = 'button';
+  popOutItem.className = 'sc-editor-more-item';
+  popOutItem.setAttribute('role', 'menuitem');
+  popOutItem.innerHTML =
+    '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 4h6v6" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 4l-8 8" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Pop out into its own window</span>';
+  popOutItem.addEventListener('click', async () => {
+    closeMore();
     if (!note) return;
     // Flush pending edits so the popped-out window reads the latest content.
     await flush();
     onPopOut?.(note);
+  });
+  moreMenu.appendChild(popOutItem);
+  moreWrap.append(moreBtn, moreMenu);
+  moreWrap.hidden = sticky || !onPopOut;
+
+  function onDocClickForMore(e) {
+    if (!moreWrap.contains(e.target)) closeMore();
+  }
+  function onKeyForMore(e) {
+    if (e.key === 'Escape') {
+      closeMore();
+      moreBtn.focus();
+    }
+  }
+  function openMore() {
+    moreMenu.hidden = false;
+    moreBtn.setAttribute('aria-expanded', 'true');
+    document.addEventListener('click', onDocClickForMore, true);
+    document.addEventListener('keydown', onKeyForMore, true);
+  }
+  function closeMore() {
+    moreMenu.hidden = true;
+    moreBtn.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', onDocClickForMore, true);
+    document.removeEventListener('keydown', onKeyForMore, true);
+  }
+  moreBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (moreMenu.hidden) openMore();
+    else closeMore();
   });
 
   const exportBtn = document.createElement('button');
@@ -154,7 +200,9 @@ export function createNoteEditor({
     deleteBtn.hidden = true;
   }
 
-  actions.append(popOutBtn, archiveBtn, exportBtn, deleteBtn);
+  // Main row: export · Archive · Delete (Archive adjacent to Delete). The
+  // overflow menu (Pop-out) sits to the left, visually separated.
+  actions.append(moreWrap, exportBtn, archiveBtn, deleteBtn);
   head.append(back, titleInput, actions);
 
   // Color picker row
@@ -366,6 +414,7 @@ export function createNoteEditor({
   async function openNote(next, { focusTitle = false, readOnly = false, readOnlyLabel = 'Read-only' } = {}) {
     await flush();
     teardownEditor();
+    closeMore();
     note = next;
 
     placeholder.hidden = true;
@@ -417,6 +466,7 @@ export function createNoteEditor({
   function clear() {
     cancelSave();
     teardownEditor();
+    closeMore();
     tagEditor.clear();
     note = null;
     surface.hidden = true;
@@ -426,6 +476,7 @@ export function createNoteEditor({
   function destroy() {
     cancelSave();
     teardownEditor();
+    closeMore();
   }
 
   return {

@@ -16,6 +16,7 @@ import { CARD_COLORS, toPreviewText } from '@/notes-store.js';
 import { buildTagChips } from './tag-chips.js';
 import { formatModified } from './format.js';
 import { noteMatchesQuery } from './note-search.js';
+import { loadSortBy, sortNotes } from './note-sort.js';
 import { createPinButton } from './pin-button.js';
 import { isAiNote, buildAiBadge } from './ai-badge.js';
 import { buildDueChip } from './due-chip.js';
@@ -103,7 +104,9 @@ export function createCompactView({ onSelect, onNew, onExpand } = {}) {
       return;
     }
 
-    const filtered = notes.filter((n) => noteMatchesQuery(n, query));
+    // Same filter + sort pipeline as the List view (reads wren.sortBy) so the
+    // two views show notes in a consistent order.
+    const filtered = sortNotes(notes.filter((n) => noteMatchesQuery(n, query)), loadSortBy());
     if (filtered.length === 0) {
       scroll.appendChild(emptyState('No matches', `Nothing matches "${search.value.trim()}".`));
       return;
