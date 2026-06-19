@@ -177,6 +177,9 @@ export async function openStickyTauri(note, { cascadeIndex = 0 } = {}) {
       // close, no text — see src/sticky/titlebar.js). The OS/taskbar title is
       // still set (here, and live on rename via getCurrentWindow().setTitle).
       decorations: false,
+      // Disable Tauri's native OS drag-drop interception so in-app HTML5
+      // drag-and-drop (e.g. Kanban card moves) works inside the sticky webview.
+      dragDropEnabled: false,
       width: Math.round(geom.w),
       height: Math.round(geom.h),
       x: Math.round(geom.x),
