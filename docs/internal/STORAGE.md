@@ -58,6 +58,56 @@ default-resolution only. The label/warning copy lives as two constants in
 `src/app-controller.js` (`DRIVE_EXPERIMENTAL_LABEL` / `DRIVE_EXPERIMENTAL_WARNING`)
 so the messaging cannot drift between surfaces.
 
+## Native desktop folder adapter (Tauri, 2026-06-19)
+
+The `fs` backend has **two implementations**, chosen at boot by
+`chooseFsAdapter()` (`src/storage/activeAdapter.js`). `backendId()` is `'fs'`
+for both — the `fs|drive` preference model is unchanged; this is purely a
+different fs-family implementation:
+
+- **`FileSystemAdapter`** — browser File System Access API (PWA, extension, and
+  existing desktop users who already picked a folder). Unchanged.
+- **`TauriFsAdapter`** (`src/storage/TauriFsAdapter.js`) — native filesystem via
+  `@tauri-apps/plugin-fs` + `@tauri-apps/api/path`. Reads/writes
+  `<Documents>/Wren Notes`, auto-created (recursive `mkdir`) on first launch.
+  **No picker, no prompt.**
+
+Selection rule (the only branch that changed):
+
+| Runtime | Stored FS-Access handle? | Adapter |
+|---|---|---|
+| Tauri (desktop) | none (`getStoredDirHandle() === null`) | **TauriFsAdapter** — fresh install, auto `Documents/Wren Notes` |
+| Tauri (desktop) | exists | `FileSystemAdapter` — ⚠ never relocate an existing user's chosen folder |
+| PWA / extension | n/a | `FileSystemAdapter` — one-time picker (unchanged) |
+
+`TauriFsAdapter` mirrors `FileSystemAdapter`'s semantics exactly so the
+AI-readable index + MCP keep working: top-level-only note scans, the reserved
+managed files (`.wren-index.json`, `README-for-AI.md`, `_index.md`, `tasks.md`)
+excluded from listings, mtime-as-revision with `ConflictError` on
+conditional-write mismatch, and the `_inbox/` (staging) / `_archive/` (archive) /
+`.trash/` (soft-delete) subfolder conventions. Subfolder moves use
+write-new-then-delete-old (no native `rename`), matching `FileSystemAdapter` and
+keeping the fs permission set to read/write/remove.
+
+The native Tauri plugin modules are imported **lazily** (dynamic `import()`
+inside the adapter's async methods), so the file loads cleanly in the
+PWA/extension bundle and under vitest, where those native modules can't run. The
+real fs calls only execute inside Tauri (the adapter is only instantiated when
+`isTauri()`).
+
+**Tauri wiring:** `tauri-plugin-fs` is registered in `src-tauri/src/lib.rs`;
+`src-tauri/capabilities/default.json` grants the fs action permissions
+(`read-dir`, `read-text-file`, `write-text-file`, `mkdir`, `remove`, `exists`,
+`stat`) plus an `fs:scope` allowing `$DOCUMENT/Wren Notes` and
+`$DOCUMENT/Wren Notes/**`. ⚠ A missing/unscoped fs scope = silent read
+failures, so the scope must track the notes-folder path.
+
+> **Not yet shipped:** a "Change folder…" control (Tauri dialog plugin) to move
+> off the default `Documents/Wren Notes` path. Deferred — an arbitrary picked
+> folder would fall outside the fs scope above and read-fail silently, so it
+> needs a runtime scope grant before it's safe. The default path is the only
+> supported native location for now.
+
 ### File map
 
 | File | Purpose |

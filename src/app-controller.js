@@ -23,9 +23,10 @@ import {
   NoBackendConfiguredError,
   AdapterAuthError,
   FileSystemAdapter,
+  TauriFsAdapter,
   DriveAdapter,
-  getActiveAdapter,
   resolveBackend,
+  chooseFsAdapter,
   setStoredBackend,
   clearStoredBackend,
 } from './storage/index.js';
@@ -300,18 +301,36 @@ export function createApp({ root, enableServiceWorker = false }) {
     if (backend === null) return renderStorageChoice();
 
     if (backend === ADAPTER_TYPES.FS) {
-      if (!isSupported()) return renderUnsupported();
-      const fs = new FileSystemAdapter();
-      await fs.initialize();
+      // Pick the fs-family adapter: native Tauri folder for a fresh desktop
+      // install (zero prompts, auto Documents/Wren Notes), otherwise the browser
+      // File System Access adapter (existing desktop users keep their folder;
+      // PWA gets the one-time picker).
+      let fs;
+      try {
+        fs = await chooseFsAdapter();
+        const isNativeFs = fs instanceof TauriFsAdapter;
+        // Only the browser FS-Access path needs the File System Access API + a
+        // picker; the native folder adapter needs neither.
+        if (!isNativeFs && !isSupported()) return renderUnsupported();
+        await fs.initialize();
+      } catch (err) {
+        // Adapter selection or initialize() failed (e.g. the native folder
+        // couldn't be created / read). Route to the storage-choice screen so the
+        // user can recover, rather than leaving boot on a blank screen.
+        console.error('FS boot failed', err);
+        return renderStorageChoice();
+      }
       if (await fs.isReady()) {
         adapter = fs;
         await renderApp();
         return;
       }
-      // Not ready. Distinguish a brand-new install (no saved directory handle →
-      // local default with nothing chosen yet) from an existing FS user whose
-      // folder permission lapsed. The former lands on the storage-choice
-      // onboarding (local primary, Drive experimental); the latter reconnects.
+      // Not ready (FileSystemAdapter only — the native adapter is always ready
+      // after initialize, having auto-created its folder). Distinguish a
+      // brand-new install (no saved directory handle → local default with
+      // nothing chosen yet) from an existing FS user whose folder permission
+      // lapsed. The former lands on the storage-choice onboarding (local
+      // primary, Drive experimental); the latter reconnects.
       let hasHandle = false;
       try {
         hasHandle = !!(await getStoredDirHandle());

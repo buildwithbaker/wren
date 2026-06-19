@@ -9,10 +9,11 @@ export {
   NoBackendConfiguredError,
 } from './StorageAdapter.js';
 export { FileSystemAdapter } from './FileSystemAdapter.js';
+export { TauriFsAdapter, WREN_NOTES_FOLDER } from './TauriFsAdapter.js';
 export { DriveAdapter } from './DriveAdapter.js';
 export {
   getStoredBackend,
   setStoredBackend,
   clearStoredBackend,
 } from './backendPreference.js';
-export { resolveBackend, getActiveAdapter } from './activeAdapter.js';
+export { resolveBackend, getActiveAdapter, chooseFsAdapter } from './activeAdapter.js';

@@ -27,6 +27,10 @@ vi.mock('../src/notes-store.js', () => ({
 
 // Stub the adapters so the import chain stays light.
 vi.mock('../src/storage/FileSystemAdapter.js', () => ({ FileSystemAdapter: class {} }));
+vi.mock('../src/storage/TauriFsAdapter.js', () => ({
+  TauriFsAdapter: class {},
+  WREN_NOTES_FOLDER: 'Wren Notes',
+}));
 vi.mock('../src/storage/DriveAdapter.js', () => ({ DriveAdapter: class {} }));
 
 const { resolveBackend } = await import('../src/storage/activeAdapter.js');
