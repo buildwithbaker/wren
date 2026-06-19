@@ -305,12 +305,21 @@ export function createApp({ root, enableServiceWorker = false }) {
       // install (zero prompts, auto Documents/Wren Notes), otherwise the browser
       // File System Access adapter (existing desktop users keep their folder;
       // PWA gets the one-time picker).
-      const fs = await chooseFsAdapter();
-      const isNativeFs = fs instanceof TauriFsAdapter;
-      // Only the browser FS-Access path needs the File System Access API + a
-      // picker; the native folder adapter needs neither.
-      if (!isNativeFs && !isSupported()) return renderUnsupported();
-      await fs.initialize();
+      let fs;
+      try {
+        fs = await chooseFsAdapter();
+        const isNativeFs = fs instanceof TauriFsAdapter;
+        // Only the browser FS-Access path needs the File System Access API + a
+        // picker; the native folder adapter needs neither.
+        if (!isNativeFs && !isSupported()) return renderUnsupported();
+        await fs.initialize();
+      } catch (err) {
+        // Adapter selection or initialize() failed (e.g. the native folder
+        // couldn't be created / read). Route to the storage-choice screen so the
+        // user can recover, rather than leaving boot on a blank screen.
+        console.error('FS boot failed', err);
+        return renderStorageChoice();
+      }
       if (await fs.isReady()) {
         adapter = fs;
         await renderApp();

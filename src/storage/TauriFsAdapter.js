@@ -100,6 +100,29 @@ function archiveBaseName(id) {
   return id.slice(ARCHIVE_ID_PREFIX.length);
 }
 
+/**
+ * Guard against path traversal. Adapter note ids / managed names must behave
+ * like bare File System Access child filenames — the browser FileSystemAdapter
+ * relies on the platform API rejecting separators, so a value like
+ * `../README-for-AI.md` or `_inbox/../foo.md` can never escape the intended
+ * folder there. joinPath() does no such enforcement, so we reject separators
+ * and `.`/`..` here before any path is built.
+ *
+ * @param {string} name - a BARE filename (no directory component)
+ * @param {string} [label]
+ */
+function assertBareName(name, label = 'note name') {
+  if (
+    typeof name !== 'string' ||
+    name === '' ||
+    name === '.' ||
+    name === '..' ||
+    /[\\/]/.test(name)
+  ) {
+    throw new Error(`Invalid ${label}: ${JSON.stringify(name)}`);
+  }
+}
+
 /** FileInfo.mtime (Date|null) → ms-since-epoch string, mirroring FS revisions. */
 function revOf(info) {
   const ms = info && info.mtime ? new Date(info.mtime).getTime() : 0;
@@ -163,10 +186,15 @@ export class TauriFsAdapter {
 
   async readNote(noteId) {
     this._assertReady();
-    const { readTextFile, stat } = await fsApi();
     const abs = this._pathForId(noteId);
-    const content = await readTextFile(abs);
+    const { readTextFile, stat } = await fsApi();
+    // Stat BEFORE reading: if an external editor rewrites the file between the
+    // two calls, the caller ends up holding new content tagged with the OLD
+    // revision. A later conditional write then mismatches the now-newer mtime
+    // and raises ConflictError — the safe direction. (Read-then-stat would do
+    // the opposite: new revision on old content → silent overwrite.)
     const info = await stat(abs);
+    const content = await readTextFile(abs);
     return { content, revision: revOf(info) };
   }
 
@@ -178,6 +206,7 @@ export class TauriFsAdapter {
    */
   async writeNote(noteId, content, expectedRevision) {
     this._assertReady();
+    assertBareName(noteId, 'note id');
     const { writeTextFile, stat, exists } = await fsApi();
     // writeNote targets the root only (mirrors FileSystemAdapter — staged inbox
     // notes are promoted/discarded, never written back in place).
@@ -208,8 +237,8 @@ export class TauriFsAdapter {
 
   async deleteNote(noteId) {
     this._assertReady();
-    const { remove, exists } = await fsApi();
     const abs = this._pathForId(noteId);
+    const { remove, exists } = await fsApi();
     // For subfolder-scoped ids, a missing subfolder/file is a no-op (the file is
     // already gone) — matching FileSystemAdapter.
     if ((isInboxId(noteId) || isArchiveId(noteId)) && !(await exists(abs))) return;
@@ -223,6 +252,7 @@ export class TauriFsAdapter {
    */
   async writeManagedFile(name, content) {
     this._assertReady();
+    assertBareName(name, 'managed file name');
     const { writeTextFile } = await fsApi();
     await writeTextFile(joinPath(this._base, name), content);
   }
@@ -233,12 +263,19 @@ export class TauriFsAdapter {
    */
   async readManagedFile(name) {
     this._assertReady();
+    assertBareName(name, 'managed file name');
     const { readTextFile, exists } = await fsApi();
     const abs = joinPath(this._base, name);
     try {
       if (!(await exists(abs))) return null;
       return await readTextFile(abs);
-    } catch {
+    } catch (err) {
+      // Mirror FileSystemAdapter: a read failure resolves to "absent" so the
+      // once-per-session managed-file check never hard-crashes boot. But the
+      // file passed the exists() check above, so a failure here is a real I/O /
+      // permission / fs-scope problem — log it so a misconfigured scope is
+      // diagnosable rather than silently masked as a missing file.
+      console.warn(`readManagedFile("${name}") failed after exists() passed`, err);
       return null;
     }
   }
@@ -274,6 +311,8 @@ export class TauriFsAdapter {
    */
   async renameNote(noteId, desiredName) {
     this._assertReady();
+    assertBareName(noteId, 'note id');
+    assertBareName(desiredName, 'desired name');
     const { stat } = await fsApi();
     if (desiredName === noteId) {
       return { id: noteId, revision: revOf(await stat(joinPath(this._base, noteId))) };
@@ -321,6 +360,7 @@ export class TauriFsAdapter {
     const inboxAbs = joinPath(this._base, INBOX_DIR);
     if (!(await exists(inboxAbs))) throw new Error('_inbox/ subfolder not found');
     const baseName = inboxBaseName(noteId);
+    assertBareName(baseName, 'inbox note id');
     const destName = await uniqueNoteName(baseName, (name) => this._rootExists(name));
     const destAbs = joinPath(this._base, destName);
     await this._moveFile(joinPath(inboxAbs, baseName), destAbs);
@@ -344,6 +384,7 @@ export class TauriFsAdapter {
     const inboxAbs = joinPath(this._base, INBOX_DIR);
     if (!(await exists(inboxAbs))) throw new Error('_inbox/ subfolder not found');
     const baseName = inboxBaseName(noteId);
+    assertBareName(baseName, 'inbox note id');
     const trashAbs = joinPath(this._base, TRASH_DIR);
     if (!(await exists(trashAbs))) await mkdir(trashAbs, { recursive: true });
     const destName = await uniqueNoteName(baseName, (name) =>
@@ -387,6 +428,7 @@ export class TauriFsAdapter {
     if (isInboxId(noteId) || isArchiveId(noteId)) {
       throw new Error(`archiveNote requires a top-level id, got "${noteId}"`);
     }
+    assertBareName(noteId, 'note id');
     const { mkdir, exists } = await fsApi();
     const archiveAbs = joinPath(this._base, ARCHIVE_DIR);
     if (!(await exists(archiveAbs))) await mkdir(archiveAbs, { recursive: true });
@@ -413,6 +455,7 @@ export class TauriFsAdapter {
     const archiveAbs = joinPath(this._base, ARCHIVE_DIR);
     if (!(await exists(archiveAbs))) throw new Error('_archive/ subfolder not found');
     const baseName = archiveBaseName(noteId);
+    assertBareName(baseName, 'archive note id');
     const destName = await uniqueNoteName(baseName, (name) => this._rootExists(name));
     const destAbs = joinPath(this._base, destName);
     await this._moveFile(joinPath(archiveAbs, baseName), destAbs);
@@ -481,8 +524,17 @@ export class TauriFsAdapter {
 
   /** Absolute path for a (possibly subfolder-scoped) note id. */
   _pathForId(noteId) {
-    if (isInboxId(noteId)) return joinPath(this._base, INBOX_DIR, inboxBaseName(noteId));
-    if (isArchiveId(noteId)) return joinPath(this._base, ARCHIVE_DIR, archiveBaseName(noteId));
+    if (isInboxId(noteId)) {
+      const base = inboxBaseName(noteId);
+      assertBareName(base, 'inbox note id');
+      return joinPath(this._base, INBOX_DIR, base);
+    }
+    if (isArchiveId(noteId)) {
+      const base = archiveBaseName(noteId);
+      assertBareName(base, 'archive note id');
+      return joinPath(this._base, ARCHIVE_DIR, base);
+    }
+    assertBareName(noteId, 'note id');
     return joinPath(this._base, noteId);
   }
 

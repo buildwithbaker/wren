@@ -61,13 +61,19 @@ export async function resolveBackend() {
  * Pick the right fs-family adapter INSTANCE (uninitialized) per the desktop
  * selection rule. Does not initialize it — the caller awaits initialize().
  *
- *   - Tauri AND no existing File System Access handle (getStoredDirHandle()
- *     === null) → {@link TauriFsAdapter}. Fresh desktop installs land in
- *     <Documents>/Wren Notes with zero prompts.
+ *   - Tauri AND we can CONFIRM no existing File System Access handle
+ *     (getStoredDirHandle() === null) → {@link TauriFsAdapter}. Fresh desktop
+ *     installs land in <Documents>/Wren Notes with zero prompts.
  *   - An FS-Access directory handle already exists → {@link FileSystemAdapter}.
  *     ⚠ NEVER relocate an existing desktop user's notes: if they already picked
  *     a folder (handle in IndexedDB), keep using it via the browser API.
  *   - Not Tauri (PWA / extension) → {@link FileSystemAdapter} (one-time picker).
+ *
+ * If the handle store can't be read, we deliberately do NOT assume "fresh" —
+ * routing an existing desktop user to a brand-new Documents/Wren Notes folder
+ * would split their notes across two locations. We fall back to
+ * FileSystemAdapter (which re-checks / recovers the handle) so the
+ * never-relocate rule holds even when IndexedDB is transiently unavailable.
  *
  * @returns {Promise<FileSystemAdapter|TauriFsAdapter>}
  */
@@ -77,7 +83,10 @@ export async function chooseFsAdapter() {
     try {
       handle = await getStoredDirHandle();
     } catch {
-      /* IndexedDB busted — treat as no handle (fresh) and use the native folder */
+      // Handle store unreadable — cannot prove this is a fresh install, so do
+      // not adopt the native folder (would relocate an existing user). Use the
+      // browser FS-Access adapter, which handles its own not-ready recovery.
+      return new FileSystemAdapter();
     }
     if (handle === null) return new TauriFsAdapter();
   }

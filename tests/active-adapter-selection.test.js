@@ -69,12 +69,15 @@ describe('chooseFsAdapter — fs-family selection', () => {
     expect(getStoredDirHandle).not.toHaveBeenCalled();
   });
 
-  it('defensive: Tauri + getStoredDirHandle throwing is treated as no handle → TauriFsAdapter', async () => {
+  it('defensive: Tauri + getStoredDirHandle throwing falls back to FileSystemAdapter (never relocate)', async () => {
     isTauri.mockReturnValue(true);
     getStoredDirHandle.mockRejectedValue(new Error('IndexedDB unavailable'));
 
     const a = await chooseFsAdapter();
 
-    expect(a).toBeInstanceOf(TauriFsAdapter);
+    // A read failure must NOT be assumed to mean "fresh install" — that would
+    // route an existing desktop user to a brand-new Documents/Wren Notes folder.
+    expect(a).toBeInstanceOf(FileSystemAdapter);
+    expect(a).not.toBeInstanceOf(TauriFsAdapter);
   });
 });

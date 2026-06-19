@@ -102,13 +102,20 @@ export function createStickyApp({ root }) {
     }
 
     if (backend === ADAPTER_TYPES.FS) {
-      const fs = await chooseFsAdapter();
-      const isNativeFs = fs instanceof TauriFsAdapter;
-      if (!isNativeFs && !isSupported()) {
-        renderMessage(root, 'This browser can’t open local notes.', { openWren: true });
+      let fs;
+      try {
+        fs = await chooseFsAdapter();
+        const isNativeFs = fs instanceof TauriFsAdapter;
+        if (!isNativeFs && !isSupported()) {
+          renderMessage(root, 'This browser can’t open local notes.', { openWren: true });
+          return;
+        }
+        await fs.initialize();
+      } catch (err) {
+        console.error('Sticky boot: fs initialization failed', err);
+        renderMessage(root, 'Could not open your notes.', { openWren: true });
         return;
       }
-      await fs.initialize();
       if (await fs.isReady()) {
         adapter = fs;
         return openNoteFlow();
