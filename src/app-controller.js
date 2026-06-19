@@ -93,6 +93,7 @@ export function createApp({ root, enableServiceWorker = false }) {
   let kanbanView = null;
   let compactView = null;
   let viewToggleEl = null;
+  let compactBtnEl = null; // Standalone Compact (window-mode) button, beside the pin
   let sidebarPin = null; // Expanded-view always-on-top toggle (Tauri only)
   let desktopIntegration = null; // tray/hotkey/autostart bridge (Tauri only; stub in browser)
   // Session view: 'list' | 'kanban' | 'compact'. Only 'list'|'kanban' are ever
@@ -663,18 +664,19 @@ export function createApp({ root, enableServiceWorker = false }) {
     const sidebar = document.createElement('aside');
     sidebar.className = 'sc-sidebar';
     sidebar.appendChild(buildBrand());
-    // Header row: view toggle on the left; the always-on-top pin on the right
-    // (Tauri only — createPinButton is null in the PWA, so the row just holds
-    // the toggle as before).
+    // Header row: the List|Kanban view toggle on the left; a right-hand group
+    // holding the standalone Compact (window-mode) button and — Tauri only —
+    // the always-on-top pin. createPinButton() is null in the PWA, so the pin
+    // simply isn't appended there.
+    const headRow = document.createElement('div');
+    headRow.className = 'sc-sidebar-head';
+    const headRight = document.createElement('div');
+    headRight.className = 'sc-sidebar-head-right';
+    headRight.appendChild(buildCompactButton());
     sidebarPin = createPinButton();
-    if (sidebarPin) {
-      const headRow = document.createElement('div');
-      headRow.className = 'sc-sidebar-head';
-      headRow.append(buildViewToggle(), sidebarPin.element);
-      sidebar.appendChild(headRow);
-    } else {
-      sidebar.appendChild(buildViewToggle());
-    }
+    if (sidebarPin) headRight.appendChild(sidebarPin.element);
+    headRow.append(buildViewToggle(), headRight);
+    sidebar.appendChild(headRow);
 
     list = createNotesList({
       onSelect: (noteId) => openNote(noteId),
@@ -709,10 +711,6 @@ export function createApp({ root, enableServiceWorker = false }) {
       onNoteOpen: (id) => {
         setViewMode('list');
         openNote(id);
-      },
-      onNewNote: () => {
-        setViewMode('list');
-        handleNew();
       },
       onMoveNote: handleKanbanMove,
     });
@@ -971,23 +969,36 @@ export function createApp({ root, enableServiceWorker = false }) {
     kanbanBtn.innerHTML =
       '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="11" rx="1"/><rect x="17" y="4" width="4" height="14" rx="1"/></svg><span>Kanban</span>';
     kanbanBtn.addEventListener('click', () => setViewMode('kanban'));
-    const compactBtn = document.createElement('button');
-    compactBtn.type = 'button';
-    compactBtn.dataset.mode = 'compact';
-    compactBtn.innerHTML =
-      '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="3" width="12" height="5" rx="1"/><rect x="6" y="11" width="12" height="5" rx="1"/><rect x="6" y="19" width="12" height="2" rx="1"/></svg><span>Compact</span>';
-    compactBtn.addEventListener('click', () => setViewMode('compact'));
-    wrap.append(listBtn, kanbanBtn, compactBtn);
+    wrap.append(listBtn, kanbanBtn);
     viewToggleEl = wrap;
     return wrap;
   }
 
+  // Standalone Compact control — NOT a peer of List/Kanban. Compact is the
+  // narrow "desk-side panel" window mode, so it lives outside the segmented
+  // toggle, beside the pin, with a distinct window-dock icon + label.
+  function buildCompactButton() {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'sc-compact-btn';
+    btn.dataset.mode = 'compact';
+    btn.title = 'Shrink to the compact panel';
+    btn.setAttribute('aria-label', 'Switch to the compact panel');
+    btn.innerHTML =
+      '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="15" y1="4" x2="15" y2="20"/></svg><span>Compact</span>';
+    btn.addEventListener('click', () => setViewMode('compact'));
+    compactBtnEl = btn;
+    return btn;
+  }
+
   function updateViewToggle(mode) {
-    if (!viewToggleEl) return;
     const m = mode || effectiveViewMode();
-    for (const btn of viewToggleEl.querySelectorAll('button')) {
-      btn.classList.toggle('is-active', btn.dataset.mode === m);
+    if (viewToggleEl) {
+      for (const btn of viewToggleEl.querySelectorAll('button')) {
+        btn.classList.toggle('is-active', btn.dataset.mode === m);
+      }
     }
+    if (compactBtnEl) compactBtnEl.classList.toggle('is-active', m === 'compact');
   }
 
   /**

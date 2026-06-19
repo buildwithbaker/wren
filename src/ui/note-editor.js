@@ -205,7 +205,9 @@ export function createNoteEditor({
   const savedHint = document.createElement('span');
   savedHint.className = 'sc-saved-hint';
   savedHint.setAttribute('aria-live', 'polite');
-  colorRow.append(cardColor.element, dueWrap, savedHint);
+  // Color swatches on the left; the Due control pinned to the far right (CSS
+  // margin-left:auto). The save status moved out of this row into the tag row.
+  colorRow.append(cardColor.element, dueWrap);
 
   function updateDueControl() {
     const status = dueStatus(note?.due || '');
@@ -296,10 +298,17 @@ export function createNoteEditor({
   const bodyMount = document.createElement('div');
   bodyMount.className = 'sc-editor-body';
 
-  // Tag row is part of the full editor only — a sticky keeps slim chrome.
+  // Tag chips are part of the full editor only — a sticky keeps slim chrome.
+  // The save status sits to their right; it stays visible even in a sticky
+  // (only the tag-chips input is hidden, not the whole row).
   if (sticky) tagEditor.element.hidden = true;
+  const tagRow = document.createElement('div');
+  tagRow.className = 'sc-editor-tagrow';
+  tagRow.append(tagEditor.element, savedHint);
 
-  surface.append(head, colorRow, provenanceEl, tagEditor.element, toolbarMount, bodyMount);
+  // Provenance ("Updated … by you") sits at the very bottom of the surface,
+  // below the editor body — out of the way of the title/tag/save controls.
+  surface.append(head, colorRow, tagRow, toolbarMount, bodyMount, provenanceEl);
   root.append(placeholder, surface);
 
   // --- save scheduling ------------------------------------------------------

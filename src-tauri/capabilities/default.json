@@ -32,7 +32,10 @@
     "notification:allow-request-permission",
     {
       "identifier": "opener:allow-open-url",
-      "allow": [{ "url": "https://wren.buildwithbaker.io/*" }]
+      "allow": [
+        { "url": "https://wren.buildwithbaker.io/*" },
+        { "url": "https://ko-fi.com/*" }
+      ]
     }
   ]
 }

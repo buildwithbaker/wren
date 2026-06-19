@@ -9,8 +9,8 @@
 //
 // Decision provenance: project-blueprints/wren/future-enhancements/kanban-view-sow.md (Phase C)
 
-import { CARD_COLORS, firstLineOf } from '@/notes-store.js';
-import { getAllNamespaces, groupNotesByNamespace } from '@/tags/tag-parser.js';
+import { CARD_COLORS, toPreviewText } from '@/notes-store.js';
+import { getAllNamespaces, groupNotesByNamespace, isValidTag } from '@/tags/tag-parser.js';
 import { buildTagChips } from './tag-chips.js';
 import { isAiNote, buildAiBadge } from './ai-badge.js';
 import { buildDueChip } from './due-chip.js';
@@ -22,12 +22,23 @@ const GROUPBY_KEY = 'wren.kanbanGroupBy';
  * @param {{
  *   getNotes: () => Array<Object>,
  *   onNoteOpen: (noteId: string) => void,
- *   onNewNote: () => void,
  *   onMoveNote?: (noteId: string, namespace: string, value: string) => Promise<void>|void,
  * }} opts
  */
-export function createKanbanView({ getNotes, onNoteOpen, onNewNote, onMoveNote }) {
+export function createKanbanView({ getNotes, onNoteOpen, onMoveNote }) {
   let groupBy = loadGroupBy();
+  // Manually-added empty columns, keyed by namespace → Set of values. Session-
+  // only (not persisted): "+ New Tag" creates an empty, droppable column so a
+  // user can stage a new tag value and drag cards into it. A column disappears
+  // on reload unless a note actually carries the tag by then.
+  const manualColumns = new Map();
+  // True while the inline "+ New Tag" input is open (drives toolbar rendering).
+  let addingTag = false;
+
+  function addManualColumn(namespace, value) {
+    if (!manualColumns.has(namespace)) manualColumns.set(namespace, new Set());
+    manualColumns.get(namespace).add(value);
+  }
 
   const root = document.createElement('div');
   root.className = 'sc-kanban';
@@ -100,13 +111,65 @@ export function createKanbanView({ getNotes, onNoteOpen, onNewNote, onMoveNote }
     const spacer = document.createElement('div');
     spacer.style.flex = '1';
 
-    const newBtn = document.createElement('button');
-    newBtn.type = 'button';
-    newBtn.className = 'sc-btn sc-btn--ghost';
-    newBtn.textContent = '+ New Note';
-    newBtn.addEventListener('click', () => onNewNote?.());
+    toolbar.append(label, select, spacer);
 
-    toolbar.append(label, select, spacer, newBtn);
+    // "+ New Tag" — adds an empty, droppable column for a new value in the
+    // active namespace (New Note lives in the sidebar; the board only organizes
+    // by tag). Clicking swaps the button for an inline input.
+    if (addingTag && activeNs) {
+      const form = document.createElement('form');
+      form.className = 'sc-kanban-newtag';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'sc-kanban-newtag-input';
+      input.placeholder = `New ${nsLabel(activeNs)}…`;
+      input.setAttribute('aria-label', `New ${nsLabel(activeNs)} value`);
+      input.autocomplete = 'off';
+      form.appendChild(input);
+
+      let done = false;
+      const commit = () => {
+        if (done) return;
+        done = true;
+        const value = input.value.trim();
+        addingTag = false;
+        // Reject the reserved "_untagged" key — render() always appends that
+        // column, so a manual one would duplicate/conflict with it.
+        if (value && value !== '_untagged' && isValidTag(`${activeNs}:${value}`)) {
+          addManualColumn(activeNs, value);
+        }
+        render();
+      };
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        commit();
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          done = true;
+          addingTag = false;
+          render();
+        }
+      });
+      input.addEventListener('blur', commit);
+      toolbar.appendChild(form);
+      // Focus once it's attached so the user can type immediately.
+      queueMicrotask(() => input.focus());
+    } else {
+      const newTagBtn = document.createElement('button');
+      newTagBtn.type = 'button';
+      newTagBtn.className = 'sc-btn sc-btn--ghost';
+      newTagBtn.textContent = '+ New Tag';
+      newTagBtn.disabled = !activeNs;
+      if (!activeNs) {
+        newTagBtn.title = 'Add a tag to a note first to start a board';
+      }
+      newTagBtn.addEventListener('click', () => {
+        addingTag = true;
+        render();
+      });
+      toolbar.appendChild(newTagBtn);
+    }
   }
 
   function render() {
@@ -129,9 +192,12 @@ export function createKanbanView({ getNotes, onNoteOpen, onNewNote, onMoveNote }
 
     const groups = groupNotesByNamespace(notes, activeNs);
     // Column order: values alphabetically, with the catch-all _untagged last.
-    const keys = Array.from(groups.keys())
-      .filter((k) => k !== '_untagged')
-      .sort();
+    // Manually-added (empty) columns for the active namespace are merged in so
+    // they render even with no notes yet — droppable targets for re-tagging.
+    const valueSet = new Set(Array.from(groups.keys()).filter((k) => k !== '_untagged'));
+    const manual = manualColumns.get(activeNs);
+    if (manual) for (const v of manual) valueSet.add(v);
+    const keys = Array.from(valueSet).sort();
     keys.push('_untagged');
 
     for (const value of keys) {
@@ -181,7 +247,7 @@ export function createKanbanView({ getNotes, onNoteOpen, onNewNote, onMoveNote }
 
     const preview = document.createElement('div');
     preview.className = 'sc-kanban-card-preview';
-    preview.textContent = note.firstLine || firstLineOf(note.body || '') || 'No additional text';
+    preview.textContent = toPreviewText(note.firstLine || note.body) || 'No additional text';
 
     card.append(title, preview);
     // Due-date chip (Note Lifecycle A2).

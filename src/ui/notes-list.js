@@ -2,7 +2,7 @@
 // Sidebar list: tag filter + search field + New Note button + scrollable cards.
 // Returns { element, setNotes, setActive, focusSearch, getQuery }.
 
-import { CARD_COLORS } from '@/notes-store.js';
+import { CARD_COLORS, toPreviewText } from '@/notes-store.js';
 import { getAllTags } from '@/tags/tag-parser.js';
 import { buildTagChips } from './tag-chips.js';
 import { formatModified } from './format.js';
@@ -184,7 +184,7 @@ export function createNotesList({
 
     const preview = document.createElement('div');
     preview.className = 'sc-inbox-card-preview';
-    preview.textContent = note.summary || note.firstLine || 'No additional text';
+    preview.textContent = toPreviewText(note.summary || note.firstLine) || 'No additional text';
 
     open.append(titleRow, preview);
     open.addEventListener('click', () => onInboxSelect?.(note.id));
@@ -337,7 +337,7 @@ export function createNotesList({
 
     const preview = document.createElement('div');
     preview.className = 'sc-card-preview';
-    preview.textContent = note.firstLine || 'No additional text';
+    preview.textContent = toPreviewText(note.firstLine) || 'No additional text';
 
     const meta = document.createElement('div');
     meta.className = 'sc-card-meta';
