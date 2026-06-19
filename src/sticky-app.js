@@ -16,10 +16,11 @@
 
 import {
   ADAPTER_TYPES,
-  FileSystemAdapter,
+  TauriFsAdapter,
   DriveAdapter,
   AdapterAuthError,
   resolveBackend,
+  chooseFsAdapter,
 } from './storage/index.js';
 import {
   initTokenClient,
@@ -101,11 +102,12 @@ export function createStickyApp({ root }) {
     }
 
     if (backend === ADAPTER_TYPES.FS) {
-      if (!isSupported()) {
+      const fs = await chooseFsAdapter();
+      const isNativeFs = fs instanceof TauriFsAdapter;
+      if (!isNativeFs && !isSupported()) {
         renderMessage(root, 'This browser can’t open local notes.', { openWren: true });
         return;
       }
-      const fs = new FileSystemAdapter();
       await fs.initialize();
       if (await fs.isReady()) {
         adapter = fs;

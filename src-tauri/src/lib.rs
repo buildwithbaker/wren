@@ -71,6 +71,10 @@ pub fn run() {
     // Desktop notifications for due/overdue notes (Note Lifecycle A3). The
     // frontend (desktop.js) checks permission and fires the notification.
     .plugin(tauri_plugin_notification::init())
+    // Native filesystem access for the local notes folder. TauriFsAdapter reads
+    // and writes <Documents>/Wren Notes through this plugin (scope is defined in
+    // capabilities/default.json — without it, fs calls fail silently).
+    .plugin(tauri_plugin_fs::init())
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
