@@ -47,6 +47,12 @@ describe('sortNotes', () => {
     expect(ids(sortNotes(input, 'nope'))).toEqual(ids(sortNotes(input, DEFAULT_SORT)));
   });
 
+  it('prototype keys fall back to the default without throwing', () => {
+    expect(() => sortNotes(input, '__proto__')).not.toThrow();
+    expect(ids(sortNotes(input, '__proto__'))).toEqual(ids(sortNotes(input, DEFAULT_SORT)));
+    expect(() => sortNotes(input, 'constructor')).not.toThrow();
+  });
+
   it('handles empty / missing input', () => {
     expect(sortNotes([], 'title')).toEqual([]);
     expect(sortNotes(undefined, 'title')).toEqual([]);

@@ -67,6 +67,10 @@ const comparators = {
 // back to the default. The sort is stable on modern engines, so the incoming
 // order (typically modified-desc) is the tie-breaker.
 export function sortNotes(notes, sortBy) {
-  const cmp = comparators[sortBy] || comparators[DEFAULT_SORT];
+  // Own-property lookup so prototype keys (e.g. "__proto__") fall back to the
+  // default instead of resolving to a truthy non-function and breaking sort().
+  const cmp = Object.prototype.hasOwnProperty.call(comparators, sortBy)
+    ? comparators[sortBy]
+    : comparators[DEFAULT_SORT];
   return [...(notes || [])].sort(cmp);
 }
