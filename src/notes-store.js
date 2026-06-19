@@ -361,7 +361,9 @@ export function firstLineOf(markdown) {
 export function toPreviewText(markdown) {
   let text = firstLineOf(markdown);
   if (!text) return '';
-  text = text.replace(/<[^>]*>/g, ''); // drop HTML tags, keep their text content
+  // Strip tag-shaped tokens only (must start with a letter or "/"), so prose
+  // like "a < b > c" keeps its angle brackets while <span>/<mark> are removed.
+  text = text.replace(/<\/?[A-Za-z][^>]*>/g, '');
   text = text
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')

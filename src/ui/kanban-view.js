@@ -133,7 +133,9 @@ export function createKanbanView({ getNotes, onNoteOpen, onMoveNote }) {
         done = true;
         const value = input.value.trim();
         addingTag = false;
-        if (value && isValidTag(`${activeNs}:${value}`)) {
+        // Reject the reserved "_untagged" key — render() always appends that
+        // column, so a manual one would duplicate/conflict with it.
+        if (value && value !== '_untagged' && isValidTag(`${activeNs}:${value}`)) {
           addManualColumn(activeNs, value);
         }
         render();

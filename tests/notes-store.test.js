@@ -140,6 +140,9 @@ describe('toPreviewText', () => {
   it('decodes the common HTML entities', () => {
     expect(toPreviewText('a &amp; b &lt;c&gt;')).toBe('a & b <c>');
   });
+  it('keeps non-tag angle brackets (comparisons/code)', () => {
+    expect(toPreviewText('if a < b > c then done')).toBe('if a < b > c then done');
+  });
   it('collapses whitespace and uses the first meaningful line', () => {
     expect(toPreviewText('\n\n  <span>  spaced   out  </span>\nsecond')).toBe('spaced out');
   });
