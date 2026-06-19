@@ -9,6 +9,7 @@ import { formatModified } from './format.js';
 import { noteMatchesQuery } from './note-search.js';
 import { isAiNote, buildAiBadge } from './ai-badge.js';
 import { buildDueChip } from './due-chip.js';
+import { SORT_OPTIONS, loadSortBy, saveSortBy, sortNotes } from './note-sort.js';
 
 const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
 const FILTER_KEY = 'wren.filterTags';
@@ -29,6 +30,7 @@ export function createNotesList({
   let activeId = null;
   let query = '';
   let filterTags = loadFilterTags(); // AND-filter: note must have all of these
+  let sortBy = loadSortBy(); // wren.sortBy — applied after tag-filter + search
 
   const root = document.createElement('div');
   root.className = 'sc-list' + (compact ? ' sc-list--compact' : '');
@@ -87,11 +89,34 @@ export function createNotesList({
   const tagFilterEl = document.createElement('div');
   tagFilterEl.className = 'sc-tagfilter';
 
+  // Sort control — sits beside the tag filter, styled to match. Options are
+  // static so it's built once (not rebuilt per render). Always visible (sorting
+  // applies even with no tags). The chosen order also drives the Compact view,
+  // which reads the same `wren.sortBy` key.
+  const sortEl = document.createElement('div');
+  sortEl.className = 'sc-sortby';
+  const sortSelect = document.createElement('select');
+  sortSelect.className = 'sc-tagfilter-dropdown sc-sortby-dropdown';
+  sortSelect.setAttribute('aria-label', 'Sort notes by');
+  for (const opt of SORT_OPTIONS) {
+    const o = document.createElement('option');
+    o.value = opt.value;
+    o.textContent = opt.label;
+    sortSelect.appendChild(o);
+  }
+  sortSelect.value = sortBy;
+  sortSelect.addEventListener('change', () => {
+    sortBy = sortSelect.value;
+    saveSortBy(sortBy);
+    render();
+  });
+  sortEl.appendChild(sortSelect);
+
   // Scroll area
   const scroll = document.createElement('div');
   scroll.className = 'sc-list-scroll';
 
-  root.append(header, inboxEl, tagFilterEl, searchWrap, scroll);
+  root.append(header, inboxEl, tagFilterEl, sortEl, searchWrap, scroll);
 
   function matches(note) {
     // Tag AND-filter: note must contain every selected filter tag.
@@ -110,7 +135,9 @@ export function createNotesList({
     renderInbox();
     renderFilter();
     scroll.replaceChildren();
-    const filtered = notes.filter(matches);
+    // Sort applied AFTER tag-filter + search so the visible set is ordered;
+    // both List and Compact use sortNotes() for a consistent order.
+    const filtered = sortNotes(notes.filter(matches), sortBy);
 
     if (notes.length === 0) {
       scroll.appendChild(emptyState('No notes yet', 'Create your first note to get started.'));

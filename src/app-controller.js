@@ -664,18 +664,15 @@ export function createApp({ root, enableServiceWorker = false }) {
     const sidebar = document.createElement('aside');
     sidebar.className = 'sc-sidebar';
     sidebar.appendChild(buildBrand());
-    // Header row: the List|Kanban view toggle on the left; a right-hand group
-    // holding the standalone Compact (window-mode) button and — Tauri only —
-    // the always-on-top pin. createPinButton() is null in the PWA, so the pin
-    // simply isn't appended there.
+    // Header row: the List|Kanban view toggle, with the always-on-top pin
+    // clustered right beside it (Tauri only — createPinButton() is null in the
+    // PWA, so the pin simply isn't appended there). The Compact (window-mode)
+    // button now lives in the footer's bottom-left corner, not here.
     const headRow = document.createElement('div');
     headRow.className = 'sc-sidebar-head';
-    const headRight = document.createElement('div');
-    headRight.className = 'sc-sidebar-head-right';
-    headRight.appendChild(buildCompactButton());
+    headRow.appendChild(buildViewToggle());
     sidebarPin = createPinButton();
-    if (sidebarPin) headRight.appendChild(sidebarPin.element);
-    headRow.append(buildViewToggle(), headRight);
+    if (sidebarPin) headRow.appendChild(sidebarPin.element);
     sidebar.appendChild(headRow);
 
     list = createNotesList({
@@ -731,7 +728,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     main.append(noteEditor.element, kanbanView.element);
 
     appEl.append(sidebar, main, compactView.element);
-    root.append(appEl, buildFooter());
+    root.append(appEl, buildFooter({ compact: true }));
 
     // Default landing view: every launch opens in Compact regardless of the
     // stored full mode. Session-only — assign viewMode directly (not via
@@ -1907,9 +1904,16 @@ export function createApp({ root, enableServiceWorker = false }) {
     }, 0);
   }
 
-  function buildFooter() {
+  function buildFooter({ compact = false } = {}) {
     const footer = document.createElement('footer');
     footer.className = 'sc-footer';
+    // Compact (window-mode) button anchored in the footer's bottom-left corner —
+    // main app only (onboarding/sign-in footers pass no flag). Separated from
+    // the List|Kanban view toggle so it reads as a window control, not a view.
+    if (compact) footer.appendChild(buildCompactButton());
+    // All links live in a centered group to the right of the corner button.
+    const linksWrap = document.createElement('div');
+    linksWrap.className = 'sc-footer-links';
     const SITE = 'https://wren.buildwithbaker.io';
     const desktop = isTauri();
     const links = [
@@ -1934,7 +1938,7 @@ export function createApp({ root, enableServiceWorker = false }) {
         const dot = document.createElement('span');
         dot.className = 'sc-footer-dot';
         dot.textContent = '·';
-        footer.appendChild(dot);
+        linksWrap.appendChild(dot);
       }
       // Static (non-link) footer entry: a plain span the Tauri link interceptor
       // ignores, with an info tooltip via the native title attribute.
@@ -1943,7 +1947,7 @@ export function createApp({ root, enableServiceWorker = false }) {
         span.className = 'sc-footer-static';
         span.textContent = l.label;
         if (l.title) span.title = l.title;
-        footer.appendChild(span);
+        linksWrap.appendChild(span);
         return;
       }
       const a = document.createElement('a');
@@ -1952,7 +1956,7 @@ export function createApp({ root, enableServiceWorker = false }) {
       a.rel = 'noopener';
       a.className = l.cls || 'sc-footer-bwb';
       a.textContent = l.label;
-      footer.appendChild(a);
+      linksWrap.appendChild(a);
     });
     // In-app help: the full keyboard-shortcut reference (and, in the desktop
     // app, the startup toggle + rebindable global hotkeys). A button, not a
@@ -1967,7 +1971,8 @@ export function createApp({ root, enableServiceWorker = false }) {
     shortcutsBtn.addEventListener('click', () =>
       openShortcutsDialog({ desktop: desktopIntegration })
     );
-    footer.append(dot, shortcutsBtn);
+    linksWrap.append(dot, shortcutsBtn);
+    footer.appendChild(linksWrap);
     // In the Tauri desktop app a plain target=_blank link would open/navigate a
     // webview; intercept and hand the URL to the system browser instead so the
     // app window stays put. PWA/extension keep the normal new-tab behavior.

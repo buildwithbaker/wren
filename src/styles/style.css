@@ -602,6 +602,47 @@ button {
   display: flex;
   gap: 4px;
 }
+/* Overflow ("more") menu — the ⋯ button sits left of the primary actions and
+   is nudged apart so Pop-out reads as separate from export/Archive/Delete. */
+.sc-editor-more {
+  position: relative;
+  display: inline-flex;
+  margin-right: 6px;
+}
+.sc-editor-more-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  min-width: 230px;
+  padding: 4px;
+  background: var(--wr-panel-bg);
+  border: 1px solid var(--wr-border);
+  border-radius: var(--wr-radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+.sc-editor-more-menu[hidden] {
+  display: none;
+}
+.sc-editor-more-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--wr-radius-sm);
+  background: transparent;
+  color: var(--wr-ink);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.sc-editor-more-item:hover {
+  background: rgba(42, 53, 64, 0.08);
+}
 
 .sc-iconbtn {
   display: inline-grid;
@@ -1027,14 +1068,25 @@ button {
 .sc-footer {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 12px;
-  flex-wrap: wrap;
   padding: 8px 16px;
   font-size: 12px;
   color: var(--wr-panel-muted);
   background: var(--wr-panel-bg);
   border-top: 1px solid var(--wr-border);
+}
+/* Centered link cluster, to the right of the bottom-left Compact button. */
+.sc-footer-links {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+/* Compact (window-mode) button pinned in the footer's bottom-left corner. */
+.sc-footer .sc-compact-btn {
+  flex: none;
 }
 .sc-footer-bwb {
   color: var(--wr-bwb-link);
@@ -1697,26 +1749,29 @@ button {
   color: var(--wr-panel-text);
   cursor: pointer;
 }
+/* Sort control — sits just below the tag filter, matching its dropdown style.
+   Spans the sidebar width so the longer "Sort by" labels stay readable. */
+.sc-sortby {
+  padding: 2px 12px 8px;
+}
+.sc-sortby-dropdown {
+  width: 100%;
+}
 
 /* =========================================================================
    Kanban view (Phase C of Kanban SOW)
    ========================================================================= */
-/* Sidebar header row: view toggle (left) + always-on-top pin (right, Tauri). */
+/* Sidebar header row: List|Kanban toggle with the always-on-top pin clustered
+   right beside it (Tauri only). Compact now lives in the footer corner. */
 .sc-sidebar-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
   padding-right: 12px;
 }
 .sc-sidebar-head .sc-viewtoggle {
   margin-right: 0;
-}
-/* Right-hand group in the sidebar header: Compact button (+ pin on desktop). */
-.sc-sidebar-head-right {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
 }
 /* Standalone Compact window-mode button (ghost; distinct from the segmented
    List|Kanban toggle). */
@@ -1897,6 +1952,7 @@ button {
 @media (max-width: 640px) {
   .sc-sidebar-head { display: none; }
   .sc-viewtoggle { display: none; }
+  .sc-footer .sc-compact-btn { display: none; }
 }
 
 /* --- A11y/contrast fixes (Test Master 2026-05-30) --- */
