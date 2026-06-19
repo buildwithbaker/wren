@@ -352,6 +352,26 @@ export function firstLineOf(markdown) {
   return '';
 }
 
+// Plain-text preview for cards. Builds on firstLineOf (first meaningful line,
+// markdown structure removed) and then strips inline HTML — notably the
+// <span style="color:…"> / <mark> that the color/highlight round-trip writes
+// into the body — plus the handful of HTML entities that survive. The editor
+// and the saved .md body KEEP the HTML (that's how color round-trips); only the
+// at-a-glance card previews are reduced to clean text.
+export function toPreviewText(markdown) {
+  let text = firstLineOf(markdown);
+  if (!text) return '';
+  text = text.replace(/<[^>]*>/g, ''); // drop HTML tags, keep their text content
+  text = text
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'");
+  return text.replace(/\s+/g, ' ').trim();
+}
+
 // --- Reserved Wren-managed files --------------------------------------------
 
 // Files that live in the notes folder but are NOT user notes — they are created

@@ -12,7 +12,7 @@
 //
 // Decision provenance: project-blueprints/wren/future-enhancements/compact-view-sow.md
 
-import { CARD_COLORS } from '@/notes-store.js';
+import { CARD_COLORS, toPreviewText } from '@/notes-store.js';
 import { buildTagChips } from './tag-chips.js';
 import { formatModified } from './format.js';
 import { noteMatchesQuery } from './note-search.js';
@@ -135,7 +135,7 @@ export function createCompactView({ onSelect, onNew, onExpand } = {}) {
 
     const preview = document.createElement('div');
     preview.className = 'sc-compact-card-preview';
-    preview.textContent = note.firstLine || 'No additional text';
+    preview.textContent = toPreviewText(note.firstLine) || 'No additional text';
 
     card.append(head, preview);
 

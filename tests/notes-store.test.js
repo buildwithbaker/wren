@@ -6,6 +6,7 @@ import {
   serializeNote,
   parseNote,
   firstLineOf,
+  toPreviewText,
   slugify,
   buildNoteFilename,
   uniqueNoteName,
@@ -125,6 +126,26 @@ describe('firstLineOf', () => {
   it('returns empty string for empty input', () => {
     expect(firstLineOf('')).toBe('');
     expect(firstLineOf('   \n  ')).toBe('');
+  });
+});
+
+describe('toPreviewText', () => {
+  it('strips inline HTML tags (the color/highlight round-trip span)', () => {
+    expect(toPreviewText('<span style="color:#c0392b">red text</span>')).toBe('red text');
+    expect(toPreviewText('plain <mark>highlighted</mark> word')).toBe('plain highlighted word');
+  });
+  it('strips markdown syntax via firstLineOf', () => {
+    expect(toPreviewText('# Heading **bold**')).toBe('Heading bold');
+  });
+  it('decodes the common HTML entities', () => {
+    expect(toPreviewText('a &amp; b &lt;c&gt;')).toBe('a & b <c>');
+  });
+  it('collapses whitespace and uses the first meaningful line', () => {
+    expect(toPreviewText('\n\n  <span>  spaced   out  </span>\nsecond')).toBe('spaced out');
+  });
+  it('returns empty string for empty input', () => {
+    expect(toPreviewText('')).toBe('');
+    expect(toPreviewText('   \n  ')).toBe('');
   });
 });
 

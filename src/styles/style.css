@@ -634,10 +634,29 @@ button {
   padding: 2px 14px 10px;
   background: var(--wr-note-header-tint);
 }
+/* Due control pinned to the far right of the color row. */
+.sc-editor-colorrow .sc-due-control {
+  margin-left: auto;
+}
+/* Tag row: chips on the left, save status ("Saved 7:30 AM") on the far right,
+   sitting just below the due date. */
+.sc-editor-tagrow {
+  display: flex;
+  align-items: flex-end;
+  background: var(--wr-note-header-tint);
+}
+.sc-editor-tagrow .sc-tagrow {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .sc-saved-hint {
   margin-left: auto;
   font-size: 11.5px;
   color: var(--wr-paper-muted);
+}
+.sc-editor-tagrow .sc-saved-hint {
+  padding: 0 14px 10px;
+  white-space: nowrap;
 }
 
 /* card color swatches */
@@ -1693,6 +1712,43 @@ button {
 .sc-sidebar-head .sc-viewtoggle {
   margin-right: 0;
 }
+/* Right-hand group in the sidebar header: Compact button (+ pin on desktop). */
+.sc-sidebar-head-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Standalone Compact window-mode button (ghost; distinct from the segmented
+   List|Kanban toggle). */
+.sc-compact-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--wr-border);
+  border-radius: 999px;
+  background: var(--wr-field-bg);
+  color: var(--wr-panel-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--wr-trans), color var(--wr-trans),
+    border-color var(--wr-trans);
+}
+.sc-compact-btn:hover {
+  border-color: var(--wr-accent);
+  color: var(--wr-panel-text);
+}
+.sc-compact-btn.is-active {
+  background: var(--wr-brown);
+  border-color: var(--wr-brown);
+  color: #fff;
+}
+.sc-compact-btn svg {
+  width: 14px;
+  height: 14px;
+}
 .sc-viewtoggle {
   display: inline-flex;
   align-self: flex-start;
@@ -1738,6 +1794,24 @@ button {
   font-size: 12px;
   font-weight: 500;
   color: var(--wr-panel-muted);
+}
+/* Inline "+ New Tag" input (replaces the button while adding a column). */
+.sc-kanban-newtag {
+  display: inline-flex;
+}
+.sc-kanban-newtag-input {
+  font: inherit;
+  font-size: 12.5px;
+  padding: 5px 10px;
+  border: 1px solid var(--wr-accent);
+  border-radius: 999px;
+  background: var(--wr-field-bg);
+  color: var(--wr-ink);
+  min-width: 160px;
+}
+.sc-kanban-newtag-input:focus-visible {
+  outline: 2px solid var(--wr-accent);
+  outline-offset: 1px;
 }
 .sc-kanban-columns {
   flex: 1;
@@ -1818,8 +1892,10 @@ button {
   font-style: italic;
 }
 
-/* Below 640px width, hide the view-toggle and force list view */
+/* Below 640px width (extension popup), hide the whole sidebar header — the
+   view toggle and the Compact/pin group — and force list view. */
 @media (max-width: 640px) {
+  .sc-sidebar-head { display: none; }
   .sc-viewtoggle { display: none; }
 }
 
@@ -2253,15 +2329,19 @@ body.is-sticky .sc-editor-colorrow {
   align-items: center;
   gap: 8px;
 }
-/* Always-on-top pin toggle (Tauri desktop only; never rendered in the PWA). */
+/* Always-on-top pin toggle (Tauri desktop only; never rendered in the PWA).
+   flex:none + matching width/height keep it a perfect circle in the expanded
+   sidebar header's flex row, where it would otherwise be squeezed into an oval. */
 .sc-compact-pin {
+  flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 34px;
   height: 34px;
+  padding: 0;
   border: 1px solid var(--wr-border);
-  border-radius: 999px;
+  border-radius: 50%;
   background: var(--wr-field-bg);
   color: var(--wr-panel-text);
   cursor: pointer;
