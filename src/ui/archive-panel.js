@@ -15,6 +15,8 @@ import { buildDueChip } from './due-chip.js';
  * }} [opts]
  */
 export function openArchiveDialog({ notes = [], onOpen, onUnarchive } = {}) {
+  // Remember what had focus so we can restore it on close (WCAG SC 2.4.3).
+  const lastFocused = document.activeElement;
   const overlay = document.createElement('div');
   overlay.className = 'sc-overlay';
 
@@ -65,6 +67,13 @@ export function openArchiveDialog({ notes = [], onOpen, onUnarchive } = {}) {
   function cleanup() {
     document.removeEventListener('keydown', onKey);
     overlay.remove();
+    if (lastFocused && typeof lastFocused.focus === 'function') {
+      try {
+        lastFocused.focus();
+      } catch {
+        /* element gone from the DOM — nothing to restore */
+      }
+    }
   }
   function onKey(e) {
     if (e.key === 'Escape') cleanup();

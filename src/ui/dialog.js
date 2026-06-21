@@ -2,6 +2,8 @@
 
 export function confirmDialog({ title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = false }) {
   return new Promise((resolve) => {
+    // Remember what had focus so we can restore it on close (WCAG SC 2.4.3).
+    const lastFocused = document.activeElement;
     const overlay = document.createElement('div');
     overlay.className = 'sc-overlay';
 
@@ -40,6 +42,13 @@ export function confirmDialog({ title, message, confirmLabel = 'Confirm', cancel
     function cleanup(result) {
       document.removeEventListener('keydown', onKey);
       overlay.remove();
+      if (lastFocused && typeof lastFocused.focus === 'function') {
+        try {
+          lastFocused.focus();
+        } catch {
+          /* element gone from the DOM — nothing to restore */
+        }
+      }
       resolve(result);
     }
     function onKey(e) {

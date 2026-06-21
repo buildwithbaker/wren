@@ -21,6 +21,33 @@
 const CACHE = 'wren-shell-v2';
 const APP_SHELL = ['./', './index.html', './manifest.json', './icon.svg'];
 
+// Cap on stale-while-revalidate (runtime) entries kept per cache version, so a
+// long-lived install doesn't accumulate unbounded hashed assets within v2.
+const MAX_RUNTIME_ENTRIES = 60;
+// App-shell entries are never pruned; only runtime/hashed assets are trimmed.
+const PROTECTED = new Set(APP_SHELL.map((p) => new URL(p, self.location).href));
+
+// Cache key for a request. Navigations are keyed by path only so cache-busting
+// query strings (e.g. ?_cb=...) can't spawn one cache entry per URL — every
+// navigation to a given page collapses to a single, reusable entry.
+function cacheKeyFor(request, url) {
+  if (request.mode === 'navigate') {
+    return new Request(url.origin + url.pathname, { headers: request.headers });
+  }
+  return request;
+}
+
+// Drop the oldest non-shell entries once the runtime set exceeds the cap.
+// cache.keys() preserves insertion order, so the front of the list is oldest.
+async function trimCache(cache, max) {
+  const keys = await cache.keys();
+  const prunable = keys.filter((req) => !PROTECTED.has(req.url));
+  const overflow = prunable.length - max;
+  for (let i = 0; i < overflow; i++) {
+    await cache.delete(prunable[i]);
+  }
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
@@ -53,16 +80,19 @@ self.addEventListener('fetch', (event) => {
   // Network-first for the document and manifest so the installed app always
   // picks up the current icons and identity. Falls back to cache when offline.
   if (isInstallCritical(request, url)) {
+    // Key navigations by path so ?_cb= and other query noise don't create a
+    // fresh cache entry per request.
+    const key = cacheKeyFor(request, url);
     event.respondWith(
       caches.open(CACHE).then(async (cache) => {
         try {
           const fresh = await fetch(request);
           if (fresh && fresh.status === 200 && fresh.type === 'basic') {
-            cache.put(request, fresh.clone());
+            cache.put(key, fresh.clone());
           }
           return fresh;
         } catch {
-          const cached = await cache.match(request);
+          const cached = await cache.match(key);
           if (cached) return cached;
           if (request.mode === 'navigate') {
             return (await cache.match('./index.html')) || Response.error();
@@ -81,7 +111,7 @@ self.addEventListener('fetch', (event) => {
       const network = fetch(request)
         .then((response) => {
           if (response && response.status === 200 && response.type === 'basic') {
-            cache.put(request, response.clone());
+            cache.put(request, response.clone()).then(() => trimCache(cache, MAX_RUNTIME_ENTRIES));
           }
           return response;
         })

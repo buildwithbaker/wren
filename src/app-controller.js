@@ -373,8 +373,21 @@ export function createApp({ root, enableServiceWorker = false }) {
     root.replaceChildren();
     const wrap = document.createElement('div');
     wrap.className = 'sc-app';
-    const screen = document.createElement('div');
+
+    // Skip link as the first focusable element, targeting the <main> below
+    // (WCAG SC 2.4.1). renderApp() has its own; this covers the onboarding,
+    // storage-choice, drive-sign-in, and unsupported screens.
+    const skipLink = document.createElement('a');
+    skipLink.className = 'sc-skip-link';
+    skipLink.href = '#main-content';
+    skipLink.textContent = 'Skip to content';
+    wrap.appendChild(skipLink);
+
+    // <main> landmark so these screens expose primary content, not just
+    // footer chrome (WCAG SC 1.3.1).
+    const screen = document.createElement('main');
     screen.className = 'sc-screen';
+    screen.id = 'main-content';
     screen.style.gridColumn = '1 / -1';
     screen.appendChild(innerNode);
     wrap.appendChild(screen);
