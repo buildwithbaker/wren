@@ -9,7 +9,7 @@
 <style>
   :root {
     --ink: #2E2A24;
-    --muted: #7A7064;
+    --muted: #70675C; /* darkened from #7A7064 (4.43:1) to clear WCAG AA */
     --brown: #A8542C;
     --indigo: #2B4A8B;
     --bg: #FAF4EA;
@@ -57,12 +57,13 @@
   .download-sub { color: var(--muted); font-size: 14px; margin-top: 10px; }
   .footer { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; }
   .footer a { color: var(--indigo); }
-  .kofi { display: inline-block; background: #FF5E5B; color: #fff; padding: 3px 10px; border-radius: 12px; font-weight: 600; font-size: 13px; text-decoration: none; }
-  .kofi:hover { background: #E54845; text-decoration: none; }
+  .kofi { display: inline-block; background: #C0453F; color: #fff; padding: 3px 10px; border-radius: 12px; font-weight: 600; font-size: 13px; text-decoration: none; }
+  .kofi:hover { background: #A93A34; text-decoration: none; }
 </style>
 <link rel="stylesheet" href="/site-nav.css">
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to content</a>
 <nav class="site-nav" aria-label="Primary">
   <a class="site-nav-brand" href="/"><img src="/icon.svg" alt="" width="28" height="28"><span>Wren</span></a>
   <div class="site-nav-links">
@@ -72,7 +73,7 @@
   </div>
 </nav>
 <hr class="site-nav-divider">
-<div class="container">
+<main class="container" id="main-content">
 
   <h1>Wren for Windows</h1>
   <p class="lede">The desktop app: a small notes window that floats on top of your work and expands to the full app when you need it — plus tear-off sticky notes that stay on top. An optional companion to the web app. Your notes stay on your computer.</p>
@@ -117,6 +118,6 @@
     <p><a href="https://wren.buildwithbaker.io">Wren</a> &middot; <a href="/guide.html">Guide</a> &middot; <a href="/mcp.html">MCP server</a> &middot; <a href="/privacy.html">Privacy</a> &middot; <a href="https://buildwithbaker.com" target="_blank" rel="noopener">Build with Baker</a> &middot; <a class="kofi" href="https://ko-fi.com/abaker421" target="_blank" rel="noopener">Support on Ko-fi</a></p>
   </div>
 
-</div>
+</main>
 </body>
 </html>

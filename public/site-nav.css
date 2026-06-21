@@ -61,3 +61,24 @@
   max-width: 720px;
   margin: 0 auto;
 }
+
+/* Skip-to-content link: visually hidden until keyboard focus (WCAG SC 2.4.1).
+   First focusable element on every info page; targets <main id="main-content">. */
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: -48px;
+  z-index: 1000;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: #2B4A8B;
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+  transition: top 0.15s ease;
+}
+.skip-link:focus {
+  top: 8px;
+  outline: 2px solid #2B4A8B;
+  outline-offset: 2px;
+}

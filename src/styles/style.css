@@ -76,7 +76,9 @@
   --wr-panel-bg:      #FAF4EA;
   --wr-panel-2:       #F1E8DB;
   --wr-panel-text:    #2E2A24;
-  --wr-panel-muted:   #7A7064;
+  /* Darkened from #7A7064 (4.43:1 on --wr-panel-bg, just under AA) to clear
+     WCAG SC 1.4.3 AA at 5.07:1. Light theme only; dark theme value is fine. */
+  --wr-panel-muted:   #70675C;
   --wr-border:        #E5DACA;
   --wr-border-strong: #CDBFA9;
   --wr-field-bg:      #F1E8DB;
@@ -1116,10 +1118,13 @@ button {
   font: inherit;
   cursor: pointer;
 }
-/* Ko-fi support pill - matches the .kofi-button pattern on unistyle.io */
+/* Ko-fi support pill - matches the .kofi-button pattern on unistyle.io.
+   Base coral darkened from Ko-fi's #FF5E5B (white-on-coral was only 3.0:1) to
+   #C0453F so white text clears WCAG SC 1.4.3 AA (5.04:1) while staying a
+   recognizably Ko-fi coral-red. (Audit-suggested #C2693C only reached 3.90:1.) */
 .sc-footer-kofi {
   display: inline-block;
-  background: #FF5E5B;
+  background: #C0453F;
   color: #ffffff;
   padding: 3px 10px;
   border-radius: 12px;
@@ -1130,7 +1135,7 @@ button {
   transition: background 0.15s ease;
 }
 .sc-footer-kofi:hover {
-  background: #E54845;
+  background: #A93A34;
   color: #ffffff;
   text-decoration: none;
 }
@@ -1225,10 +1230,14 @@ button {
 .sc-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 22, 32, 0.5);
+  /* Scrim opacity raised from 0.5 so the app's fixed chrome (.sc-install-button,
+     .sc-theme-toggle, .sc-open-full-app) and the centered empty-state card no
+     longer read through a modal. z-index lifted above all app chrome (50),
+     popovers (200), and toasts (300) so the overlay+dialog always sit on top. */
+  background: rgba(15, 22, 32, 0.66);
   display: grid;
   place-items: center;
-  z-index: 100;
+  z-index: 900;
   padding: 24px;
   animation: sc-fade var(--wr-trans);
 }

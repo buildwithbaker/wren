@@ -8,7 +8,7 @@
 <style>
   :root {
     --ink: #2A3540;
-    --muted: #6B7785;
+    --muted: #626E7A; /* darkened to clear WCAG AA on --bg */
     --brown: #8B5E3C;
     --indigo: #2B4A8B;
     --bg: #FAF7F2;
@@ -102,6 +102,7 @@
 <link rel="stylesheet" href="/site-nav.css">
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to content</a>
 <nav class="site-nav" aria-label="Primary">
   <a class="site-nav-brand" href="/"><img src="/icon.svg" alt="" width="28" height="28"><span>Wren</span></a>
   <div class="site-nav-links">
@@ -111,7 +112,7 @@
   </div>
 </nav>
 <hr class="site-nav-divider">
-<div class="container">
+<main class="container" id="main-content">
 
   <h1>Privacy Policy</h1>
   <p class="effective">Effective: June 1, 2026</p>
@@ -204,6 +205,6 @@
     <p><a href="/guide.html">Guide</a> · <a href="/download.html">Download</a> · <a href="/mcp.html">MCP server</a> · <a href="https://buildwithbaker.com" target="_blank" rel="noopener">Build with Baker</a> · <a href="https://ko-fi.com/abaker421" target="_blank" rel="noopener">Support on Ko-fi</a></p>
   </div>
 
-</div>
+</main>
 </body>
 </html>
