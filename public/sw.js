@@ -111,7 +111,7 @@ self.addEventListener('fetch', (event) => {
       const network = fetch(request)
         .then((response) => {
           if (response && response.status === 200 && response.type === 'basic') {
-            cache.put(request, response.clone()).then(() => trimCache(cache, MAX_RUNTIME_ENTRIES));
+            cache.put(request, response.clone()).then(() => trimCache(cache, MAX_RUNTIME_ENTRIES)).catch(() => {});
           }
           return response;
         })
