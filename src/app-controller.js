@@ -16,11 +16,9 @@ import {
   exportNoteDownload,
   buildNoteFilename,
   getStoredDirHandle,
-  CARD_COLORS,
 } from './notes-store.js';
 import {
   ADAPTER_TYPES,
-  NoBackendConfiguredError,
   AdapterAuthError,
   FileSystemAdapter,
   TauriFsAdapter,

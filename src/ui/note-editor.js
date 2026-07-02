@@ -397,7 +397,6 @@ export function createNoteEditor({
         tagsBtn.focus();
       }
     };
-    // eslint-disable-next-line no-inner-declarations
     function closeTagPopover() {
       tagPopover.hidden = true;
       tagsBtn.setAttribute('aria-expanded', 'false');

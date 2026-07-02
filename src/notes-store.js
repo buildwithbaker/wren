@@ -352,7 +352,7 @@ export function parseNote(text, filename) {
 export function firstLineOf(markdown) {
   if (!markdown) return '';
   const lines = markdown.split(/\r?\n/);
-  for (let raw of lines) {
+  for (const raw of lines) {
     let line = raw.trim();
     if (!line) continue;
     line = line
