@@ -234,6 +234,8 @@ export function createStickyApp({ root }) {
       tags: parsed.tags || [],
       summary: parsed.summary || '',
       due: parsed.due || '',
+      hideDue: !!parsed.hideDue,
+      hideTags: !!parsed.hideTags,
       // Provenance — carried through so a sticky save never strips an AI note's
       // created_by / last_edited_by / last_edited frontmatter.
       createdBy: parsed.createdBy || '',
@@ -263,6 +265,7 @@ export function createStickyApp({ root }) {
       sticky: true,
       showBack: false,
       onSave: (n) => handleSave(n),
+      onOpenInApp: () => openInWrenApp(),
       onTitleChange: (title) => setDocTitle(title),
     });
     root.appendChild(noteEditor.element);
@@ -392,6 +395,27 @@ export function createStickyApp({ root }) {
     } catch (err) {
       console.warn('Sticky setTitle failed', err);
     }
+  }
+
+  // "Open in Wren app" (sticky ⋮ menu): bring the main Wren window forward. In
+  // Tauri, focus the existing main window (label 'main') rather than spawning a
+  // browser tab; fall back to opening the app URL when it can't be focused or in
+  // the browser PWA. The sticky stays open.
+  async function openInWrenApp() {
+    if (isTauri()) {
+      try {
+        const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+        const main = await WebviewWindow.getByLabel('main');
+        if (main) {
+          await main.unminimize().catch(() => {});
+          await main.setFocus();
+          return;
+        }
+      } catch (err) {
+        console.warn('Open in Wren app failed', err);
+      }
+    }
+    window.open(MAIN_APP_URL, '_blank', 'noopener');
   }
 
   // Close the sticky window. Under Tauri the native close button is gone with

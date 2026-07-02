@@ -16,11 +16,9 @@ import {
   exportNoteDownload,
   buildNoteFilename,
   getStoredDirHandle,
-  CARD_COLORS,
 } from './notes-store.js';
 import {
   ADAPTER_TYPES,
-  NoBackendConfiguredError,
   AdapterAuthError,
   FileSystemAdapter,
   TauriFsAdapter,
@@ -709,7 +707,11 @@ export function createApp({ root, enableServiceWorker = false }) {
 
     list = createNotesList({
       onSelect: (noteId) => openNote(noteId),
-      onNew: () => handleNew(),
+      // In Kanban the editor is hidden, so opening a new note there looked like
+      // "nothing happened". Route Kanban's New note through the pop-out path
+      // (desktop) / list fallback (browser); List mode keeps the normal open.
+      onNew: () =>
+        effectiveViewMode() === 'kanban' ? handleNewPopOut({ from: 'kanban' }) : handleNew(),
       onPopOut: (noteId) => handlePopOut(noteId),
       onArchive: (noteId) => handleArchive(noteId),
       onArchiveOpen: () => openArchiveView(),
@@ -732,6 +734,12 @@ export function createApp({ root, enableServiceWorker = false }) {
         list.setActive(null);
       },
       onPopOut: (note) => handlePopOut(note),
+      // Desktop only: "Check for updates" opens the Build with Baker download
+      // page externally. In the browser PWA/extension the app auto-updates, so
+      // no handler is passed and the menu item doesn't render.
+      onCheckUpdates: isTauri()
+        ? () => openExternal('https://wren.buildwithbaker.io/download')
+        : undefined,
       getTagSuggestions: tagSuggestions,
       showBack: true,
     });
@@ -751,10 +759,9 @@ export function createApp({ root, enableServiceWorker = false }) {
         setViewMode(loadViewMode());
         openNote(id);
       },
-      onNew: () => {
-        setViewMode(loadViewMode());
-        handleNew();
-      },
+      // Desktop: pop a fresh sticky out right here (stay in Compact). Browser:
+      // fall back to expanding into the full editor. Handled in handleNewPopOut.
+      onNew: () => handleNewPopOut({ from: 'compact' }),
       onExpand: () => setViewMode(loadViewMode()),
     });
     main.append(noteEditor.element, kanbanView.element);
@@ -831,6 +838,8 @@ export function createApp({ root, enableServiceWorker = false }) {
         tags: parsed.tags || [],
         summary: parsed.summary || '',
         due: parsed.due || '',
+        hideDue: !!parsed.hideDue,
+        hideTags: !!parsed.hideTags,
         firstLine: firstLineOf(parsed.body),
         revision: revision || notes[idx].revision,
       };
@@ -1473,6 +1482,9 @@ export function createApp({ root, enableServiceWorker = false }) {
         // Phase 2 index.
         summary: parsed.summary || '',
         due: parsed.due || '',
+        // Per-note display toggles (hide the due/tag display, not the data).
+        hideDue: !!parsed.hideDue,
+        hideTags: !!parsed.hideTags,
         // Provenance — for the AI badge + last-updated panel.
         createdBy: parsed.createdBy || '',
         lastEditedBy: parsed.lastEditedBy || '',
@@ -1496,15 +1508,17 @@ export function createApp({ root, enableServiceWorker = false }) {
     appEl.dataset.view = 'editor';
   }
 
-  async function handleNew() {
+  // Create a blank note, insert it at the top of the model, and refresh the
+  // sidebar/index. Returns the new note, or null on failure. Does NOT change the
+  // view or open the editor — callers decide what to do next (open in-place, or
+  // pop out into a sticky).
+  async function createBlankNote() {
     if (isDriveDisconnected()) {
       showDriveDisconnectedToast('Reconnect Drive to create new notes.');
-      return;
+      return null;
     }
     try {
       const now = new Date().toISOString();
-      // Stamp human provenance on app-created notes so they read as "by you" and
-      // never show the AI badge. (The MCP stamps created_by:'ai' on its writes.)
       const seed = {
         title: '',
         body: '',
@@ -1514,14 +1528,13 @@ export function createApp({ root, enableServiceWorker = false }) {
         tags: [],
         summary: '',
         due: '',
+        hideDue: false,
+        hideTags: false,
         createdBy: 'human',
         lastEditedBy: 'human',
         lastEdited: now,
         filename: '',
       };
-      // serializeNote stamps a stable wrenId on first write; serialize `seed`
-      // directly (not a throwaway copy) so we can carry that same logical id
-      // onto the in-memory note below.
       const content = serializeNote(seed);
       const { id, revision, name } = await adapter.createNote(content, {
         title: seed.title,
@@ -1539,6 +1552,8 @@ export function createApp({ root, enableServiceWorker = false }) {
         tags: seed.tags,
         summary: seed.summary,
         due: seed.due,
+        hideDue: seed.hideDue,
+        hideTags: seed.hideTags,
         createdBy: seed.createdBy,
         lastEditedBy: seed.lastEditedBy,
         lastEdited: seed.lastEdited,
@@ -1547,16 +1562,46 @@ export function createApp({ root, enableServiceWorker = false }) {
       };
       notes.unshift(note);
       list.setNotes(notes);
+      compactView?.setNotes(notes);
       regenerateIndex();
-      await openNote(id, { focusTitle: true });
+      return note;
     } catch (err) {
       if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
         showDriveDisconnected();
-        return;
+        return null;
       }
       console.error('Could not create note', err);
       alert('Could not create a new note.');
+      return null;
     }
+  }
+
+  // Sidebar / List "New note": create and open the note in the editor.
+  async function handleNew() {
+    const note = await createBlankNote();
+    if (note) await openNote(note.id, { focusTitle: true });
+  }
+
+  // Compact / Kanban "New note". On the DESKTOP app the expected behaviour is a
+  // fresh sticky card popping out right there — so create the note and pop it
+  // out, leaving the current view in place. In the browser PWA/extension we do
+  // NOT auto-open a popup (popups there are blocker-prone and unwanted): fall
+  // back to opening the note in the full editor so it's visible.
+  //
+  // @param {{ from: 'compact' | 'kanban' }} opts
+  async function handleNewPopOut({ from }) {
+    const note = await createBlankNote();
+    if (!note) return;
+    if (isTauri()) {
+      const win = openSticky(note);
+      if (!win) showToast('Allow pop-ups for Wren to use stickies.');
+      // Keep the current board/compact view; just reflect the new note in it.
+      if (from === 'kanban' && effectiveViewMode() === 'kanban') kanbanView.refresh();
+      return;
+    }
+    // Browser fallback: surface the note in the full editor.
+    setViewMode(from === 'compact' ? loadViewMode() : 'list');
+    await openNote(note.id, { focusTitle: true });
   }
 
   async function handleSave(note) {
@@ -1959,9 +2004,9 @@ export function createApp({ root, enableServiceWorker = false }) {
             title:
               'You’re running the Wren desktop app for Windows. The web, extension, and desktop versions all share the same notes.',
           }
-        : { href: `${SITE}/download.html`, label: 'Download' },
-      { href: `${SITE}/guide.html`, label: 'Guide' },
-      { href: `${SITE}/privacy.html`, label: 'Privacy' },
+        : { href: `${SITE}/download`, label: 'Download' },
+      { href: `${SITE}/guide`, label: 'Guide' },
+      { href: `${SITE}/privacy`, label: 'Privacy' },
       { href: KOFI, label: 'Build with Baker' },
       { href: KOFI, label: '☕ Support on Ko-fi', cls: 'sc-footer-kofi' },
     ];

@@ -30,6 +30,28 @@ function closeIconSvg() {
   );
 }
 
+// Pushpin glyph (lucide "pin"). Filled when the window is pinned on top.
+function pinIconSvg(on) {
+  return (
+    `<svg viewBox="0 0 24 24" width="15" height="15" fill="${on ? 'currentColor' : 'none'}" ` +
+    'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<line x1="12" y1="17" x2="12" y2="22"/>' +
+    '<path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>' +
+    '</svg>'
+  );
+}
+
+// Set THIS window's always-on-top state (per-window; never touches the shared
+// wren.win.pinned flag the main app uses). No-op / logged on failure.
+async function setThisWindowOnTop(on) {
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    await getCurrentWindow().setAlwaysOnTop(!!on);
+  } catch (err) {
+    console.warn('Sticky pin toggle failed', err);
+  }
+}
+
 /**
  * Build the slim sticky title bar: Wren logo (left) + drag region + close
  * button (right). Returns null outside Tauri so the browser PWA/extension keeps
@@ -55,7 +77,23 @@ export function buildStickyTitleBar({ onClose } = {}) {
   // Also a drag region so dragging from the logo moves the window too.
   logo.setAttribute('data-tauri-drag-region', '');
 
-  // Right: close button (the native close went away with decorations:false).
+  // Right cluster: per-window pin (keep this note on top) + close.
+  // A pop-out is created always-on-top, so the pin starts ON. Toggling flips
+  // only THIS window — it does not persist to the shared main-window pin flag.
+  const pin = document.createElement('button');
+  pin.type = 'button';
+  pin.className = 'sc-sticky-pin';
+  pin.title = 'Keep this note on top';
+  pin.setAttribute('aria-label', 'Keep this note on top');
+  pin.setAttribute('aria-pressed', 'true');
+  pin.innerHTML = pinIconSvg(true);
+  pin.addEventListener('click', () => {
+    const next = pin.getAttribute('aria-pressed') !== 'true';
+    pin.setAttribute('aria-pressed', next ? 'true' : 'false');
+    pin.innerHTML = pinIconSvg(next);
+    setThisWindowOnTop(next);
+  });
+
   const close = document.createElement('button');
   close.type = 'button';
   close.className = 'sc-sticky-close';
@@ -64,6 +102,6 @@ export function buildStickyTitleBar({ onClose } = {}) {
   close.innerHTML = closeIconSvg();
   close.addEventListener('click', () => onClose && onClose());
 
-  bar.append(logo, close);
+  bar.append(logo, pin, close);
   return bar;
 }

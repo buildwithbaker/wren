@@ -371,12 +371,15 @@ export function createNotesList({
     meta.textContent = formatModified(note.modified);
 
     card.append(title, preview);
-    // Due-date chip (Note Lifecycle A2) — null when the note has no due date.
-    const dueChip = buildDueChip(note.due);
+    // Due-date chip (Note Lifecycle A2) — null when no due date or hidden per-note.
+    const dueChip = note.hideDue ? null : buildDueChip(note.due);
     if (dueChip) card.appendChild(dueChip);
     // Tag chips (Sticky Float Phase 1): visible per-note tag feedback. Chip
-    // click adds the tag to the AND-filter instead of opening the note.
-    const chips = buildTagChips(note.tags, { onTagClick: (tag) => addFilterTag(tag) });
+    // click adds the tag to the AND-filter instead of opening the note. Skipped
+    // when the note hides its tags.
+    const chips = note.hideTags
+      ? null
+      : buildTagChips(note.tags, { onTagClick: (tag) => addFilterTag(tag) });
     if (chips) card.appendChild(chips);
     card.appendChild(meta);
 

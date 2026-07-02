@@ -47,8 +47,9 @@ export function createCompactView({ onSelect, onNew, onExpand } = {}) {
   newBtn.className = 'sc-compact-new';
   newBtn.title = 'New note';
   newBtn.setAttribute('aria-label', 'New note');
+  // Icon + label — the bare "+" was too easy to miss in the compact bar.
   newBtn.innerHTML =
-    '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>';
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg><span>New Note</span>';
   newBtn.addEventListener('click', () => onNew?.());
 
   const expandBtn = document.createElement('button');
@@ -142,14 +143,15 @@ export function createCompactView({ onSelect, onNew, onExpand } = {}) {
 
     card.append(head, preview);
 
-    // Due-date chip (Note Lifecycle A2).
-    const dueChip = buildDueChip(note.due);
+    // Due-date chip (Note Lifecycle A2) — skipped when hidden per-note.
+    const dueChip = note.hideDue ? null : buildDueChip(note.due);
     if (dueChip) card.appendChild(dueChip);
 
     // Tag chips — read-only here (no filter UI in compact v1). Chip clicks are
     // swallowed by buildTagChips only when onTagClick is passed; without it the
-    // chips are inert and the click falls through to open the note.
-    const chips = buildTagChips(note.tags);
+    // chips are inert and the click falls through to open the note. Skipped when
+    // the note hides its tags.
+    const chips = note.hideTags ? null : buildTagChips(note.tags);
     if (chips) card.appendChild(chips);
 
     card.addEventListener('click', () => onSelect?.(note.id));

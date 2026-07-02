@@ -846,7 +846,7 @@ export class DriveAdapter {
       try {
         const result = await requestAccessToken({ silent: true });
         token = result.token;
-      } catch (e) {
+      } catch {
         throw new AdapterAuthError('Drive token missing and silent refresh failed', {
           backendId: this.backendId(),
           recoverable: true,
