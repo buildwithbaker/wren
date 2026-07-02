@@ -1,8 +1,15 @@
 import { defineConfig } from 'vite';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Match vite.config.js: define __APP_VERSION__ so the shared app bundle never
+// carries a dangling global (the update check itself is desktop-only).
+const APP_VERSION = JSON.parse(
+  readFileSync(resolve(__dirname, 'src-tauri/tauri.conf.json'), 'utf8')
+).version;
 
 // Chrome Extension (MV3) build. Bundles Tiptap locally into the popup so no
 // remote/CDN code is loaded (MV3 CSP forbids it). Module-preload polyfill is
@@ -15,6 +22,9 @@ export default defineConfig({
     alias: {
       '@': resolve(__dirname, 'src'),
     },
+  },
+  define: {
+    __APP_VERSION__: JSON.stringify(APP_VERSION),
   },
   build: {
     outDir: resolve(__dirname, 'dist-extension'),

@@ -30,6 +30,7 @@ export default [
       globals: {
         ...globals.browser,
         chrome: 'readonly', // MV3 extension API
+        __APP_VERSION__: 'readonly', // injected by Vite define (see vite.config.js)
       },
     },
   },

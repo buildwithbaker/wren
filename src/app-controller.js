@@ -734,12 +734,11 @@ export function createApp({ root, enableServiceWorker = false }) {
         list.setActive(null);
       },
       onPopOut: (note) => handlePopOut(note),
-      // Desktop only: "Check for updates" opens the Build with Baker download
-      // page externally. In the browser PWA/extension the app auto-updates, so
-      // no handler is passed and the menu item doesn't render.
-      onCheckUpdates: isTauri()
-        ? () => openExternal('https://wren.buildwithbaker.io/download')
-        : undefined,
+      // Desktop only: "Check for updates" compares the running version against
+      // the latest GitHub Release and prompts to download when behind. In the
+      // browser PWA/extension the app auto-updates, so no handler is passed and
+      // the menu item doesn't render.
+      onCheckUpdates: isTauri() ? () => checkForUpdates() : undefined,
       getTagSuggestions: tagSuggestions,
       showBack: true,
     });
@@ -1824,6 +1823,64 @@ export function createApp({ root, enableServiceWorker = false }) {
 
   function showDriveDisconnectedToast(msg) {
     showToast(msg);
+  }
+
+  /* ---- Check for updates (desktop) ------------------------------------- */
+
+  // Compare dotted numeric versions ("1.2.0"). Returns 1 if a>b, -1 if a<b,
+  // 0 if equal. Missing trailing parts count as 0, so "1.2" == "1.2.0".
+  function compareVersions(a, b) {
+    const pa = String(a).split('.').map((n) => parseInt(n, 10) || 0);
+    const pb = String(b).split('.').map((n) => parseInt(n, 10) || 0);
+    const len = Math.max(pa.length, pb.length);
+    for (let i = 0; i < len; i++) {
+      const diff = (pa[i] || 0) - (pb[i] || 0);
+      if (diff !== 0) return diff > 0 ? 1 : -1;
+    }
+    return 0;
+  }
+
+  // Desktop update check: read the latest published GitHub Release tag, compare
+  // it to the running version (__APP_VERSION__, injected from tauri.conf.json by
+  // Vite), and prompt to download when behind. Any network/API failure falls
+  // back to offering the download page so the action still does something. The
+  // GitHub API is CORS-enabled and needs no auth for a public repo; a private
+  // repo returns 404 and lands in the graceful fallback below.
+  async function checkForUpdates() {
+    const RELEASES_API = 'https://api.github.com/repos/buildwithbaker/wren/releases/latest';
+    const DOWNLOAD_URL = 'https://wren.buildwithbaker.io/download';
+    const current = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '';
+
+    showToast('Checking for updates…');
+    let latest = '';
+    try {
+      const res = await fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      latest = String(data.tag_name || '').replace(/^v/i, '').trim();
+      if (!latest) throw new Error('no tag_name');
+    } catch (err) {
+      console.warn('Update check failed', err);
+      const go = await confirmDialog({
+        title: 'Couldn’t check for updates',
+        message:
+          'Wren couldn’t reach the update server. Open the download page to check for the latest version manually?',
+        confirmLabel: 'Open download page',
+      });
+      if (go) openExternal(DOWNLOAD_URL);
+      return;
+    }
+
+    if (current && compareVersions(latest, current) > 0) {
+      const go = await confirmDialog({
+        title: 'Update available',
+        message: `You’re on v${current}. v${latest} is available. Download the latest Wren?`,
+        confirmLabel: 'Download',
+      });
+      if (go) openExternal(DOWNLOAD_URL);
+    } else {
+      showToast(`You’re on the latest version (v${current || latest}).`);
+    }
   }
 
   function buildDriveBanner() {
