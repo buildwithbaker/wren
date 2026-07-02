@@ -660,6 +660,12 @@ button {
 .sc-editor-more-item--check[aria-checked='true'] .sc-editor-more-check {
   visibility: visible;
 }
+/* Divider above a grouped menu item (e.g. "Check for updates"). */
+.sc-editor-more-item--sep {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--wr-border);
+}
 
 /* Format roll-up toggle (collapses color swatches + toolbar; Due stays). */
 .sc-format-toggle {

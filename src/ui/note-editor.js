@@ -25,6 +25,7 @@ export function createNoteEditor({
   onBack,
   onPopOut,
   onOpenInApp,
+  onCheckUpdates,
   onTitleChange,
   getTagSuggestions,
   showBack = false,
@@ -188,6 +189,23 @@ export function createNoteEditor({
     }
   );
   moreMenu.append(hideDueItem, hideTagsItem);
+
+  // Check for updates (desktop app only — the host passes this handler solely in
+  // Tauri; a PWA/extension auto-updates). Opens the Build with Baker download
+  // page in the external browser. Separated from the toggles above with a rule.
+  if (onCheckUpdates) {
+    const updateItem = document.createElement('button');
+    updateItem.type = 'button';
+    updateItem.className = 'sc-editor-more-item sc-editor-more-item--sep';
+    updateItem.setAttribute('role', 'menuitem');
+    updateItem.innerHTML =
+      '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg><span>Check for updates</span>';
+    updateItem.addEventListener('click', () => {
+      closeMore();
+      onCheckUpdates();
+    });
+    moreMenu.appendChild(updateItem);
+  }
 
   function syncMoreItems() {
     hideDueItem.syncState();

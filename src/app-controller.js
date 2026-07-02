@@ -734,6 +734,12 @@ export function createApp({ root, enableServiceWorker = false }) {
         list.setActive(null);
       },
       onPopOut: (note) => handlePopOut(note),
+      // Desktop only: "Check for updates" opens the Build with Baker download
+      // page externally. In the browser PWA/extension the app auto-updates, so
+      // no handler is passed and the menu item doesn't render.
+      onCheckUpdates: isTauri()
+        ? () => openExternal('https://wren.buildwithbaker.io/download')
+        : undefined,
       getTagSuggestions: tagSuggestions,
       showBack: true,
     });
@@ -1998,9 +2004,9 @@ export function createApp({ root, enableServiceWorker = false }) {
             title:
               'You’re running the Wren desktop app for Windows. The web, extension, and desktop versions all share the same notes.',
           }
-        : { href: `${SITE}/download.html`, label: 'Download' },
-      { href: `${SITE}/guide.html`, label: 'Guide' },
-      { href: `${SITE}/privacy.html`, label: 'Privacy' },
+        : { href: `${SITE}/download`, label: 'Download' },
+      { href: `${SITE}/guide`, label: 'Guide' },
+      { href: `${SITE}/privacy`, label: 'Privacy' },
       { href: KOFI, label: 'Build with Baker' },
       { href: KOFI, label: '☕ Support on Ko-fi', cls: 'sc-footer-kofi' },
     ];
