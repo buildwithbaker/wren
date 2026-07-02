@@ -34,6 +34,11 @@ export function createKanbanView({ getNotes, onNoteOpen, onMoveNote }) {
   const manualColumns = new Map();
   // True while the inline "+ New Tag" input is open (drives toolbar rendering).
   let addingTag = false;
+  // The text currently typed into the open "+ New Tag" input. Preserved across
+  // re-renders so an external refresh() (a note being created/saved elsewhere)
+  // never wipes what the user is mid-typing — the bug where New Tag "stopped
+  // working" after New Note. See render()'s rebuildToolbar guard.
+  let addingTagValue = '';
 
   function addManualColumn(namespace, value) {
     if (!manualColumns.has(namespace)) manualColumns.set(namespace, new Set());
@@ -125,6 +130,11 @@ export function createKanbanView({ getNotes, onNoteOpen, onMoveNote }) {
       input.placeholder = `New ${nsLabel(activeNs)}…`;
       input.setAttribute('aria-label', `New ${nsLabel(activeNs)} value`);
       input.autocomplete = 'off';
+      // Restore any in-progress text so a re-render doesn't lose the user's typing.
+      input.value = addingTagValue;
+      input.addEventListener('input', () => {
+        addingTagValue = input.value;
+      });
       form.appendChild(input);
 
       let done = false;
@@ -133,6 +143,7 @@ export function createKanbanView({ getNotes, onNoteOpen, onMoveNote }) {
         done = true;
         const value = input.value.trim();
         addingTag = false;
+        addingTagValue = '';
         // Reject the reserved "_untagged" key — render() always appends that
         // column, so a manual one would duplicate/conflict with it.
         if (value && value !== '_untagged' && isValidTag(`${activeNs}:${value}`)) {
@@ -148,13 +159,22 @@ export function createKanbanView({ getNotes, onNoteOpen, onMoveNote }) {
         if (e.key === 'Escape') {
           done = true;
           addingTag = false;
+          addingTagValue = '';
           render();
         }
       });
       input.addEventListener('blur', commit);
       toolbar.appendChild(form);
-      // Focus once it's attached so the user can type immediately.
-      queueMicrotask(() => input.focus());
+      // Focus once it's attached so the user can type immediately; caret at end.
+      queueMicrotask(() => {
+        input.focus();
+        const end = input.value.length;
+        try {
+          input.setSelectionRange(end, end);
+        } catch {
+          /* ignore (non-text input) */
+        }
+      });
     } else {
       const newTagBtn = document.createElement('button');
       newTagBtn.type = 'button';
@@ -172,13 +192,17 @@ export function createKanbanView({ getNotes, onNoteOpen, onMoveNote }) {
     }
   }
 
-  function render() {
+  // @param {{ rebuildToolbar?: boolean }} [opts] - when false, the toolbar is
+  //   left untouched so an open "+ New Tag" input (its live DOM, focus, and
+  //   typed text) survives the re-render. External refresh() passes this while
+  //   the input is open; internal calls rebuild normally.
+  function render({ rebuildToolbar = true } = {}) {
     const notes = getNotes() || [];
     const namespaces = getAllNamespaces(notes);
     const activeNs = resolveGroupBy(namespaces);
     groupBy = activeNs; // keep internal state aligned with what's shown
 
-    renderToolbar(namespaces, activeNs);
+    if (rebuildToolbar) renderToolbar(namespaces, activeNs);
     columnsWrap.replaceChildren();
 
     if (!activeNs) {
@@ -250,12 +274,13 @@ export function createKanbanView({ getNotes, onNoteOpen, onMoveNote }) {
     preview.textContent = toPreviewText(note.firstLine || note.body) || 'No additional text';
 
     card.append(title, preview);
-    // Due-date chip (Note Lifecycle A2).
-    const dueChip = buildDueChip(note.due);
+    // Due-date chip (Note Lifecycle A2) — skipped when hidden per-note.
+    const dueChip = note.hideDue ? null : buildDueChip(note.due);
     if (dueChip) card.appendChild(dueChip);
     // Tag chips (Sticky Float Phase 1): display-only on the board — the column
     // already encodes the grouping tag; chips show the note's full tag set.
-    const chips = buildTagChips(note.tags);
+    // Skipped when the note hides its tags.
+    const chips = note.hideTags ? null : buildTagChips(note.tags);
     if (chips) card.appendChild(chips);
     card.addEventListener('click', () => onNoteOpen?.(note.id));
 
@@ -304,7 +329,9 @@ export function createKanbanView({ getNotes, onNoteOpen, onMoveNote }) {
 
   return {
     element: root,
-    refresh: render,
+    // External refresh: re-render the columns, but leave an open "+ New Tag"
+    // input in place so a note created/saved elsewhere can't wipe it mid-type.
+    refresh: () => render({ rebuildToolbar: !addingTag }),
     destroy() {
       root.replaceChildren();
     },

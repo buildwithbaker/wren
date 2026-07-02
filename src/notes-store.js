@@ -248,6 +248,15 @@ export function serializeNote(note) {
   if (tags.length > 0) {
     lines.push(`tags: ${JSON.stringify(tags)}`);
   }
+  // hide_due / hide_tags: per-note display toggles (written only when true so
+  // notes that don't hide anything keep clean frontmatter). They suppress the
+  // due-date / tag display in the editor, pop-out, and on cards — not the data.
+  if (note.hideDue) {
+    lines.push('hide_due: true');
+  }
+  if (note.hideTags) {
+    lines.push('hide_tags: true');
+  }
   lines.push('---', '', note.body || '');
   return lines.join('\n');
 }
@@ -271,6 +280,10 @@ export function parseNote(text, filename) {
   let due = '';
   let summary = '';
   let tags = [];
+  // Per-note display toggles (written only when true). Hide the due-date / tag
+  // display without deleting the underlying data.
+  let hideDue = false;
+  let hideTags = false;
   // Provenance (MCP v2.1): who created / last edited the note and when. Absent
   // on legacy + app-only notes; surfaced for the AI badge + last-updated panel.
   let createdBy = '';
@@ -309,6 +322,8 @@ export function parseNote(text, filename) {
       else if (key === 'created_by') createdBy = normalizeProvenance(val);
       else if (key === 'last_edited_by') lastEditedBy = normalizeProvenance(val);
       else if (key === 'last_edited') lastEdited = val;
+      else if (key === 'hide_due') hideDue = val === 'true' || val === true;
+      else if (key === 'hide_tags') hideTags = val === 'true' || val === true;
     }
   }
 
@@ -324,6 +339,8 @@ export function parseNote(text, filename) {
     due,
     summary,
     tags,
+    hideDue,
+    hideTags,
     createdBy,
     lastEditedBy,
     lastEdited,

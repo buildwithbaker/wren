@@ -614,9 +614,13 @@ button {
 .sc-editor-more-menu {
   position: absolute;
   top: calc(100% + 4px);
-  left: 0;
+  /* Anchor the menu's right edge to the trigger so it opens leftward into the
+     window. left:0 pushed a 230px menu past the right window edge and clipped
+     "Pop out into its own window". */
+  right: 0;
   z-index: 50;
   min-width: 230px;
+  max-width: min(320px, calc(100vw - 24px));
   padding: 4px;
   background: var(--wr-panel-bg);
   border: 1px solid var(--wr-border);
@@ -644,6 +648,98 @@ button {
 }
 .sc-editor-more-item:hover {
   background: rgba(42, 53, 64, 0.08);
+}
+/* Checkbox menu items (Hide due date / Hide tags): the check mark is invisible
+   until the item is aria-checked. */
+.sc-editor-more-item--check .sc-editor-more-check {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  visibility: hidden;
+}
+.sc-editor-more-item--check[aria-checked='true'] .sc-editor-more-check {
+  visibility: visible;
+}
+
+/* Format roll-up toggle (collapses color swatches + toolbar; Due stays). */
+.sc-format-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--wr-radius-sm);
+  background: transparent;
+  color: var(--wr-ink);
+  opacity: 0.7;
+  cursor: pointer;
+  transition: background var(--wr-trans), opacity var(--wr-trans), transform var(--wr-trans);
+}
+.sc-format-toggle:hover {
+  background: rgba(42, 53, 64, 0.08);
+  opacity: 1;
+}
+/* Chevron points down when expanded; rotate to point right when collapsed. */
+.sc-format-toggle[aria-expanded='false'] {
+  transform: rotate(-90deg);
+}
+.sc-editor-surface.is-format-collapsed .sc-toolbar-mount,
+.sc-editor-surface.is-format-collapsed .sc-cardcolors {
+  display: none;
+}
+
+/* Pop-out (sticky) meta stack: Tags button above the Due control, right-aligned. */
+.sc-sticky-meta {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.sc-sticky-meta-tags {
+  position: relative;
+}
+.sc-tags-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid var(--wr-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--wr-ink);
+  font: inherit;
+  font-size: 12px;
+  opacity: 0.85;
+  cursor: pointer;
+  transition: background var(--wr-trans), opacity var(--wr-trans);
+}
+.sc-tags-btn:hover {
+  background: rgba(42, 53, 64, 0.08);
+  opacity: 1;
+}
+.sc-tags-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 50;
+  min-width: 220px;
+  max-width: min(280px, calc(100vw - 24px));
+  padding: 8px;
+  background: var(--wr-panel-bg);
+  border: 1px solid var(--wr-border);
+  border-radius: var(--wr-radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+.sc-tags-popover[hidden] {
+  display: none;
+}
+/* The relocated tag editor should stack its chips above the add input inside
+   the popover (the inline row layout is a flex row; here we want a column). */
+.sc-tags-popover .sc-tagrow {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
 }
 
 .sc-iconbtn {
@@ -1337,6 +1433,11 @@ button {
   flex-direction: column;
   gap: 8px;
   margin-top: 4px;
+}
+/* Separate the Done row from the rebind rows above it — the "Change…" button of
+   the last rebind row was sitting flush against "Done" with no breathing room. */
+.sc-help-modal .sc-modal-actions {
+  margin-top: 18px;
 }
 .sc-rebind-row {
   display: flex;
@@ -2279,6 +2380,31 @@ body.is-sticky.has-sticky-titlebar #app {
 .sc-sticky-close:hover {
   background: rgba(0, 0, 0, 0.12);
 }
+/* Per-window pin toggle in the pop-out title bar. margin-left:auto groups the
+   pin + close together on the right, with the Wren logo pinned left. */
+.sc-sticky-pin {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--wr-ink);
+  opacity: 0.8;
+  cursor: pointer;
+  transition: background var(--wr-trans), opacity var(--wr-trans);
+}
+.sc-sticky-pin:hover {
+  background: rgba(0, 0, 0, 0.12);
+  opacity: 1;
+}
+.sc-sticky-pin[aria-pressed='true'] {
+  opacity: 1;
+}
 
 /* Editor fills the viewport — no outer margin, no rounded floating panel. */
 body.is-sticky .sc-editor-surface {
@@ -2355,12 +2481,16 @@ body.is-sticky .sc-editor-colorrow {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
+  gap: 6px;
   height: 34px;
+  padding: 0 14px;
   border: 0;
   border-radius: var(--wr-radius-sm);
   background: var(--wr-accent);
   color: var(--wr-on-accent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
   box-shadow: var(--wr-shadow-sm);
   cursor: pointer;
   transition: background var(--wr-trans), transform var(--wr-trans);

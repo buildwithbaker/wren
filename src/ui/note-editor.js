@@ -24,6 +24,7 @@ export function createNoteEditor({
   onArchive,
   onBack,
   onPopOut,
+  onOpenInApp,
   onTitleChange,
   getTagSuggestions,
   showBack = false,
@@ -33,6 +34,11 @@ export function createNoteEditor({
   let editor = null;
   let toolbar = null;
   let saveTimer = null;
+  // Set in sticky mode to a closer for the Tags popover (see color-row section).
+  let closeTagPopoverRef = null;
+  // Tracks the open note's read-only state so applyHideState() can keep the Due
+  // control hidden in read-only views regardless of the per-note hide flag.
+  let currentReadOnly = false;
 
   const root = document.createElement('div');
   root.className = 'sc-editor';
@@ -102,22 +108,96 @@ export function createNoteEditor({
   moreMenu.className = 'sc-editor-more-menu';
   moreMenu.setAttribute('role', 'menu');
   moreMenu.hidden = true;
-  const popOutItem = document.createElement('button');
-  popOutItem.type = 'button';
-  popOutItem.className = 'sc-editor-more-item';
-  popOutItem.setAttribute('role', 'menuitem');
-  popOutItem.innerHTML =
-    '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 4h6v6" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 4l-8 8" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Pop out into its own window</span>';
-  popOutItem.addEventListener('click', async () => {
-    closeMore();
-    if (!note) return;
-    // Flush pending edits so the popped-out window reads the latest content.
-    await flush();
-    onPopOut?.(note);
-  });
-  moreMenu.appendChild(popOutItem);
+
+  // Pop out (main app only). Flush pending edits first so the popped-out window
+  // reads the latest content.
+  if (onPopOut) {
+    const popOutItem = document.createElement('button');
+    popOutItem.type = 'button';
+    popOutItem.className = 'sc-editor-more-item';
+    popOutItem.setAttribute('role', 'menuitem');
+    popOutItem.innerHTML =
+      '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 4h6v6" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 4l-8 8" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Pop out into its own window</span>';
+    popOutItem.addEventListener('click', async () => {
+      closeMore();
+      if (!note) return;
+      await flush();
+      onPopOut(note);
+    });
+    moreMenu.appendChild(popOutItem);
+  }
+
+  // Open in the Wren app (pop-out window only): focus/raise the main window on
+  // this note. The host wires the actual navigation.
+  if (onOpenInApp) {
+    const openInAppItem = document.createElement('button');
+    openInAppItem.type = 'button';
+    openInAppItem.className = 'sc-editor-more-item';
+    openInAppItem.setAttribute('role', 'menuitem');
+    openInAppItem.innerHTML =
+      '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg><span>Open in Wren app</span>';
+    openInAppItem.addEventListener('click', async () => {
+      closeMore();
+      if (!note) return;
+      await flush();
+      onOpenInApp(note);
+    });
+    moreMenu.appendChild(openInAppItem);
+  }
+
+  // Per-note display toggles (Hide due date / Hide tags). Checkbox menu items —
+  // available on every editable surface (main + pop-out) so a note can be
+  // decluttered and, crucially, un-hidden from wherever it's open.
+  function buildHideToggle(labelText, getState, setState) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'sc-editor-more-item sc-editor-more-item--check';
+    item.setAttribute('role', 'menuitemcheckbox');
+    item.setAttribute('aria-checked', 'false');
+    const check = document.createElement('span');
+    check.className = 'sc-editor-more-check';
+    check.setAttribute('aria-hidden', 'true');
+    check.innerHTML =
+      '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-11"/></svg>';
+    const label = document.createElement('span');
+    label.textContent = labelText;
+    item.append(check, label);
+    item.addEventListener('click', () => {
+      if (!note) return;
+      const next = !getState();
+      setState(next);
+      item.setAttribute('aria-checked', next ? 'true' : 'false');
+      applyHideState();
+      scheduleSave();
+    });
+    item.syncState = () => item.setAttribute('aria-checked', getState() ? 'true' : 'false');
+    return item;
+  }
+  const hideDueItem = buildHideToggle(
+    'Hide due date',
+    () => !!note?.hideDue,
+    (v) => {
+      note.hideDue = v;
+    }
+  );
+  const hideTagsItem = buildHideToggle(
+    'Hide tags',
+    () => !!note?.hideTags,
+    (v) => {
+      note.hideTags = v;
+    }
+  );
+  moreMenu.append(hideDueItem, hideTagsItem);
+
+  function syncMoreItems() {
+    hideDueItem.syncState();
+    hideTagsItem.syncState();
+  }
+
   moreWrap.append(moreBtn, moreMenu);
-  moreWrap.hidden = sticky || !onPopOut;
+  // Shown on every editable surface (the hide toggles always apply). Hidden only
+  // in read-only views — handled in openNote via updateMoreVisibility().
+  moreWrap.hidden = false;
 
   function onDocClickForMore(e) {
     if (!moreWrap.contains(e.target)) closeMore();
@@ -129,6 +209,7 @@ export function createNoteEditor({
     }
   }
   function openMore() {
+    syncMoreItems();
     moreMenu.hidden = false;
     moreBtn.setAttribute('aria-expanded', 'true');
     document.addEventListener('click', onDocClickForMore, true);
@@ -250,17 +331,126 @@ export function createNoteEditor({
   });
   dueWrap.append(dueLabel, dueInput, dueClear);
 
+  // Format roll-up toggle: collapses the formatting affordances (color swatches
+  // + the Tiptap toolbar) so a note can be read/written without the chrome. The
+  // Due control is deliberately NOT collapsed — it lives outside the collapsed
+  // set. State is remembered across sessions.
+  const FORMAT_COLLAPSED_KEY = 'wren.formatCollapsed';
+  let formatCollapsed = false;
+  try {
+    formatCollapsed = localStorage.getItem(FORMAT_COLLAPSED_KEY) === 'true';
+  } catch {
+    /* ignore */
+  }
+  const formatToggle = document.createElement('button');
+  formatToggle.type = 'button';
+  formatToggle.className = 'sc-format-toggle';
+  formatToggle.title = 'Show or hide formatting';
+  formatToggle.setAttribute('aria-label', 'Show or hide formatting controls');
+  formatToggle.innerHTML =
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+  function applyFormatCollapsed() {
+    surface.classList.toggle('is-format-collapsed', formatCollapsed);
+    formatToggle.setAttribute('aria-expanded', formatCollapsed ? 'false' : 'true');
+  }
+  formatToggle.addEventListener('click', () => {
+    formatCollapsed = !formatCollapsed;
+    try {
+      localStorage.setItem(FORMAT_COLLAPSED_KEY, formatCollapsed ? 'true' : 'false');
+    } catch {
+      /* ignore */
+    }
+    applyFormatCollapsed();
+  });
+
   const savedHint = document.createElement('span');
   savedHint.className = 'sc-saved-hint';
   savedHint.setAttribute('aria-live', 'polite');
-  // Color swatches on the left; the Due control pinned to the far right (CSS
-  // margin-left:auto). The save status moved out of this row into the tag row.
-  colorRow.append(cardColor.element, dueWrap);
+
+  // Pop-out (sticky) tags control: the slim window has no inline tag row, so a
+  // small "Tags" button above the Due control opens a popover holding the tag
+  // editor. Built here; the editor element is moved into the popover once it
+  // exists (below). No-op in the main app, which keeps its inline tag row.
+  let tagsBtn = null;
+  let tagPopover = null;
+  if (sticky) {
+    tagsBtn = document.createElement('button');
+    tagsBtn.type = 'button';
+    tagsBtn.className = 'sc-tags-btn';
+    tagsBtn.title = 'Tags';
+    tagsBtn.setAttribute('aria-haspopup', 'true');
+    tagsBtn.setAttribute('aria-expanded', 'false');
+    tagsBtn.innerHTML =
+      '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 12 22l-9-9V3h10z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg><span>Tags</span>';
+    tagPopover = document.createElement('div');
+    tagPopover.className = 'sc-tags-popover';
+    tagPopover.hidden = true;
+
+    const onDocClickForTags = (e) => {
+      if (!tagPopover.contains(e.target) && e.target !== tagsBtn && !tagsBtn.contains(e.target)) {
+        closeTagPopover();
+      }
+    };
+    const onKeyForTags = (e) => {
+      if (e.key === 'Escape') {
+        closeTagPopover();
+        tagsBtn.focus();
+      }
+    };
+    // eslint-disable-next-line no-inner-declarations
+    function closeTagPopover() {
+      tagPopover.hidden = true;
+      tagsBtn.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('click', onDocClickForTags, true);
+      document.removeEventListener('keydown', onKeyForTags, true);
+    }
+    tagsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (tagPopover.hidden) {
+        if (note?.hideTags) return; // nothing to manage while tags are hidden
+        tagPopover.hidden = false;
+        tagsBtn.setAttribute('aria-expanded', 'true');
+        document.addEventListener('click', onDocClickForTags, true);
+        document.addEventListener('keydown', onKeyForTags, true);
+      } else {
+        closeTagPopover();
+      }
+    });
+    closeTagPopoverRef = closeTagPopover;
+  }
+
+  // Left: format toggle + color swatches (both collapse). Right side differs by
+  // surface — the main app pins the Due control; a sticky stacks the Tags button
+  // above the Due control (CSS right-aligns the stack).
+  if (sticky) {
+    const stickyMeta = document.createElement('div');
+    stickyMeta.className = 'sc-sticky-meta';
+    const tagsRow = document.createElement('div');
+    tagsRow.className = 'sc-sticky-meta-tags';
+    tagsRow.append(tagsBtn, tagPopover);
+    stickyMeta.append(tagsRow, dueWrap);
+    colorRow.append(formatToggle, cardColor.element, stickyMeta);
+  } else {
+    colorRow.append(formatToggle, cardColor.element, dueWrap);
+  }
 
   function updateDueControl() {
     const status = dueStatus(note?.due || '');
     dueWrap.dataset.status = status; // '', 'overdue', 'today', 'upcoming'
     dueClear.hidden = !(note && note.due);
+  }
+
+  // Apply the per-note hide toggles to the live controls. Due stays hidden in
+  // read-only views regardless. In the main app "hide tags" hides the inline tag
+  // editor; in a sticky it hides the "Tags" button (and closes its popover).
+  function applyHideState() {
+    dueWrap.hidden = currentReadOnly || !!note?.hideDue;
+    if (sticky) {
+      if (tagsBtn) tagsBtn.hidden = !!note?.hideTags;
+      if (note?.hideTags) closeTagPopoverRef?.();
+    } else {
+      tagEditor.element.hidden = !!note?.hideTags;
+    }
   }
 
   // Provenance mini-panel (AI-write visibility P2): a single tucked, collapsible
@@ -346,13 +536,17 @@ export function createNoteEditor({
   const bodyMount = document.createElement('div');
   bodyMount.className = 'sc-editor-body';
 
-  // Tag chips are part of the full editor only — a sticky keeps slim chrome.
-  // The save status sits to their right; it stays visible even in a sticky
-  // (only the tag-chips input is hidden, not the whole row).
-  if (sticky) tagEditor.element.hidden = true;
+  // Tag editor placement differs by surface. Main app: inline in the tag row.
+  // Sticky: relocated into the Tags popover (built in the color-row section),
+  // reached via the small "Tags" button above the Due control.
   const tagRow = document.createElement('div');
   tagRow.className = 'sc-editor-tagrow';
-  tagRow.append(tagEditor.element, savedHint);
+  if (sticky && tagPopover) {
+    tagPopover.appendChild(tagEditor.element);
+    tagRow.append(savedHint);
+  } else {
+    tagRow.append(tagEditor.element, savedHint);
+  }
 
   // Provenance ("Updated … by you") sits at the very bottom of the surface,
   // below the editor body — out of the way of the title/tag/save controls.
@@ -375,10 +569,13 @@ export function createNoteEditor({
     const target = note;
     await onSave?.(target);
     // onSave (app-controller handleSave) stamped modified + human provenance on
-    // the same note object; reflect it in the panel + hint if still open.
+    // the same note object; reflect it in the provenance panel. The transient
+    // "Saving…" hint is cleared once saved — the "Updated … by you" provenance
+    // line below is the single resting record, so we don't show a duplicate
+    // "Saved <time>" next to an identical "Updated <time>".
     if (note === target) {
       updateProvenance(target);
-      setHint(`Saved ${formatModified(target.modified)}`);
+      setHint('');
     }
   }
   // Flush any pending save immediately (e.g. when leaving the note).
@@ -415,7 +612,9 @@ export function createNoteEditor({
     await flush();
     teardownEditor();
     closeMore();
+    closeTagPopoverRef?.();
     note = next;
+    currentReadOnly = readOnly;
 
     placeholder.hidden = true;
     surface.hidden = false;
@@ -434,11 +633,17 @@ export function createNoteEditor({
     dueInput.value = normalizeDue(note.due);
     dueInput.disabled = readOnly;
     updateDueControl();
-    dueWrap.hidden = readOnly;
+    // Per-note hide toggles + roll-up state, and the ⋮ menu (hidden read-only).
+    applyHideState();
+    applyFormatCollapsed();
+    syncMoreItems();
+    moreWrap.hidden = readOnly;
     // Archive is a normal-note action; hide it on read-only/sticky surfaces.
     archiveBtn.hidden = !onArchive || sticky || readOnly;
     updateProvenance(note);
-    setHint(readOnly ? readOnlyLabel : note.modified ? `Saved ${formatModified(note.modified)}` : '');
+    // No persistent "Saved <time>" — the provenance "Updated … by you" line is
+    // the resting record. Only the read-only label lingers here.
+    setHint(readOnly ? readOnlyLabel : '');
 
     editor = createEditor({
       element: bodyMount,
@@ -467,6 +672,7 @@ export function createNoteEditor({
     cancelSave();
     teardownEditor();
     closeMore();
+    closeTagPopoverRef?.();
     tagEditor.clear();
     note = null;
     surface.hidden = true;
@@ -477,6 +683,7 @@ export function createNoteEditor({
     cancelSave();
     teardownEditor();
     closeMore();
+    closeTagPopoverRef?.();
   }
 
   return {
