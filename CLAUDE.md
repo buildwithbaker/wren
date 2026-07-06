@@ -12,8 +12,9 @@ See @docs/internal/architecture.md for the deep architecture reference (file map
   https://wren.buildwithbaker.io; https://wren-ckn.pages.dev still resolves)
   auto-builds from main via Cloudflare's Git integration - build command
   `npm run build`, output dir `dist/`, configured in the Cloudflare dashboard
-  (NOT in this repo). There is no GitHub Actions deploy workflow. No lint script
-  is configured yet; CI runs `npm run lint --if-present` and will simply skip it.
+  (NOT in this repo). There is no GitHub Actions deploy workflow. Lint is
+  `npm run lint` (eslint, flat config in `eslint.config.js`); CI runs
+  `npm run lint --if-present`, which now executes it.
 
 ## Branching (main is protected)
 `main` is protected - direct pushes are rejected. Branch, commit, push, open a

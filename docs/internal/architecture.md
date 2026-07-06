@@ -29,7 +29,7 @@ The single most important architectural fact: **`src/` is shared verbatim betwee
 | Runtime | Vanilla ES modules | No framework. UI built with imperative DOM modules under `src/ui/` |
 | Node | 20 (see `.nvmrc`) | |
 
-There is **no lint script** configured yet; CI runs `npm run lint --if-present` and skips it.
+Lint is `npm run lint` (**eslint**, flat config in `eslint.config.js`); CI runs `npm run lint --if-present`, which now executes it.
 
 ---
 
