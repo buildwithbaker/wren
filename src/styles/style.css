@@ -667,30 +667,49 @@ button {
   border-top: 1px solid var(--wr-border);
 }
 
-/* Format roll-up toggle (collapses color swatches + toolbar; Due stays). */
+/* Toolbar row: the formatting-bar toggle (its own outlined button) sits at the
+   head, next to the first formatting button; the toolbar mount fills the rest. */
+.sc-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+}
+.sc-toolbar-row .sc-toolbar-mount {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+}
+/* Formatting-bar toggle: a distinct OUTLINED button (not part of the color row).
+   Collapsing hides ONLY the formatting bar (.sc-toolbar); colors + Due stay. */
 .sc-format-toggle {
   display: inline-grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
-  border: 0;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border: 1px solid color-mix(in srgb, var(--wr-ink) 32%, transparent);
   border-radius: var(--wr-radius-sm);
   background: transparent;
   color: var(--wr-ink);
-  opacity: 0.7;
+  opacity: 0.85;
   cursor: pointer;
-  transition: background var(--wr-trans), opacity var(--wr-trans), transform var(--wr-trans);
+  transition: background var(--wr-trans), opacity var(--wr-trans), border-color var(--wr-trans);
 }
 .sc-format-toggle:hover {
   background: rgba(42, 53, 64, 0.08);
+  border-color: color-mix(in srgb, var(--wr-ink) 48%, transparent);
   opacity: 1;
 }
-/* Chevron points down when expanded; rotate to point right when collapsed. */
-.sc-format-toggle[aria-expanded='false'] {
+/* Chevron points down when the bar is shown; rotate the glyph (not the outlined
+   button) when the bar is collapsed. */
+.sc-format-toggle svg {
+  transition: transform var(--wr-trans);
+}
+.sc-format-toggle[aria-expanded='false'] svg {
   transform: rotate(-90deg);
 }
-.sc-editor-surface.is-format-collapsed .sc-toolbar-mount,
-.sc-editor-surface.is-format-collapsed .sc-cardcolors {
+.sc-editor-surface.is-format-collapsed .sc-toolbar-mount {
   display: none;
 }
 
