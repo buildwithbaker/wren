@@ -820,9 +820,12 @@ export function createApp({ root, enableServiceWorker = false }) {
   // Wire desktop quick-capture (tray "New note" event + global hotkeys +
   // autostart) once. No-op stub in the browser PWA / extension. renderApp may
   // run again (Drive reconnect), so guard against double-registering.
+  // Quick-capture (the global new-note hotkey and the tray "New note") always
+  // pops out a fresh sticky and never adds a note to the in-app list, so a
+  // capture never depends on which view happens to be open.
   function setupDesktop() {
     if (desktopIntegration) return;
-    setupDesktopIntegration({ onNewNote: () => handleNew() })
+    setupDesktopIntegration({ onNewNote: () => handleNewPopOut({ from: 'hotkey' }) })
       .then((api) => {
         desktopIntegration = api;
       })
@@ -1618,7 +1621,7 @@ export function createApp({ root, enableServiceWorker = false }) {
   // NOT auto-open a popup (popups there are blocker-prone and unwanted): fall
   // back to opening the note in the full editor so it's visible.
   //
-  // @param {{ from: 'compact' | 'kanban' }} opts
+  // @param {{ from: 'compact' | 'kanban' | 'hotkey' }} opts
   async function handleNewPopOut({ from }) {
     const note = await createBlankNote();
     if (!note) return;
@@ -2095,8 +2098,9 @@ export function createApp({ root, enableServiceWorker = false }) {
         : { href: `${SITE}/download`, label: 'Download' },
       { href: `${SITE}/guide`, label: 'Guide' },
       { href: `${SITE}/privacy`, label: 'Privacy' },
-      { href: KOFI, label: 'Build with Baker' },
-      { href: KOFI, label: '☕ Support on Ko-fi', cls: 'sc-footer-kofi' },
+      // Shortcuts, Support on Ko-fi, and Build with Baker are appended after the
+      // loop (in that order) so the footer reads: Desktop version / Guide /
+      // Privacy / Shortcuts / Support on Ko-fi / Build with Baker.
     ];
     links.forEach((l, i) => {
       if (i) {
@@ -2123,12 +2127,26 @@ export function createApp({ root, enableServiceWorker = false }) {
       a.textContent = l.label;
       linksWrap.appendChild(a);
     });
+    // Trailing entries, in order: Shortcuts (button), Support on Ko-fi, Build
+    // with Baker. Each is preceded by a separator dot.
+    const makeDot = () => {
+      const d = document.createElement('span');
+      d.className = 'sc-footer-dot';
+      d.textContent = '·';
+      return d;
+    };
+    const makeFooterLink = (href, label, cls) => {
+      const a = document.createElement('a');
+      a.href = href;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.className = cls || 'sc-footer-bwb';
+      a.textContent = label;
+      return a;
+    };
     // In-app help: the full keyboard-shortcut reference (and, in the desktop
     // app, the startup toggle + rebindable global hotkeys). A button, not a
     // link, so the Tauri external-link interceptor below ignores it.
-    const dot = document.createElement('span');
-    dot.className = 'sc-footer-dot';
-    dot.textContent = '·';
     const shortcutsBtn = document.createElement('button');
     shortcutsBtn.type = 'button';
     shortcutsBtn.className = 'sc-footer-bwb sc-footer-btn';
@@ -2136,7 +2154,9 @@ export function createApp({ root, enableServiceWorker = false }) {
     shortcutsBtn.addEventListener('click', () =>
       openShortcutsDialog({ desktop: desktopIntegration })
     );
-    linksWrap.append(dot, shortcutsBtn);
+    linksWrap.append(makeDot(), shortcutsBtn);
+    linksWrap.append(makeDot(), makeFooterLink(KOFI, '☕ Support on Ko-fi', 'sc-footer-kofi'));
+    linksWrap.append(makeDot(), makeFooterLink(KOFI, 'Build with Baker'));
     footer.appendChild(linksWrap);
     // In the Tauri desktop app a plain target=_blank link would open/navigate a
     // webview; intercept and hand the URL to the system browser instead so the
