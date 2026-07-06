@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Wren",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "identifier": "io.buildwithbaker.wren",
   "build": {
     "frontendDist": "../dist",
@@ -17,7 +17,8 @@
         "height": 780,
         "resizable": true,
         "fullscreen": false,
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "visible": false
       }
     ],
     "security": {

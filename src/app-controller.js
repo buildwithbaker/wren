@@ -142,6 +142,35 @@ export function createApp({ root, enableServiceWorker = false }) {
 
   boot();
 
+  // First-paint reveal (Tauri desktop only). WebView2 on Windows sometimes
+  // withholds the very first frame until an input event, so a freshly launched
+  // window shows blank until the user clicks or moves the mouse (observed
+  // 2026-07). The native window is created hidden (tauri.conf visible:false)
+  // and shown by revealWindow() once a render path has painted; this timer is
+  // the safety net so the window still appears even if a render path is slow
+  // or stalls, so the user never faces a permanently hidden window.
+  let _windowRevealed = false;
+  function revealWindow() {
+    if (_windowRevealed) return;
+    _windowRevealed = true;
+    if (!isTauri()) return;
+    // Double rAF: wait for the browser to actually paint the mounted DOM before
+    // asking the native window to show, so the first visible frame has content.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(async () => {
+        try {
+          const { getCurrentWindow } = await import('@tauri-apps/api/window');
+          const win = getCurrentWindow();
+          await win.show();
+          await win.setFocus();
+        } catch (err) {
+          console.warn('revealWindow failed', err);
+        }
+      })
+    );
+  }
+  setTimeout(revealWindow, 3000);
+
   function themeLabel(t) {
     return t === 'system' ? 'Auto' : t === 'light' ? 'Light' : 'Dark';
   }
@@ -390,6 +419,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     screen.appendChild(innerNode);
     wrap.appendChild(screen);
     root.append(wrap, buildFooter());
+    revealWindow();
   }
 
   function renderUnsupported() {
@@ -767,6 +797,7 @@ export function createApp({ root, enableServiceWorker = false }) {
 
     appEl.append(sidebar, main, compactView.element);
     root.append(appEl, buildFooter({ compact: true }));
+    revealWindow();
 
     // Default landing view: every launch opens in Compact regardless of the
     // stored full mode. Session-only — assign viewMode directly (not via
@@ -2122,9 +2153,30 @@ export function createApp({ root, enableServiceWorker = false }) {
   }
 
   /* ---- Service worker -------------------------------------------------- */
-  if (enableServiceWorker && 'serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch((err) => console.warn('SW registration failed', err));
-    });
+  // Desktop (Tauri) must NOT run a service worker. The cached app shell can go
+  // stale and serve a blank/broken document that only a hard-refresh clears
+  // (observed 2026-07). The desktop app is already local, so the SW buys it
+  // nothing. Register only in the real browser PWA build. On desktop, actively
+  // unregister any SW a prior build registered and purge its caches, so already
+  // installed desktop clients self-heal on their next launch.
+  if ('serviceWorker' in navigator) {
+    if (enableServiceWorker && !isTauri()) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker
+          .register('sw.js')
+          .catch((err) => console.warn('SW registration failed', err));
+      });
+    } else if (isTauri()) {
+      navigator.serviceWorker
+        .getRegistrations()
+        .then((regs) => regs.forEach((r) => r.unregister()))
+        .catch(() => {});
+      if (self.caches && caches.keys) {
+        caches
+          .keys()
+          .then((keys) => keys.forEach((k) => caches.delete(k)))
+          .catch(() => {});
+      }
+    }
   }
 }
