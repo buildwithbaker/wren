@@ -349,10 +349,10 @@ export function createNoteEditor({
   });
   dueWrap.append(dueLabel, dueInput, dueClear);
 
-  // Format roll-up toggle: collapses the formatting affordances (color swatches
-  // + the Tiptap toolbar) so a note can be read/written without the chrome. The
-  // Due control is deliberately NOT collapsed — it lives outside the collapsed
-  // set. State is remembered across sessions.
+  // Formatting-bar toggle: collapses ONLY the Tiptap formatting bar (bold,
+  // etc.) so a note can be read/written without that chrome. The color swatches
+  // and the Due control are deliberately NOT collapsed; they stay visible.
+  // State is remembered across sessions.
   const FORMAT_COLLAPSED_KEY = 'wren.formatCollapsed';
   let formatCollapsed = false;
   try {
@@ -363,8 +363,8 @@ export function createNoteEditor({
   const formatToggle = document.createElement('button');
   formatToggle.type = 'button';
   formatToggle.className = 'sc-format-toggle';
-  formatToggle.title = 'Show or hide formatting';
-  formatToggle.setAttribute('aria-label', 'Show or hide formatting controls');
+  formatToggle.title = 'Show or hide the formatting bar';
+  formatToggle.setAttribute('aria-label', 'Show or hide the formatting bar');
   formatToggle.innerHTML =
     '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
   function applyFormatCollapsed() {
@@ -436,8 +436,10 @@ export function createNoteEditor({
     closeTagPopoverRef = closeTagPopover;
   }
 
-  // Left: format toggle + color swatches (both collapse). Right side differs by
-  // surface — the main app pins the Due control; a sticky stacks the Tags button
+  // Color swatches + Due/Tags live in the color row and stay visible; the
+  // formatting-bar toggle now lives at the head of the toolbar row (below), so
+  // collapsing the bar no longer hides the colors. Right side differs by
+  // surface: the main app pins the Due control; a sticky stacks the Tags button
   // above the Due control (CSS right-aligns the stack).
   if (sticky) {
     const stickyMeta = document.createElement('div');
@@ -446,9 +448,9 @@ export function createNoteEditor({
     tagsRow.className = 'sc-sticky-meta-tags';
     tagsRow.append(tagsBtn, tagPopover);
     stickyMeta.append(tagsRow, dueWrap);
-    colorRow.append(formatToggle, cardColor.element, stickyMeta);
+    colorRow.append(cardColor.element, stickyMeta);
   } else {
-    colorRow.append(formatToggle, cardColor.element, dueWrap);
+    colorRow.append(cardColor.element, dueWrap);
   }
 
   function updateDueControl() {
@@ -565,9 +567,15 @@ export function createNoteEditor({
     tagRow.append(tagEditor.element, savedHint);
   }
 
-  // Provenance ("Updated … by you") sits at the very bottom of the surface,
-  // below the editor body — out of the way of the title/tag/save controls.
-  surface.append(head, colorRow, tagRow, toolbarMount, bodyMount, provenanceEl);
+  // The formatting-bar toggle sits at the head of the toolbar row, next to the
+  // first formatting button, as its own outlined button. Collapsing hides only
+  // the formatting bar (.sc-toolbar); the colors and Due control stay put.
+  const toolbarRow = document.createElement('div');
+  toolbarRow.className = 'sc-toolbar-row';
+  toolbarRow.append(formatToggle, toolbarMount);
+  // Provenance ("Updated ... by you") sits at the very bottom of the surface,
+  // below the editor body, out of the way of the title/tag/save controls.
+  surface.append(head, colorRow, tagRow, toolbarRow, bodyMount, provenanceEl);
   root.append(placeholder, surface);
 
   // --- save scheduling ------------------------------------------------------
