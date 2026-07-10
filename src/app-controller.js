@@ -86,6 +86,7 @@ export function createApp({ root, enableServiceWorker = false }) {
   let noteEditor = null;
   let appEl = null;
   let installPrompt = null;
+  let flushOnHideBound = false;
   let currentScreen = null;
   let backendChipEl = null;
   let driveBannerEl = null;
@@ -794,6 +795,22 @@ export function createApp({ root, enableServiceWorker = false }) {
       onExpand: () => setViewMode(loadViewMode()),
     });
     main.append(noteEditor.element, kanbanView.element);
+
+    // Flush a pending debounced save when the window/tab is closing or hidden.
+    // Without this, typing and closing within the 500ms debounce silently drops
+    // the last edit. visibilitychange(hidden) fires while the page can still do
+    // work (more reliable than pagehide); pagehide is the last-chance backup.
+    // Registered once — the render function can run multiple times.
+    if (!flushOnHideBound) {
+      flushOnHideBound = true;
+      const flushOpen = () => {
+        if (noteEditor?.hasPendingSave?.()) noteEditor.flush();
+      };
+      window.addEventListener('pagehide', flushOpen);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') flushOpen();
+      });
+    }
 
     appEl.append(sidebar, main, compactView.element);
     root.append(appEl, buildFooter({ compact: true }));
@@ -1637,10 +1654,13 @@ export function createApp({ root, enableServiceWorker = false }) {
     await openNote(note.id, { focusTitle: true });
   }
 
+  // Returns true when the write reached disk, false on any failure. The editor
+  // (note-editor.doSave) relies on this boolean: a false result stops it from
+  // painting the "Updated … by you" provenance on a note that never saved.
   async function handleSave(note) {
     if (isDriveDisconnected()) {
       showDriveDisconnectedToast('Reconnect Drive to save changes.');
-      return;
+      return false;
     }
     // Bump modified at write time (mirrors legacy notes-store.writeNote).
     note.modified = new Date().toISOString();
@@ -1657,14 +1677,20 @@ export function createApp({ root, enableServiceWorker = false }) {
       note.firstLine = firstLineOf(note.body);
       await syncBackendFilename(note);
     } catch (err) {
-      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
-        showDriveDisconnected();
-        return;
+      // A revoked backend permission must route to the matching reconnect
+      // screen — Drive session expiry OR File System Access permission loss
+      // (the FS adapter now maps NotAllowedError/SecurityError to
+      // AdapterAuthError, which previously fell through to the silent branch).
+      if (err instanceof AdapterAuthError) {
+        if (adapter?.backendId() === ADAPTER_TYPES.DRIVE) showDriveDisconnected();
+        else renderFsReconnect(adapter);
+        return false;
       }
       // ConflictError is technically possible but Phase 2b.1 doesn't surface
-      // conflicts — last-write-wins per spec. Log and move on.
+      // conflicts — last-write-wins per spec. Log and report failure so the
+      // editor shows "Not saved" rather than a false success.
       console.error('Save failed', err);
-      return;
+      return false;
     }
     notes.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
     list.setNotes(notes);
@@ -1674,6 +1700,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     regenerateIndex();
     // Notify any open sticky/peer window holding this note (Sticky Phase 2).
     broadcast?.postNoteSaved(note);
+    return true;
   }
 
   /**

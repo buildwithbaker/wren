@@ -291,6 +291,8 @@ export function createStickyApp({ root }) {
     window.addEventListener('pagehide', onPageHide);
   }
 
+  // Returns true when the write reached disk, false on any failure — the editor
+  // (note-editor.doSave) uses this to avoid painting a false "saved" state.
   async function handleSave(note) {
     note.modified = new Date().toISOString();
     // A sticky edit is a human edit — stamp human provenance (mirrors the main
@@ -308,16 +310,60 @@ export function createStickyApp({ root }) {
       note.firstLine = firstLineOf(note.body);
     } catch (err) {
       if (err instanceof AdapterAuthError) {
-        if (adapter?.backendId() === ADAPTER_TYPES.DRIVE) renderDriveReconnect();
-        else renderGrantAccess(adapter);
-        return;
+        // Do NOT tear down the editor: it holds the text that just failed to
+        // save, and replaceChildren() would make it unrecoverable (the user
+        // can't even select-copy it). Show a non-destructive banner instead and
+        // leave the editor mounted. Full-screen reconnect cards are still used
+        // at boot (openNoteFlow), where there is no unsaved content at risk.
+        showSaveReconnectBanner(note);
+        return false;
       }
       console.error('Sticky save failed', err);
-      return;
+      return false;
     }
     applyWindowColor(note.color);
     setDocTitle(note.title);
     broadcast?.postNoteSaved(note);
+    return true;
+  }
+
+  // Non-destructive auth-failure banner for the SAVE path. Overlays the top of
+  // the sticky without removing the editor, so unsaved text is preserved and
+  // copyable while the user reconnects. (P0#3 fix.)
+  function showSaveReconnectBanner(note) {
+    if (root.querySelector('.sc-save-banner')) return;
+    const isDrive = adapter?.backendId() === ADAPTER_TYPES.DRIVE;
+    const banner = document.createElement('div');
+    banner.className = 'sc-save-banner';
+    banner.setAttribute('role', 'alert');
+    banner.style.cssText =
+      'background:#B82F2F;color:#fff;padding:8px 12px;font-size:13px;line-height:1.4;' +
+      'display:flex;gap:8px;align-items:center;justify-content:space-between;';
+    const msg = document.createElement('span');
+    msg.textContent = isDrive
+      ? 'Not saved — Drive session expired. Copy your text, then reopen Wren to reconnect.'
+      : 'Not saved — folder permission lost. Copy your text, then grant access.';
+    banner.appendChild(msg);
+    if (isDrive) {
+      banner.appendChild(buildOpenWrenLink());
+    } else {
+      const grant = document.createElement('button');
+      grant.className = 'sc-btn sc-btn--primary';
+      grant.textContent = 'Grant access';
+      grant.addEventListener('click', async () => {
+        try {
+          await adapter.reconnect();
+          banner.remove();
+          await handleSave(note); // retry now that permission is restored
+        } catch (e) {
+          if (e?.name !== 'AbortError' && !(e instanceof AdapterAuthError)) {
+            console.warn('Sticky grant failed', e);
+          }
+        }
+      });
+      banner.appendChild(grant);
+    }
+    root.prepend(banner);
   }
 
   // Re-read the note from the active adapter and re-open it in the editor. Used
@@ -361,6 +407,9 @@ export function createStickyApp({ root }) {
   }
 
   function onPageHide() {
+    // Best-effort flush of a pending debounced save before teardown, so closing
+    // the sticky within the 500ms debounce doesn't silently drop the last edit.
+    if (noteEditor?.hasPendingSave?.()) noteEditor.flush();
     if (geomTimer) clearInterval(geomTimer);
     geomTimer = null;
     persistGeometry();
