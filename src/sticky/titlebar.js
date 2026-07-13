@@ -30,6 +30,15 @@ function closeIconSvg() {
   );
 }
 
+// Minimize glyph (lucide "minus"). Inherits currentColor from the button.
+function minimizeIconSvg() {
+  return (
+    '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<line x1="5" y1="12" x2="19" y2="12"/></svg>'
+  );
+}
+
 // Pushpin glyph (lucide "pin"). Filled when the window is pinned on top.
 function pinIconSvg(on) {
   return (
@@ -49,6 +58,17 @@ async function setThisWindowOnTop(on) {
     await getCurrentWindow().setAlwaysOnTop(!!on);
   } catch (err) {
     console.warn('Sticky pin toggle failed', err);
+  }
+}
+
+// Minimize THIS pop-out window to the taskbar. Requires the
+// core:window:allow-minimize capability (added alongside allow-unminimize).
+async function minimizeThisWindow() {
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    await getCurrentWindow().minimize();
+  } catch (err) {
+    console.warn('Sticky minimize failed', err);
   }
 }
 
@@ -94,6 +114,14 @@ export function buildStickyTitleBar({ onClose } = {}) {
     setThisWindowOnTop(next);
   });
 
+  const min = document.createElement('button');
+  min.type = 'button';
+  min.className = 'sc-sticky-min';
+  min.title = 'Minimize';
+  min.setAttribute('aria-label', 'Minimize window');
+  min.innerHTML = minimizeIconSvg();
+  min.addEventListener('click', () => minimizeThisWindow());
+
   const close = document.createElement('button');
   close.type = 'button';
   close.className = 'sc-sticky-close';
@@ -102,6 +130,6 @@ export function buildStickyTitleBar({ onClose } = {}) {
   close.innerHTML = closeIconSvg();
   close.addEventListener('click', () => onClose && onClose());
 
-  bar.append(logo, pin, close);
+  bar.append(logo, pin, min, close);
   return bar;
 }

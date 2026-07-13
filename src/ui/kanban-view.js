@@ -206,11 +206,18 @@ export function createKanbanView({ getNotes, onNoteOpen, onMoveNote }) {
     columnsWrap.replaceChildren();
 
     if (!activeNs) {
-      const empty = document.createElement('div');
-      empty.className = 'sc-kanban-empty';
-      empty.textContent =
-        'No tags yet. Add a tag like "status:todo" to a note to see it organized into columns here.';
-      columnsWrap.appendChild(empty);
+      if (notes.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'sc-kanban-empty';
+        empty.textContent =
+          'No notes yet. Create a note, then tag it like "status:todo" to organize into columns.';
+        columnsWrap.appendChild(empty);
+        return;
+      }
+      // No namespaced tags exist yet — instead of a blank board, show every note
+      // in a single "Untagged" column so the board is immediately usable. Real
+      // value columns appear as soon as a note carries a namespace:value tag.
+      columnsWrap.appendChild(renderColumn('_untagged', notes, '_uncategorized'));
       return;
     }
 
