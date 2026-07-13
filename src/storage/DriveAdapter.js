@@ -180,12 +180,24 @@ export class DriveAdapter {
   }
 
   async _listFiles(qExpr, fields = 'files(id,name,modifiedTime,createdTime,headRevisionId,md5Checksum)') {
-    const url =
-      `${DRIVE_API}/files?q=${encodeURIComponent(qExpr)}` +
-      `&fields=${encodeURIComponent(fields)}&pageSize=1000`;
-    const resp = await this._driveFetch(url, { method: 'GET' });
-    const body = await resp.json();
-    return body.files || [];
+    // Page through the full result set. Drive caps a page at 1000 files and
+    // returns a nextPageToken when more remain; the previous single-page read
+    // silently dropped note 1,001+ from the app and the index. `nextPageToken`
+    // must be requested at the top level of `fields` or the API omits it.
+    const effFields = fields.includes('nextPageToken') ? fields : `nextPageToken,${fields}`;
+    const all = [];
+    let pageToken = '';
+    do {
+      const url =
+        `${DRIVE_API}/files?q=${encodeURIComponent(qExpr)}` +
+        `&fields=${encodeURIComponent(effFields)}&pageSize=1000` +
+        (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '');
+      const resp = await this._driveFetch(url, { method: 'GET' });
+      const body = await resp.json();
+      if (Array.isArray(body.files)) all.push(...body.files);
+      pageToken = body.nextPageToken || '';
+    } while (pageToken);
+    return all;
   }
 
   // ---- Inbox (_inbox/) subfolder bootstrap (AI phase 4) ----------------

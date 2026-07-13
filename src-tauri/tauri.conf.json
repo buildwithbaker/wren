@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; img-src 'self' data: blob: asset: https://asset.localhost; style-src 'self' 'unsafe-inline'; script-src 'self' https://accounts.google.com; connect-src 'self' ipc: http://ipc.localhost https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com; font-src 'self' data:; frame-src https://accounts.google.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
     }
   },
   "bundle": {

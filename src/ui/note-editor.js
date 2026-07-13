@@ -592,7 +592,17 @@ export function createNoteEditor({
     saveTimer = null;
     if (!note) return;
     const target = note;
-    await onSave?.(target);
+    // onSave returns true on a confirmed write, false on failure. (Legacy
+    // callers that return undefined are treated as success for back-compat.)
+    const result = await onSave?.(target);
+    if (result === false) {
+      // The write did NOT reach disk. Never paint the "Updated … by you"
+      // provenance for a failed save — that is the silent-data-loss bug. Show a
+      // persistent "Not saved" state instead and leave the note dirty so the
+      // next edit re-arms the debounce and retries.
+      if (note === target) setHint('Not saved — will retry on next edit');
+      return;
+    }
     // onSave (app-controller handleSave) stamped modified + human provenance on
     // the same note object; reflect it in the provenance panel. The transient
     // "Saving…" hint is cleared once saved — the "Updated … by you" provenance

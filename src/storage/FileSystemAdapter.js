@@ -175,14 +175,18 @@ export class FileSystemAdapter {
 
   async readNote(noteId) {
     this._assertReady();
-    const { dirHandle, name } = await this._resolveNoteLocation(noteId);
-    const fileHandle = await dirHandle.getFileHandle(name);
-    const file = await fileHandle.getFile();
-    const content = await file.text();
-    return {
-      content,
-      revision: String(file.lastModified),
-    };
+    try {
+      const { dirHandle, name } = await this._resolveNoteLocation(noteId);
+      const fileHandle = await dirHandle.getFileHandle(name);
+      const file = await fileHandle.getFile();
+      const content = await file.text();
+      return {
+        content,
+        revision: String(file.lastModified),
+      };
+    } catch (err) {
+      throw this._mapPermissionError(err);
+    }
   }
 
   /**
@@ -194,40 +198,48 @@ export class FileSystemAdapter {
   async writeNote(noteId, content, expectedRevision) {
     this._assertReady();
 
-    if (expectedRevision !== undefined) {
-      let currentRev = null;
-      try {
-        const existing = await this._dirHandle.getFileHandle(noteId);
-        const f = await existing.getFile();
-        currentRev = String(f.lastModified);
-      } catch {
-        // File doesn't exist yet — that's fine if caller passed an empty/zero
-        // expectedRevision (treat as "create"). Otherwise it's a conflict
-        // (someone deleted the file underneath us).
-        if (expectedRevision !== '' && expectedRevision !== '0') {
-          throw new ConflictError('File missing during conditional write', {
+    try {
+      if (expectedRevision !== undefined) {
+        let currentRev = null;
+        try {
+          const existing = await this._dirHandle.getFileHandle(noteId);
+          const f = await existing.getFile();
+          currentRev = String(f.lastModified);
+        } catch (probeErr) {
+          // A revoked-permission error here must still surface as an auth error,
+          // not be misread as "file missing" (which would drop into the
+          // create/conflict branch and ultimately display as a successful save).
+          if (FileSystemAdapter._isPermissionError(probeErr)) throw probeErr;
+          // File doesn't exist yet — that's fine if caller passed an empty/zero
+          // expectedRevision (treat as "create"). Otherwise it's a conflict
+          // (someone deleted the file underneath us).
+          if (expectedRevision !== '' && expectedRevision !== '0') {
+            throw new ConflictError('File missing during conditional write', {
+              localRevision: expectedRevision,
+              remoteRevision: 'deleted',
+            });
+          }
+        }
+        if (currentRev !== null && currentRev !== expectedRevision) {
+          throw new ConflictError('Revision mismatch during conditional write', {
             localRevision: expectedRevision,
-            remoteRevision: 'deleted',
+            remoteRevision: currentRev,
           });
         }
       }
-      if (currentRev !== null && currentRev !== expectedRevision) {
-        throw new ConflictError('Revision mismatch during conditional write', {
-          localRevision: expectedRevision,
-          remoteRevision: currentRev,
-        });
-      }
+
+      const fileHandle = await this._dirHandle.getFileHandle(noteId, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(content);
+      await writable.close();
+
+      // Re-stat to capture the mtime the OS just assigned. This is the new
+      // revision the caller should track.
+      const after = await fileHandle.getFile();
+      return { revision: String(after.lastModified) };
+    } catch (err) {
+      throw this._mapPermissionError(err);
     }
-
-    const fileHandle = await this._dirHandle.getFileHandle(noteId, { create: true });
-    const writable = await fileHandle.createWritable();
-    await writable.write(content);
-    await writable.close();
-
-    // Re-stat to capture the mtime the OS just assigned. This is the new
-    // revision the caller should track.
-    const after = await fileHandle.getFile();
-    return { revision: String(after.lastModified) };
   }
 
   async deleteNote(noteId) {
@@ -642,5 +654,28 @@ export class FileSystemAdapter {
         recoverable: true,
       });
     }
+  }
+
+  // Chrome drops File System Access permission on restart and can revoke it
+  // mid-session. The browser then throws a generic NotAllowedError/SecurityError
+  // DOMException — NOT an AdapterAuthError — so without this mapping a
+  // revoked-permission save fell through to the app's generic catch and
+  // displayed as a *successful* save (the P0 silent-data-loss bug). Detect it
+  // and re-type it so the reconnect/grant-access flow fires.
+  static _isPermissionError(err) {
+    return !!err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+  }
+
+  // Returns the error to throw: an AdapterAuthError for a revoked-permission
+  // DOMException, otherwise the original error unchanged (ConflictError,
+  // AdapterAuthError, and everything else pass straight through).
+  _mapPermissionError(err) {
+    if (FileSystemAdapter._isPermissionError(err)) {
+      return new AdapterAuthError('File System Access permission was revoked.', {
+        backendId: this.backendId(),
+        recoverable: true,
+      });
+    }
+    return err;
   }
 }
