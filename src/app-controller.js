@@ -737,7 +737,13 @@ export function createApp({ root, enableServiceWorker = false }) {
     sidebar.appendChild(headRow);
 
     list = createNotesList({
-      onSelect: (noteId) => openNote(noteId),
+      // In Kanban the editor panel is hidden behind the board, so opening a note
+      // from the sidebar there looked like "nothing happened". Switch to List
+      // first (mirrors the Kanban card click at onNoteOpen), then open it.
+      onSelect: (noteId) => {
+        if (effectiveViewMode() === 'kanban') setViewMode('list');
+        openNote(noteId);
+      },
       // In Kanban the editor is hidden, so opening a new note there looked like
       // "nothing happened". Route Kanban's New note through the pop-out path
       // (desktop) / list fallback (browser); List mode keeps the normal open.
@@ -2111,13 +2117,16 @@ export function createApp({ root, enableServiceWorker = false }) {
     linksWrap.className = 'sc-footer-links';
     const SITE = 'https://wren.buildwithbaker.io';
     const desktop = isTauri();
+    // Running build number, injected from tauri.conf.json by Vite (__APP_VERSION__).
+    // Guarded typeof read so a bundle without the define doesn't throw.
+    const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '';
     const links = [
       // In the desktop app the "Download" link is pointless (you already have
       // it). Show a static, non-clickable "Desktop version" indicator instead,
       // with an info tooltip on hover. PWA/extension keep the real Download link.
       desktop
         ? {
-            label: 'Desktop version',
+            label: appVersion ? `Desktop v${appVersion}` : 'Desktop version',
             static: true,
             title:
               'You’re running the Wren desktop app for Windows. The web, extension, and desktop versions all share the same notes.',

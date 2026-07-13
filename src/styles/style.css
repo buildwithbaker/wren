@@ -1334,6 +1334,17 @@ button {
 .sc-btn--ghost:hover {
   background: var(--wr-border);
 }
+/* Disabled ghost button (e.g. Kanban "+ New Tag" before any tag namespace
+   exists): dim it and block the pointer so it doesn't read as clickable. */
+.sc-btn--ghost:disabled,
+.sc-btn--ghost[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.sc-btn--ghost:disabled:hover,
+.sc-btn--ghost[disabled]:hover {
+  background: var(--wr-field-bg);
+}
 .sc-btn--danger {
   background: #c0392b;
   color: #fff;
@@ -2405,6 +2416,27 @@ body.is-sticky.has-sticky-titlebar #app {
 .sc-sticky-close:hover {
   background: rgba(0, 0, 0, 0.12);
 }
+/* Minimize button — same footprint as close; sits just left of it in the
+   pop-out title bar's right cluster (pin · minimize · close). */
+.sc-sticky-min {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--wr-ink);
+  opacity: 0.8;
+  cursor: pointer;
+  transition: background var(--wr-trans), opacity var(--wr-trans);
+}
+.sc-sticky-min:hover {
+  background: rgba(0, 0, 0, 0.12);
+  opacity: 1;
+}
 /* Per-window pin toggle in the pop-out title bar. margin-left:auto groups the
    pin + close together on the right, with the Wren logo pinned left. */
 .sc-sticky-pin {
@@ -2447,6 +2479,12 @@ body.is-sticky .sc-title-input {
 }
 body.is-sticky .sc-editor-colorrow {
   padding: 0 10px 8px;
+  /* Narrow sticky window (~380px): the color swatches + the right-aligned
+     Tags/Due meta stack don't fit on one row and the meta got clipped off the
+     right edge. Allow the row to wrap so the meta drops below the swatches
+     instead of overflowing. */
+  flex-wrap: wrap;
+  row-gap: 8px;
 }
 
 /* Fallback screens inside a sticky (grant access / Drive reconnect / not
