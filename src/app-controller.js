@@ -48,6 +48,7 @@ import { setupDesktopIntegration, maybeNotifyDueNotes } from './desktop.js';
 import { openShortcutsDialog } from './ui/desktop-panel.js';
 import { openArchiveDialog } from './ui/archive-panel.js';
 import { confirmDialog } from './ui/dialog.js';
+import { isModalOpen } from './ui/focus-trap.js';
 import { addTagToNote, parseTag, getAllTags, getAllNamespaces } from './tags/tag-parser.js';
 import { getStoredTheme, cycleTheme, initTheme } from './theme.js';
 import { getSyncState, setSyncState, clearSyncState } from './sync/syncStateStore.js';
@@ -124,6 +125,9 @@ export function createApp({ root, enableServiceWorker = false }) {
   // no tabs so the override is harmless. Documented as a known caveat.
   window.addEventListener('keydown', (e) => {
     if (!kanbanView) return;
+    // Stand down while a modal is open — the view switch must not fire
+    // "underneath" a dialog/panel (audit U10).
+    if (isModalOpen()) return;
     if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
     if (e.key === '1') {
       e.preventDefault();
@@ -2283,6 +2287,20 @@ export function createApp({ root, enableServiceWorker = false }) {
     }
 
     document.body.appendChild(pop);
+
+    // Clamp to the viewport now that the popover has a measurable size — anchored
+    // at rect.left it was cut off ~74px on the right at a 400px popup width
+    // (audit U16). Nudge left so the right edge stays on-screen, and flip above
+    // the chip if it would overflow the bottom.
+    {
+      const w = pop.offsetWidth;
+      const h = pop.offsetHeight;
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - w - 8));
+      pop.style.left = `${left}px`;
+      if (rect.bottom + 6 + h > window.innerHeight - 8) {
+        pop.style.top = `${Math.max(8, rect.top - h - 6)}px`;
+      }
+    }
 
     // Dismiss on outside click / Escape.
     const dismiss = (ev) => {

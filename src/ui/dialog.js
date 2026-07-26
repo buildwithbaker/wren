@@ -1,5 +1,7 @@
 // dialog.js - minimal accessible confirm modal. Returns a Promise<boolean>.
 
+import { lockPageExcept } from './focus-trap.js';
+
 export function confirmDialog({ title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = false }) {
   return new Promise((resolve) => {
     // Remember what had focus so we can restore it on close (WCAG SC 2.4.3).
@@ -37,10 +39,13 @@ export function confirmDialog({ title, message, confirmLabel = 'Confirm', cancel
     modal.append(h, p, actions);
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
+    // Trap focus: make the rest of the page inert so Tab can't escape the modal.
+    const unlockPage = lockPageExcept(overlay);
     confirm.focus();
 
     function cleanup(result) {
       document.removeEventListener('keydown', onKey);
+      unlockPage();
       overlay.remove();
       if (lastFocused && typeof lastFocused.focus === 'function') {
         try {

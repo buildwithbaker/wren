@@ -18,6 +18,21 @@ import { dueStatus, normalizeDue } from '@/due.js';
 const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
 const SAVE_DELAY = 500;
 
+// Position a (position:fixed) dropdown just under its trigger, right edges
+// aligned, flipping ABOVE the trigger when it would overflow the viewport
+// bottom. Fixed positioning escapes the editor surface's overflow:hidden clip,
+// so items are never cut off in a short window (audit U11). Call after the menu
+// is visible (offsetHeight must be measurable).
+function positionDropdown(menuEl, triggerEl) {
+  const r = triggerEl.getBoundingClientRect();
+  menuEl.style.left = 'auto';
+  menuEl.style.right = `${Math.max(8, window.innerWidth - r.right)}px`;
+  const h = menuEl.offsetHeight;
+  const below = r.bottom + 4;
+  menuEl.style.top =
+    below + h <= window.innerHeight - 8 ? `${below}px` : `${Math.max(8, r.top - h - 4)}px`;
+}
+
 export function createNoteEditor({
   onSave,
   onDelete,
@@ -230,15 +245,22 @@ export function createNoteEditor({
   function openMore() {
     syncMoreItems();
     moreMenu.hidden = false;
+    positionDropdown(moreMenu, moreBtn);
     moreBtn.setAttribute('aria-expanded', 'true');
     document.addEventListener('click', onDocClickForMore, true);
     document.addEventListener('keydown', onKeyForMore, true);
+    // A fixed menu doesn't track its trigger on scroll/resize — close it so it
+    // never drifts away from the ⋯ button.
+    window.addEventListener('scroll', closeMore, true);
+    window.addEventListener('resize', closeMore);
   }
   function closeMore() {
     moreMenu.hidden = true;
     moreBtn.setAttribute('aria-expanded', 'false');
     document.removeEventListener('click', onDocClickForMore, true);
     document.removeEventListener('keydown', onKeyForMore, true);
+    window.removeEventListener('scroll', closeMore, true);
+    window.removeEventListener('resize', closeMore);
   }
   moreBtn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -421,15 +443,20 @@ export function createNoteEditor({
       tagsBtn.setAttribute('aria-expanded', 'false');
       document.removeEventListener('click', onDocClickForTags, true);
       document.removeEventListener('keydown', onKeyForTags, true);
+      window.removeEventListener('scroll', closeTagPopover, true);
+      window.removeEventListener('resize', closeTagPopover);
     }
     tagsBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (tagPopover.hidden) {
         if (note?.hideTags) return; // nothing to manage while tags are hidden
         tagPopover.hidden = false;
+        positionDropdown(tagPopover, tagsBtn);
         tagsBtn.setAttribute('aria-expanded', 'true');
         document.addEventListener('click', onDocClickForTags, true);
         document.addEventListener('keydown', onKeyForTags, true);
+        window.addEventListener('scroll', closeTagPopover, true);
+        window.addEventListener('resize', closeTagPopover);
       } else {
         closeTagPopover();
       }

@@ -7,6 +7,7 @@
 // "desktop app only".
 
 import { humanizeHotkey, getHotkey, DEFAULT_HOTKEYS } from '../desktop.js';
+import { lockPageExcept } from './focus-trap.js';
 
 // The in-app shortcuts, documented here and mirrored on public/guide.html.
 const IN_APP_SHORTCUTS = [
@@ -49,6 +50,8 @@ export function openShortcutsDialog({ desktop = null } = {}) {
   const enabled = !!(desktop && desktop.enabled);
   // Remember what had focus so we can restore it on close (WCAG SC 2.4.3).
   const lastFocused = document.activeElement;
+  // Rebind rows whose in-progress capture must be stopped on close (audit U16).
+  const rebindRows = [];
   const overlay = document.createElement('div');
   overlay.className = 'sc-overlay';
 
@@ -122,8 +125,11 @@ export function openShortcutsDialog({ desktop = null } = {}) {
     // Rebindable global hotkeys.
     const rebindWrap = document.createElement('div');
     rebindWrap.className = 'sc-help-rebinds';
-    rebindWrap.appendChild(buildRebind('newNote', 'New note', desktop));
-    rebindWrap.appendChild(buildRebind('toggle', 'Show / hide', desktop));
+    for (const [which, label] of [['newNote', 'New note'], ['toggle', 'Show / hide']]) {
+      const row = buildRebind(which, label, desktop);
+      rebindRows.push(row);
+      rebindWrap.appendChild(row.element);
+    }
     modal.appendChild(rebindWrap);
 
     // Soft-failure warnings (combo owned by another app).
@@ -147,10 +153,15 @@ export function openShortcutsDialog({ desktop = null } = {}) {
 
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
+  const unlockPage = lockPageExcept(overlay);
   close.focus();
 
   function cleanup() {
     document.removeEventListener('keydown', onKey);
+    // End any in-progress hotkey capture so its document-level capture listener
+    // doesn't outlive the dialog and swallow keystrokes (audit U16).
+    for (const row of rebindRows) row.stopCapture();
+    unlockPage();
     overlay.remove();
     if (lastFocused && typeof lastFocused.focus === 'function') {
       try {
@@ -228,7 +239,10 @@ function buildRebind(which, label, desktop) {
   });
 
   wrap.append(name, combo, btn);
-  return wrap;
+  // Expose stopCapture so the modal's cleanup() can end an in-progress "Press
+  // keys…" capture — otherwise closing mid-capture leaves a document-level
+  // capture keydown listener swallowing every keystroke (audit U16).
+  return { element: wrap, stopCapture };
 }
 
 // Build a Tauri accelerator string from a keydown event. Requires at least one

@@ -675,12 +675,11 @@ button {
   margin-right: 6px;
 }
 .sc-editor-more-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  /* Anchor the menu's right edge to the trigger so it opens leftward into the
-     window. left:0 pushed a 230px menu past the right window edge and clipped
-     "Pop out into its own window". */
-  right: 0;
+  /* Fixed so it escapes the editor surface's overflow:hidden clip — an absolute
+     menu was cut off at the bottom in a short window (audit U11). JS
+     (positionDropdown) sets top/right from the trigger and flips it up when it
+     would overflow the viewport bottom. */
+  position: fixed;
   z-index: 50;
   min-width: 230px;
   max-width: min(320px, calc(100vw - 24px));
@@ -807,9 +806,9 @@ button {
   opacity: 1;
 }
 .sc-tags-popover {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
+  /* Fixed for the same reason as .sc-editor-more-menu — escapes the surface clip;
+     positionDropdown sets top/right and flips up as needed (audit U11). */
+  position: fixed;
   z-index: 50;
   min-width: 220px;
   max-width: min(280px, calc(100vw - 24px));
