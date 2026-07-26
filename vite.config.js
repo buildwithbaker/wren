@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -30,6 +30,29 @@ function coopHeadersPlugin() {
   };
 }
 
+// public/sw.js is copied verbatim by Vite, so its cache name can't use the
+// __APP_VERSION__ define (that only rewrites bundled JS). Instead the source
+// carries a __SW_VERSION__ placeholder that this plugin rewrites in the emitted
+// dist/sw.js after the bundle is written — tying the SW cache name to the build
+// version so every release purges the previous install's cache automatically.
+function stampServiceWorkerVersion(version) {
+  return {
+    name: 'wren-sw-version',
+    apply: 'build',
+    closeBundle() {
+      const swPath = resolve(__dirname, 'dist/sw.js');
+      let src;
+      try {
+        src = readFileSync(swPath, 'utf8');
+      } catch {
+        return; // no sw.js emitted — nothing to stamp
+      }
+      if (!src.includes('__SW_VERSION__')) return;
+      writeFileSync(swPath, src.replaceAll('__SW_VERSION__', version));
+    },
+  };
+}
+
 // PWA build. Outputs the deployable app shell to dist/.
 export default defineConfig({
   root: __dirname,
@@ -43,7 +66,7 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(APP_VERSION),
   },
-  plugins: [coopHeadersPlugin()],
+  plugins: [coopHeadersPlugin(), stampServiceWorkerVersion(APP_VERSION)],
   // When running inside `tauri dev`, Vite watches the project root. Without this
   // ignore it tries to watch src-tauri/target/*.dll while cargo is writing them
   // and crashes with EBUSY on Windows. Harmless for plain `npm run dev`.
