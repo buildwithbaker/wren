@@ -52,8 +52,16 @@ export function confirmDialog({ title, message, confirmLabel = 'Confirm', cancel
       resolve(result);
     }
     function onKey(e) {
-      if (e.key === 'Escape') cleanup(false);
-      else if (e.key === 'Enter') cleanup(true);
+      if (e.key === 'Escape') {
+        cleanup(false);
+      } else if (e.key === 'Enter') {
+        // Enter must respect which control is focused. With the Cancel button
+        // focused, Enter cancels (matching native button activation) — otherwise
+        // a focused Cancel + Enter would confirm a destructive delete. Confirm
+        // is focused by default, so the common case still confirms on Enter.
+        e.preventDefault();
+        cleanup(document.activeElement === cancel ? false : true);
+      }
     }
     cancel.addEventListener('click', () => cleanup(false));
     confirm.addEventListener('click', () => cleanup(true));

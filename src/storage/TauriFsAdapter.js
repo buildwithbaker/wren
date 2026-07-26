@@ -250,12 +250,34 @@ export class TauriFsAdapter {
 
   async deleteNote(noteId) {
     this._assertReady();
-    const abs = this._pathForId(noteId);
     const { remove, exists } = await fsApi();
-    // For subfolder-scoped ids, a missing subfolder/file is a no-op (the file is
-    // already gone) — matching FileSystemAdapter.
-    if ((isInboxId(noteId) || isArchiveId(noteId)) && !(await exists(abs))) return;
-    await remove(abs);
+    if (isInboxId(noteId) || isArchiveId(noteId)) {
+      const abs = this._pathForId(noteId);
+      // For subfolder-scoped ids, a missing subfolder/file is a no-op (the file
+      // is already gone) — matching FileSystemAdapter.
+      if (!(await exists(abs))) return;
+      await remove(abs);
+      return;
+    }
+    // Top-level note: SOFT-delete into .trash/ (recoverable) rather than hard-
+    // removing, mirroring FileSystemAdapter so a mis-fired confirm doesn't
+    // permanently destroy the note.
+    assertBareName(noteId, 'note id');
+    await this._moveToTrash(joinPath(this._base, noteId), noteId);
+  }
+
+  /**
+   * Move an absolute file path into the notes-folder `.trash/` subfolder
+   * (created on demand), preserving content, with a " (N)" collision suffix.
+   * Returns the new `.trash/<name>` id.
+   */
+  async _moveToTrash(srcAbs, name) {
+    const { mkdir, exists } = await fsApi();
+    const trashAbs = joinPath(this._base, TRASH_DIR);
+    if (!(await exists(trashAbs))) await mkdir(trashAbs, { recursive: true });
+    const destName = await uniqueNoteName(name, (n) => this._existsAbs(joinPath(trashAbs, n)));
+    await this._moveFile(srcAbs, joinPath(trashAbs, destName));
+    return `${TRASH_DIR}/${destName}`;
   }
 
   /**
@@ -393,18 +415,12 @@ export class TauriFsAdapter {
     if (!isInboxId(noteId)) {
       throw new Error(`discardInboxNote requires an _inbox/ id, got "${noteId}"`);
     }
-    const { mkdir, exists } = await fsApi();
+    const { exists } = await fsApi();
     const inboxAbs = joinPath(this._base, INBOX_DIR);
     if (!(await exists(inboxAbs))) throw new Error('_inbox/ subfolder not found');
     const baseName = inboxBaseName(noteId);
     assertBareName(baseName, 'inbox note id');
-    const trashAbs = joinPath(this._base, TRASH_DIR);
-    if (!(await exists(trashAbs))) await mkdir(trashAbs, { recursive: true });
-    const destName = await uniqueNoteName(baseName, (name) =>
-      this._existsAbs(joinPath(trashAbs, name))
-    );
-    await this._moveFile(joinPath(inboxAbs, baseName), joinPath(trashAbs, destName));
-    return { id: `${TRASH_DIR}/${destName}` };
+    return { id: await this._moveToTrash(joinPath(inboxAbs, baseName), baseName) };
   }
 
   // ---- Archive (_archive/) — Note Lifecycle B ---------------------------

@@ -276,7 +276,37 @@ export class FileSystemAdapter {
       await archiveDir.removeEntry(archiveBaseName(noteId));
       return;
     }
-    await this._dirHandle.removeEntry(noteId);
+    // Top-level note: SOFT-delete into .trash/ (recoverable by a manual file
+    // move) rather than hard-removing. The main-app delete used to call
+    // removeEntry directly, so a mis-fired confirm permanently destroyed the
+    // note; now it's recoverable.
+    await this._moveToTrash(this._dirHandle, noteId);
+  }
+
+  /**
+   * Move a file from `srcDirHandle` into the notes-folder `.trash/` subfolder
+   * (created on demand), preserving content. Collisions get a " (N)" suffix.
+   * Write-new-then-delete-old, so a mid-failure never loses the file. Returns
+   * the new `.trash/<name>` id.
+   */
+  async _moveToTrash(srcDirHandle, name) {
+    const srcHandle = await srcDirHandle.getFileHandle(name);
+    const content = await (await srcHandle.getFile()).text();
+    const trashDir = await this._dirHandle.getDirectoryHandle(TRASH_DIR, { create: true });
+    const destName = await uniqueNoteName(name, async (n) => {
+      try {
+        await trashDir.getFileHandle(n);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    const destHandle = await trashDir.getFileHandle(destName, { create: true });
+    const writable = await destHandle.createWritable();
+    await writable.write(content);
+    await writable.close();
+    await srcDirHandle.removeEntry(name);
+    return `${TRASH_DIR}/${destName}`;
   }
 
   // ---- Inbox (_inbox/) — AI write-back staging (phase 4) ----------------
@@ -410,26 +440,7 @@ export class FileSystemAdapter {
     }
     const inboxDir = await this._getInboxDirHandle({ create: false });
     if (!inboxDir) throw new Error('_inbox/ subfolder not found');
-    const baseName = inboxBaseName(noteId);
-    const srcHandle = await inboxDir.getFileHandle(baseName);
-    const content = await (await srcHandle.getFile()).text();
-
-    const trashDir = await this._dirHandle.getDirectoryHandle(TRASH_DIR, { create: true });
-    const destName = await uniqueNoteName(baseName, async (name) => {
-      try {
-        await trashDir.getFileHandle(name);
-        return true;
-      } catch {
-        return false;
-      }
-    });
-    const destHandle = await trashDir.getFileHandle(destName, { create: true });
-    const writable = await destHandle.createWritable();
-    await writable.write(content);
-    await writable.close();
-    await inboxDir.removeEntry(baseName);
-
-    return { id: `${TRASH_DIR}/${destName}` };
+    return { id: await this._moveToTrash(inboxDir, inboxBaseName(noteId)) };
   }
 
   // ---- Archive (_archive/) — Note Lifecycle B -------------------------------

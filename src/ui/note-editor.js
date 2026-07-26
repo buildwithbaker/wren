@@ -267,7 +267,7 @@ export function createNoteEditor({
     if (!note) return;
     const ok = await confirmDialog({
       title: 'Delete note?',
-      message: `"${note.title || 'Untitled'}" will be permanently deleted from your notes folder. This cannot be undone.`,
+      message: `"${note.title || 'Untitled'}" will be moved to Trash — a .trash folder in your notes folder (or Drive's trash) — so you can restore it later.`,
       confirmLabel: 'Delete',
       danger: true,
     });
