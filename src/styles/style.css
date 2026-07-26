@@ -202,6 +202,26 @@ button {
   min-height: 0;
 }
 
+/* Explicit rows for the CONTENT grid (renderApp sets data-view; the onboarding
+   screenShell .sc-app does NOT, so it's untouched). Without this the optional
+   Drive banner / sticky restore bar landed in an auto row that split the window
+   roughly in half (audit U3). Fixed slots: banner=row1, restore=row2 (empty
+   slots collapse to 0), and the sidebar/main/compact content fills row3. */
+.sc-app[data-view] {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+.sc-app[data-view] > .sc-drive-banner {
+  grid-row: 1;
+}
+.sc-app[data-view] > .sc-restore-bar {
+  grid-row: 2;
+}
+.sc-app[data-view] > .sc-sidebar,
+.sc-app[data-view] > .sc-main,
+.sc-app[data-view] > .sc-compact {
+  grid-row: 3;
+}
+
 .sc-sidebar {
   background: var(--wr-panel-bg);
   border-right: 1px solid var(--wr-border);
@@ -797,6 +817,12 @@ button {
   gap: 12px;
   padding: 2px 14px 10px;
   background: var(--wr-note-header-tint);
+  /* Let the right-aligned Due control drop to its own line instead of clipping
+     off the right edge at awkward mid widths (641–695px) — mirrors the sticky
+     variant's wrap (audit U5). margin-left:auto still right-aligns it when it
+     wraps. */
+  flex-wrap: wrap;
+  row-gap: 8px;
 }
 /* Due control pinned to the far right of the color row. */
 .sc-editor-colorrow .sc-due-control {
@@ -2102,12 +2128,18 @@ button {
   font-style: italic;
 }
 
-/* Below 640px width (extension popup), hide the whole sidebar header — the
-   view toggle and the Compact/pin group — and force list view. */
+/* Below 640px a view switcher MUST stay reachable — display:none-ing all three
+   (the List|Kanban toggle and the Compact button) trapped the user in whatever
+   mode they were in, with no way back to List (audit U1/U2). The toggle stays in
+   the sidebar head (visible whenever the list panel shows) and the Compact
+   button stays in the footer; the head is just centered/divided so it reads as
+   intentional at narrow width. */
 @media (max-width: 640px) {
-  .sc-sidebar-head { display: none; }
-  .sc-viewtoggle { display: none; }
-  .sc-footer .sc-compact-btn { display: none; }
+  .sc-sidebar-head {
+    justify-content: center;
+    padding: 8px;
+    border-bottom: 1px solid var(--wr-border);
+  }
 }
 
 /* --- A11y/contrast fixes (Test Master 2026-05-30) --- */

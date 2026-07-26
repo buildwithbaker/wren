@@ -853,7 +853,10 @@ export function createApp({ root, enableServiceWorker = false }) {
     // full mode (loadViewMode → list|kanban) and then take the normal path.
     compactView = createCompactView({
       onSelect: (id) => {
-        setViewMode(loadViewMode());
+        // Leaving Compact to open a note: restore the full mode, but never land
+        // in Kanban — its editor is hidden, so the note would open invisibly
+        // (audit U1/U2). Fall back to List, mirroring the sidebar/new-note guards.
+        setViewMode(loadViewMode() === 'kanban' ? 'list' : loadViewMode());
         openNote(id);
       },
       // Desktop: pop a fresh sticky out right here (stay in Compact). Browser:
@@ -1366,6 +1369,9 @@ export function createApp({ root, enableServiceWorker = false }) {
         revision: '',
         readOnly: true,
       };
+      // In Kanban the editor is hidden behind the board, so open would look like
+      // "nothing happened" — switch to List first (mirrors the sidebar guard).
+      if (effectiveViewMode() === 'kanban') setViewMode('list');
       await noteEditor.openNote(fresh, { readOnly: true, readOnlyLabel: 'Archived · read-only' });
       list.setActive(archiveId);
       appEl.dataset.view = 'editor';
@@ -1429,6 +1435,9 @@ export function createApp({ root, enableServiceWorker = false }) {
         revision: '',
         readOnly: true,
       };
+      // In Kanban the editor is hidden behind the board, so open would look like
+      // "nothing happened" — switch to List first (mirrors the sidebar guard).
+      if (effectiveViewMode() === 'kanban') setViewMode('list');
       await noteEditor.openNote(fresh, { readOnly: true, readOnlyLabel: 'Staged · read-only' });
       list.setActive(inboxId);
       appEl.dataset.view = 'editor';
@@ -1720,8 +1729,11 @@ export function createApp({ root, enableServiceWorker = false }) {
       if (from === 'kanban' && effectiveViewMode() === 'kanban') kanbanView.refresh();
       return;
     }
-    // Browser fallback: surface the note in the full editor.
-    setViewMode(from === 'compact' ? loadViewMode() : 'list');
+    // Browser fallback: surface the note in the full editor. Never land in
+    // Kanban (its editor is hidden → the new note would open invisibly); fall
+    // back to List.
+    const restore = from === 'compact' ? loadViewMode() : 'list';
+    setViewMode(restore === 'kanban' ? 'list' : restore);
     await openNote(note.id, { focusTitle: true });
   }
 

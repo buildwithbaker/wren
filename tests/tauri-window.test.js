@@ -8,6 +8,7 @@ import {
   WINDOW_PRESETS,
   WINDOW_LS_KEYS,
   WINDOW_PINNED_KEY,
+  MIN_EXPANDED_WIDTH,
   slotForView,
   resolveWindowSize,
   readRememberedSize,
@@ -53,6 +54,13 @@ describe('resolveWindowSize', () => {
   it('does not return the same object reference as the preset (no mutation risk)', () => {
     const r = resolveWindowSize('compact', null);
     expect(r).not.toBe(WINDOW_PRESETS.compact);
+  });
+  it('clamps a too-narrow remembered EXPANDED width up to the minimum (audit U1/U2)', () => {
+    expect(resolveWindowSize('expanded', { w: 500, h: 820 })).toEqual({ w: MIN_EXPANDED_WIDTH, h: 820 });
+    // A wide-enough remembered width is preserved.
+    expect(resolveWindowSize('expanded', { w: 1000, h: 820 })).toEqual({ w: 1000, h: 820 });
+    // Compact is exempt — its small remembered width is kept.
+    expect(resolveWindowSize('compact', { w: 380, h: 780 })).toEqual({ w: 380, h: 780 });
   });
 });
 

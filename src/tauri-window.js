@@ -29,6 +29,12 @@ export const WINDOW_LS_KEYS = {
 // localStorage key for the whole-window always-on-top ("pin") flag.
 export const WINDOW_PINNED_KEY = 'wren.win.pinned';
 
+// Minimum width to restore an EXPANDED window at. A remembered width below this
+// (the user dragged the full app very narrow once) would reopen with the
+// two-panel UI — view switcher, sidebar — unusably cramped or clipped, trapping
+// them (audit U1/U2). Compact keeps its own small preset and is exempt.
+export const MIN_EXPANDED_WIDTH = 700;
+
 // Map any view identifier ('list' | 'kanban' | 'compact') to a window slot.
 // Only Compact is small; every full mode shares the expanded slot.
 export function slotForView(view) {
@@ -55,7 +61,11 @@ function isValidSize(size) {
  */
 export function resolveWindowSize(slot, remembered) {
   if (isValidSize(remembered)) {
-    return { w: Math.round(remembered.w), h: Math.round(remembered.h) };
+    const w = Math.round(remembered.w);
+    const h = Math.round(remembered.h);
+    // Clamp the expanded slot up to MIN_EXPANDED_WIDTH so a too-narrow remembered
+    // size can't reopen the full app in an unusable width.
+    return { w: slot === 'expanded' ? Math.max(w, MIN_EXPANDED_WIDTH) : w, h };
   }
   const preset = WINDOW_PRESETS[slot] || WINDOW_PRESETS.expanded;
   return { ...preset };
