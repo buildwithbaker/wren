@@ -1941,6 +1941,12 @@ button {
   color: var(--wr-brown);
 }
 .sc-open-full-app svg { width: 11px; height: 11px; }
+/* Reserve room on the right of the brand header for the fixed "Open Full App"
+   pill so it stops overlapping the backend chip at popup width (audit U18). */
+body.has-open-full-app .sc-brand {
+  /* Pill footprint measured at 117px from the right edge; clear it with a gap. */
+  padding-right: 124px;
+}
 
 /* =========================================================================
    Sidebar tag filter (Phase B of Kanban SOW)

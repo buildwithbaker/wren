@@ -259,6 +259,9 @@ export function createApp({ root, enableServiceWorker = false }) {
     a.setAttribute('aria-label', 'Open Wren in a full browser tab');
     a.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg><span>Open Full App</span>`;
     document.body.appendChild(a);
+    // Marker so the brand header can reserve room for this fixed pill instead of
+    // letting it overlap the backend chip at popup width (audit U18).
+    document.body.classList.add('has-open-full-app');
   }
 
   // Inline "Open Full App" affordance for screens that would otherwise offer
@@ -814,7 +817,11 @@ export function createApp({ root, enableServiceWorker = false }) {
       // (desktop) / list fallback (browser); List mode keeps the normal open.
       onNew: () =>
         effectiveViewMode() === 'kanban' ? handleNewPopOut({ from: 'kanban' }) : handleNew(),
-      onPopOut: (noteId) => handlePopOut(noteId),
+      // No pop-out from the extension popup: it can only open another popup.html
+      // in a tiny 320×360 window (chrome-extension://…?note=), which just kills
+      // the popup rather than floating a sticky (audit E1). Omitting the handler
+      // hides the affordance (notes-list guards on `if (onPopOut)`).
+      onPopOut: isExtensionPopup() ? undefined : (noteId) => handlePopOut(noteId),
       onArchive: (noteId) => handleArchive(noteId),
       onArchiveOpen: () => openArchiveView(),
       onInboxSelect: (id) => openInboxNote(id),
@@ -835,7 +842,9 @@ export function createApp({ root, enableServiceWorker = false }) {
         appEl.dataset.view = 'list';
         list.setActive(null);
       },
-      onPopOut: (note) => handlePopOut(note),
+      // Hidden in the extension popup for the same reason as the sidebar
+      // affordance above (audit E1); note-editor guards on `if (onPopOut)`.
+      onPopOut: isExtensionPopup() ? undefined : (note) => handlePopOut(note),
       // Desktop only: "Check for updates" compares the running version against
       // the latest GitHub Release and prompts to download when behind. In the
       // browser PWA/extension the app auto-updates, so no handler is passed and
