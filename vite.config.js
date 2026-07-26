@@ -5,12 +5,12 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// The shipped desktop version, sourced from tauri.conf.json (the value baked
-// into the built app and matched by the vX.Y.Z release tags). Exposed to the
-// app as __APP_VERSION__ for the "Check for updates" comparison. Keep
-// tauri.conf.json / package.json / manifest.json aligned on release.
+// The shipped version, single-sourced from package.json (scripts/sync-version.mjs
+// keeps tauri.conf.json / Cargo.toml / the extension manifest aligned and fails
+// the build on drift). Exposed to the app as __APP_VERSION__ for the "Check for
+// updates" comparison and stamped into the service-worker cache name.
 const APP_VERSION = JSON.parse(
-  readFileSync(resolve(__dirname, 'src-tauri/tauri.conf.json'), 'utf8')
+  readFileSync(resolve(__dirname, 'package.json'), 'utf8')
 ).version;
 
 // Inject Cross-Origin-Opener-Policy on dev-server responses so the GIS OAuth

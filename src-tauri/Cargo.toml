@@ -1,6 +1,6 @@
 [package]
 name = "wren"
-version = "0.1.0"
+version = "1.2.4"
 description = "Wren desktop shell (Tauri v2)"
 authors = ["Adam Baker / Build with Baker"]
 license = "MIT"
