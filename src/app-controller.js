@@ -16,6 +16,7 @@ import {
   exportNoteDownload,
   buildNoteFilename,
   getStoredDirHandle,
+  isStoragePersisted,
 } from './notes-store.js';
 import {
   ADAPTER_TYPES,
@@ -356,18 +357,21 @@ export function createApp({ root, enableServiceWorker = false }) {
         return;
       }
       // Not ready (FileSystemAdapter only — the native adapter is always ready
-      // after initialize, having auto-created its folder). Distinguish a
-      // brand-new install (no saved directory handle → local default with
-      // nothing chosen yet) from an existing FS user whose folder permission
-      // lapsed. The former lands on the storage-choice onboarding (local
-      // primary, Drive experimental); the latter reconnects.
-      let hasHandle = false;
+      // after initialize, having auto-created its folder). Distinguish THREE
+      // cases:
+      //   - handle present → existing FS user whose permission lapsed → reconnect
+      //   - handle genuinely absent → brand-new install → storage-choice onboarding
+      //   - handle store UNREADABLE (read failure) → we do NOT know, so route to
+      //     reconnect/retry. NEVER fall through to storage-choice on a read
+      //     failure: re-picking there overwrites the real handle (audit S3).
+      let stored;
       try {
-        hasHandle = !!(await getStoredDirHandle());
-      } catch {
-        /* ignore — treat as brand-new */
+        stored = await getStoredDirHandle();
+      } catch (err) {
+        console.error('Reading the saved folder handle failed at boot', err);
+        return renderFsReconnect(fs, { readFailed: true });
       }
-      if (hasHandle) return renderFsReconnect(fs);
+      if (stored) return renderFsReconnect(fs);
       return renderStorageChoice();
     }
 
@@ -550,18 +554,72 @@ export function createApp({ root, enableServiceWorker = false }) {
     screenShell(card);
   }
 
-  function renderFsReconnect(fs) {
-    currentScreen = () => renderFsReconnect(fs);
+  // A promoted "Install Wren" button for the reconnect screen. Installing the
+  // PWA is the DURABLE fix for repeated folder re-prompts (permission then
+  // persists), so when it's offerable we surface it as a primary CTA. Returns
+  // null when install can't be offered (already installed, or no prompt event).
+  function buildReconnectInstallCta() {
+    if (!canInstall()) return null;
+    const btn = document.createElement('button');
+    btn.className = 'sc-btn sc-btn--primary';
+    btn.textContent = 'Install Wren';
+    btn.addEventListener('click', async () => {
+      if (!installPrompt) return;
+      try {
+        await installPrompt.prompt();
+        await installPrompt.userChoice;
+      } catch (err) {
+        console.warn('Install prompt failed', err);
+      }
+      installPrompt = null;
+      if (currentScreen) currentScreen();
+    });
+    return btn;
+  }
+
+  function renderFsReconnect(fs, { readFailed = false } = {}) {
+    currentScreen = () => renderFsReconnect(fs, { readFailed });
     const card = document.createElement('div');
     card.className = 'sc-screen-card';
+    const heading = readFailed ? 'Couldn’t read your notes folder' : 'Reconnect your notes folder';
+    const copy = readFailed
+      ? 'Wren couldn’t read your saved folder just now — a temporary storage hiccup, not lost notes. Try again, or reconnect below. Don’t pick a new folder unless you actually want to switch.'
+      : 'Your browser needs you to confirm access to your notes folder again.';
     card.innerHTML = `
       <img src="./icon.svg" alt="Wren" />
-      <h1>Reconnect your notes folder</h1>
-      <p>Your browser needs you to confirm access to your notes folder again.</p>`;
+      <h1>${heading}</h1>
+      <p>${copy}</p>`;
+
+    const installed = isInstalled();
+    const installCta = installed ? null : buildReconnectInstallCta();
+
+    // Guidance — this screen previously gave none (audit S6). Installed users get
+    // told how to stop the prompt for good; browser-tab users are nudged to
+    // install (which makes folder permission persist).
+    const tip = document.createElement('p');
+    tip.className = 'sc-hint';
+    if (installed) {
+      tip.textContent =
+        'When your browser asks, choose “Allow on every visit” so Wren stops prompting each session.';
+    } else if (installCta) {
+      tip.textContent =
+        'Tip: install Wren as an app and your folder permission persists — no more re-granting every session.';
+    } else {
+      tip.textContent =
+        'Tip: install Wren from your browser menu and your folder permission persists across sessions.';
+    }
+    card.appendChild(tip);
+
+    // On a read failure the recovery is a retry (re-read IndexedDB), not a
+    // permission re-grant; reuse the primary button for it.
     const grant = document.createElement('button');
-    grant.className = 'sc-btn sc-btn--primary';
-    grant.textContent = 'Grant access';
+    grant.className = installCta ? 'sc-btn sc-btn--ghost' : 'sc-btn sc-btn--primary';
+    grant.textContent = readFailed ? 'Try again' : 'Grant access';
     grant.addEventListener('click', async () => {
+      if (readFailed) {
+        await boot();
+        return;
+      }
       try {
         await fs.reconnect();
         adapter = fs;
@@ -572,6 +630,7 @@ export function createApp({ root, enableServiceWorker = false }) {
         }
       }
     });
+
     const choose = document.createElement('button');
     choose.className = 'sc-btn sc-btn--ghost';
     choose.style.marginLeft = '8px';
@@ -585,9 +644,9 @@ export function createApp({ root, enableServiceWorker = false }) {
         if (err?.name !== 'AbortError') alert('Could not open that folder.');
       }
     });
-    card.append(grant, choose);
-    const install = buildInstallSection();
-    if (install) card.appendChild(install);
+
+    if (installCta) card.append(installCta, grant, choose);
+    else card.append(grant, choose);
     screenShell(card);
   }
 
@@ -2143,6 +2202,24 @@ export function createApp({ root, enableServiceWorker = false }) {
         })
       );
       pop.appendChild(toDrive);
+    }
+
+    // Diagnostics: surface whether the browser granted persistent storage. On a
+    // local backend this is the difference between folder permission surviving
+    // eviction and getting re-prompted every session (audit S6). Filled async.
+    if (!isDrive) {
+      const persistLine = document.createElement('p');
+      persistLine.className = 'sc-popover-hint';
+      persistLine.textContent = 'Persistent storage: checking…';
+      pop.appendChild(persistLine);
+      isStoragePersisted().then((state) => {
+        persistLine.textContent =
+          state === true
+            ? 'Persistent storage: on (folder access should stick).'
+            : state === false
+              ? 'Persistent storage: off — install Wren so folder access persists.'
+              : 'Persistent storage: unavailable in this browser.';
+      });
     }
 
     document.body.appendChild(pop);

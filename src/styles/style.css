@@ -1769,6 +1769,15 @@ button {
   border-left: 3px solid #c0392b;
   border-radius: 4px;
 }
+.sc-popover-hint {
+  margin: 4px 8px 2px;
+  padding: 6px 8px 4px;
+  max-width: 240px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--wr-panel-muted);
+  border-top: 1px solid var(--wr-border, rgba(0, 0, 0, 0.08));
+}
 
 /* Drive-disconnected banner */
 .sc-drive-banner {

@@ -72,7 +72,16 @@ export class FileSystemAdapter {
    */
   async initialize() {
     if (!isSupported()) return; // adapter remains not-ready; caller checks isReady()
-    const stored = await getStoredDirHandle();
+    let stored;
+    try {
+      stored = await getStoredDirHandle();
+    } catch {
+      // The handle store couldn't be READ (transient IndexedDB failure). Leave
+      // the adapter not-ready and return — boot re-probes and routes to the
+      // reconnect/retry screen. Do NOT treat this as "no handle": that path
+      // leads to storage-choice, where re-picking overwrites the real handle.
+      return;
+    }
     if (!stored) return;
     const perm = await queryPermission(stored);
     if (perm === 'granted') {
@@ -105,7 +114,19 @@ export class FileSystemAdapter {
 
   /** Re-request permission on a previously stored handle. User-gesture path. */
   async reconnect() {
-    const stored = this._dirHandle || (await getStoredDirHandle());
+    let stored = this._dirHandle;
+    if (!stored) {
+      try {
+        stored = await getStoredDirHandle();
+      } catch {
+        // Read failure — surface as a recoverable auth error so the UI keeps the
+        // reconnect/retry affordance rather than dropping to storage-choice.
+        throw new AdapterAuthError('Could not read the saved folder handle.', {
+          backendId: this.backendId(),
+          recoverable: true,
+        });
+      }
+    }
     if (!stored) {
       throw new AdapterAuthError('No stored folder handle to reconnect.', {
         backendId: this.backendId(),
