@@ -291,6 +291,22 @@ export function createStickyApp({ root }) {
     lastGeom = loadGeometry(note.wrenId, storageId);
     startGeomPoll();
     window.addEventListener('pagehide', onPageHide);
+    listenForQuitFlush();
+  }
+
+  // Desktop only: the tray Quit emits a flush event before exiting, so land any
+  // pending debounced save in THIS sticky webview (audit T2). Must match
+  // EVENT_FLUSH_SAVES in src-tauri/src/lib.rs.
+  async function listenForQuitFlush() {
+    if (!isTauri()) return;
+    try {
+      const { listen } = await import('@tauri-apps/api/event');
+      await listen('wren://flush-saves', () => {
+        if (noteEditor?.hasPendingSave?.()) noteEditor.flush();
+      });
+    } catch (err) {
+      console.warn('sticky flush listener failed', err);
+    }
   }
 
   // Returns true when the write reached disk, false on any failure — the editor
@@ -404,16 +420,42 @@ export function createStickyApp({ root }) {
   // as a `.sync-conflict-…` copy so nothing typed is lost, tell the user, then
   // reload the winning version from disk.
   async function handleSaveConflict(note) {
-    let conflictName;
+    const localContent = serializeNote(note);
+    // If our losing edit matches the winner already on disk, there's nothing to
+    // preserve — skip the copy so fresh typing never silently spawns a side file.
     try {
-      conflictName = await writeConflictCopy(adapter, note, serializeNote(note));
+      const { content } = await adapter.readNote(storageId);
+      if (!noteContentDiffers(localContent, content)) {
+        await refreshFromDisk({ id: storageId, wrenId });
+        return;
+      }
+    } catch {
+      /* couldn't read the winner — fall through and preserve the edit anyway */
+    }
+    let copy;
+    try {
+      copy = await writeConflictCopy(adapter, note, localContent);
     } catch (err) {
       console.error('Sticky conflict copy failed', err);
       showStickyNotice('Edited elsewhere — copy your text; a conflict copy could not be written.');
       return;
     }
-    showStickyNotice(`Edited elsewhere — your changes were kept as “${conflictName}”.`);
+    showStickyNotice(`Edited elsewhere — your changes were kept as “${copy.name}”. Find it in Wren.`);
     await refreshFromDisk({ id: storageId, wrenId });
+  }
+
+  // True when two serialized notes differ in title/body/tags/color/due (volatile
+  // provenance ignored) — mirrors the main app's conflict-diff check.
+  function noteContentDiffers(aRaw, bRaw) {
+    const a = parseNote(aRaw, '');
+    const b = parseNote(bRaw, '');
+    if ((a.body || '') !== (b.body || '')) return true;
+    if ((a.title || '') !== (b.title || '')) return true;
+    if ((a.color || '') !== (b.color || '')) return true;
+    if ((a.due || '') !== (b.due || '')) return true;
+    const at = JSON.stringify((a.tags || []).slice().sort());
+    const bt = JSON.stringify((b.tags || []).slice().sort());
+    return at !== bt;
   }
 
   // Transient, non-destructive status strip at the top of the sticky. Leaves the

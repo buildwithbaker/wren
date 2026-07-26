@@ -912,7 +912,13 @@ export function createApp({ root, enableServiceWorker = false }) {
   // capture never depends on which view happens to be open.
   function setupDesktop() {
     if (desktopIntegration) return;
-    setupDesktopIntegration({ onNewNote: () => handleNewPopOut({ from: 'hotkey' }) })
+    setupDesktopIntegration({
+      onNewNote: () => handleNewPopOut({ from: 'hotkey' }),
+      // Quit-time flush: land any pending debounced save before the app exits.
+      onFlush: () => {
+        if (noteEditor?.hasPendingSave?.()) noteEditor.flush();
+      },
+    })
       .then((api) => {
         desktopIntegration = api;
       })
@@ -1293,10 +1299,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     try {
       await adapter.archiveNote(noteId);
     } catch (err) {
-      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
-        showDriveDisconnected();
-        return;
-      }
+      if (routeAuthError(err)) return;
       console.error('Archive failed', err);
       alert('Could not archive that note.');
       return;
@@ -1321,10 +1324,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     try {
       await adapter.unarchiveNote(archiveId);
     } catch (err) {
-      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
-        showDriveDisconnected();
-        return false;
-      }
+      if (routeAuthError(err)) return false;
       console.error('Unarchive failed', err);
       alert('Could not unarchive that note.');
       return false;
@@ -1459,10 +1459,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     try {
       await adapter.promoteInboxNote(inboxId);
     } catch (err) {
-      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
-        showDriveDisconnected();
-        return;
-      }
+      if (routeAuthError(err)) return;
       console.error('Promote failed', err);
       alert('Could not move that note into your notes.');
       return;
@@ -1503,10 +1500,7 @@ export function createApp({ root, enableServiceWorker = false }) {
         await adapter.deleteNote(inboxId);
       }
     } catch (err) {
-      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
-        showDriveDisconnected();
-        return;
-      }
+      if (routeAuthError(err)) return;
       console.error('Discard failed', err);
       alert('Could not discard that staged note.');
       return;
@@ -1623,10 +1617,7 @@ export function createApp({ root, enableServiceWorker = false }) {
         revision,
       };
     } catch (err) {
-      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
-        showDriveDisconnected();
-        return;
-      }
+      if (routeAuthError(err)) return;
       console.warn('Could not read note', err);
       await loadNotes();
       return;
@@ -1696,10 +1687,7 @@ export function createApp({ root, enableServiceWorker = false }) {
       regenerateIndex();
       return note;
     } catch (err) {
-      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
-        showDriveDisconnected();
-        return null;
-      }
+      if (routeAuthError(err)) return null;
       console.error('Could not create note', err);
       alert('Could not create a new note.');
       return null;
@@ -1858,28 +1846,79 @@ export function createApp({ root, enableServiceWorker = false }) {
    * @param {string} localContent - the serialized text that failed to save
    */
   async function handleSaveConflict(note, localContent) {
-    let conflictName;
+    // Read the winner now on disk. Adopt its revision (so a later save overwrites
+    // rather than spawning an endless chain of copies) AND compare content: if
+    // our losing edit is byte-identical in the parts that matter, there's nothing
+    // to preserve — skip the copy so fresh typing never silently spawns a side
+    // file the user thinks ate their edit.
+    let diskContent = null;
     try {
-      conflictName = await writeConflictCopy(adapter, note, localContent);
+      const read = await adapter.readNote(note.id);
+      diskContent = read.content;
+      note.revision = read.revision;
+    } catch {
+      /* the note may itself have been renamed/deleted — still preserve below */
+    }
+    if (diskContent !== null && !noteContentDiffers(localContent, diskContent)) {
+      await refreshAfterConflict(note);
+      return;
+    }
+    let copy;
+    try {
+      copy = await writeConflictCopy(adapter, note, localContent);
     } catch (err) {
       console.error('Could not write conflict copy', err);
       showToast('Edited elsewhere — copy your text; a conflict copy could not be written.');
       return;
     }
-    showToast(`Edited elsewhere — your changes were kept as “${conflictName}”.`);
-    // Adopt the winner's revision so a subsequent save overwrites (last-write-
-    // wins) rather than spawning an endless chain of conflict copies.
-    try {
-      const { revision } = await adapter.readNote(note.id);
-      note.revision = revision;
-    } catch {
-      /* the note may itself have been renamed/deleted — refresh will resolve it */
-    }
+    showConflictToast(copy);
+    await refreshAfterConflict(note);
+  }
+
+  async function refreshAfterConflict(note) {
     try {
       await handleRemoteNoteSaved({ id: note.id, wrenId: note.wrenId });
     } catch (err) {
       console.warn('Post-conflict refresh failed', err);
     }
+  }
+
+  // True when two serialized notes differ in the parts a user cares about
+  // (title/body/tags/color/due) — volatile provenance (modified/last_edited) is
+  // ignored so a mere timestamp bump never triggers a conflict copy.
+  function noteContentDiffers(aRaw, bRaw) {
+    const a = parseNote(aRaw, '');
+    const b = parseNote(bRaw, '');
+    if ((a.body || '') !== (b.body || '')) return true;
+    if ((a.title || '') !== (b.title || '')) return true;
+    if ((a.color || '') !== (b.color || '')) return true;
+    if ((a.due || '') !== (b.due || '')) return true;
+    const at = JSON.stringify((a.tags || []).slice().sort());
+    const bt = JSON.stringify((b.tags || []).slice().sort());
+    return at !== bt;
+  }
+
+  // Conflict toast that NAMES the copy and offers a one-click "Open" so the user
+  // can see exactly where their edit went (audit R2 conflict refinement).
+  function showConflictToast({ id, name }) {
+    const toast = document.createElement('div');
+    toast.className = 'sc-toast';
+    const label = document.createElement('span');
+    label.textContent = `Edited elsewhere — your changes were kept as “${name}”. `;
+    toast.appendChild(label);
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'sc-toast-action';
+    open.textContent = 'Open';
+    open.addEventListener('click', async () => {
+      toast.remove();
+      await loadNotes();
+      await openNote(id);
+    });
+    toast.appendChild(open);
+    document.body.appendChild(toast);
+    // Longer than a plain toast — it carries an action the user may want to take.
+    setTimeout(() => toast.remove(), 9000);
   }
 
   async function handleDelete(note) {
@@ -1890,10 +1929,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     try {
       await adapter.deleteNote(note.id);
     } catch (err) {
-      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
-        showDriveDisconnected();
-        return;
-      }
+      if (routeAuthError(err)) return;
       console.error('Delete failed', err);
       alert('Could not delete the note.');
       return;
@@ -1993,6 +2029,18 @@ export function createApp({ root, enableServiceWorker = false }) {
       // Re-load notes from Drive now that we have a token again.
       loadNotes();
     }
+  }
+
+  // Route a lapsed-permission error to the matching reconnect screen — Drive's
+  // disconnected banner or the FS folder-reconnect card. Returns true when it
+  // handled an AdapterAuthError (the caller should then bail), false otherwise so
+  // non-auth errors fall through to their own handling. Replaces the Drive-only
+  // guards that let a revoked FS permission dead-end in an alert() (audit S8).
+  function routeAuthError(err) {
+    if (!(err instanceof AdapterAuthError)) return false;
+    if (adapter?.backendId() === ADAPTER_TYPES.DRIVE) showDriveDisconnected();
+    else renderFsReconnect(adapter);
+    return true;
   }
 
   function showDriveDisconnected() {

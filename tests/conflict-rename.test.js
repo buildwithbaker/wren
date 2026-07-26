@@ -129,20 +129,22 @@ describe('conditional writes + conflict copies (FS)', () => {
     const winnerBefore = files['todo.md'].content;
     const losing = noteText({ body: 'MY LOSING EDIT' });
 
-    const conflictName = await writeConflictCopy(
+    const { id, name } = await writeConflictCopy(
       adapter,
       { id: 'todo.md', filename: 'todo.md', title: 'Todo', created: '2026-01-01T00:00:00.000Z' },
       losing,
       DEV_ID
     );
 
-    // Named per the Syncthing convention, keyed by our device id.
-    expect(conflictName).toMatch(CONFLICT_RE);
-    expect(conflictName.startsWith('todo.')).toBe(true);
+    // Named per the Syncthing convention, keyed by our device id; on FS the id
+    // IS the file name (so the toast can open it).
+    expect(name).toMatch(CONFLICT_RE);
+    expect(name.startsWith('todo.')).toBe(true);
+    expect(id).toBe(name);
 
     // The conflict copy holds the losing edit …
-    expect(files[conflictName]).toBeTruthy();
-    expect(files[conflictName].content).toContain('MY LOSING EDIT');
+    expect(files[name]).toBeTruthy();
+    expect(files[name].content).toContain('MY LOSING EDIT');
     // … and the original file is completely untouched (no overwrite).
     expect(files['todo.md'].content).toBe(winnerBefore);
   });
@@ -163,7 +165,7 @@ describe('writeConflictCopy on a Drive-style adapter', () => {
       },
     };
 
-    const name = await writeConflictCopy(
+    const { id, name } = await writeConflictCopy(
       driveMock,
       { id: 'drive-old-id', filename: 'Todo.md', title: 'Todo', created: '2026-01-01T00:00:00.000Z' },
       'LOSER',
@@ -171,6 +173,9 @@ describe('writeConflictCopy on a Drive-style adapter', () => {
     );
 
     expect(name).toMatch(CONFLICT_RE);
+    // Drive: the storage id is the opaque fileId (unchanged by rename), so the
+    // toast can open the copy by id.
+    expect(id).toBe('drive-new-id');
     expect(calls.create.content).toBe('LOSER');
     expect(calls.rename.id).toBe('drive-new-id');
     expect(calls.rename.name).toBe(name);

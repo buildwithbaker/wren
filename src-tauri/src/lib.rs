@@ -8,6 +8,16 @@ use tauri::{Emitter, Manager};
 // handleNew() directly, so it needs no event.
 const EVENT_NEW_NOTE: &str = "wren://new-note";
 
+// Fired at Quit so every webview (main app + any open sticky) can flush a pending
+// 500ms debounced save before the process exits. Must match EVENT_FLUSH_SAVES in
+// src/desktop.js / src/sticky-app.js.
+const EVENT_FLUSH_SAVES: &str = "wren://flush-saves";
+
+// How long to wait after the flush event before exiting — long enough for a
+// webview to run its debounced save through the File System Access / Tauri fs
+// write, short enough not to feel laggy.
+const FLUSH_GRACE_MS: u64 = 600;
+
 /// Show, un-minimize, and focus the main window (bringing it back from the tray).
 #[cfg(desktop)]
 fn show_main(app: &tauri::AppHandle) {
@@ -104,7 +114,16 @@ pub fn run() {
               let _ = app.emit(EVENT_NEW_NOTE, ());
             }
             "toggle" => toggle_all(app),
-            "quit" => app.exit(0),
+            "quit" => {
+              // Ask every webview to flush a pending debounced save, then exit
+              // after a short grace period so the write can land (audit T2).
+              let _ = app.emit(EVENT_FLUSH_SAVES, ());
+              let handle = app.clone();
+              std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(FLUSH_GRACE_MS));
+                handle.exit(0);
+              });
+            }
             _ => {}
           })
           .on_tray_icon_event(|tray, event| {

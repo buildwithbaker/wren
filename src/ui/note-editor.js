@@ -12,6 +12,7 @@ import { confirmDialog } from './dialog.js';
 import { CARD_COLORS } from '@/notes-store.js';
 import { parseTag } from '@/tags/tag-parser.js';
 import { formatModified } from './format.js';
+import { createSaveQueue } from './save-queue.js';
 import { dueStatus, normalizeDue } from '@/due.js';
 
 const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
@@ -579,47 +580,62 @@ export function createNoteEditor({
   root.append(placeholder, surface);
 
   // --- save scheduling ------------------------------------------------------
+  // Saves are SERIALIZED through a queue: each runSave() runs only after the
+  // previous one settles, so a debounced save and a flush()-triggered save can
+  // never overlap (overlapping writes could interleave and lose the newer body).
+  const saveQueue = createSaveQueue(runSave);
+
   function scheduleSave() {
     setHint('Saving…');
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(doSave, SAVE_DELAY);
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      saveQueue.enqueue();
+    }, SAVE_DELAY);
   }
   function cancelSave() {
     clearTimeout(saveTimer);
     saveTimer = null;
   }
-  async function doSave() {
-    saveTimer = null;
+  async function runSave() {
     if (!note) return;
     const target = note;
-    // onSave returns true on a confirmed write, false on failure. (Legacy
-    // callers that return undefined are treated as success for back-compat.)
-    const result = await onSave?.(target);
-    if (result === false) {
-      // The write did NOT reach disk. Never paint the "Updated … by you"
-      // provenance for a failed save — that is the silent-data-loss bug. Show a
-      // persistent "Not saved" state instead and leave the note dirty so the
-      // next edit re-arms the debounce and retries.
+    try {
+      // onSave returns true on a confirmed write, false on failure. (Legacy
+      // callers that return undefined are treated as success for back-compat.)
+      const result = await onSave?.(target);
+      if (result === false) {
+        // The write did NOT reach disk. Never paint the "Updated … by you"
+        // provenance for a failed save — that is the silent-data-loss bug. Show
+        // a persistent "Not saved" state and leave the note dirty so the next
+        // edit re-arms the debounce and retries.
+        if (note === target) setHint('Not saved — will retry on next edit');
+        return;
+      }
+      // onSave (app-controller handleSave) stamped modified + human provenance on
+      // the same note object; reflect it in the provenance panel. The transient
+      // "Saving…" hint is cleared once saved — the "Updated … by you" provenance
+      // line below is the single resting record, so we don't show a duplicate
+      // "Saved <time>" next to an identical "Updated <time>".
+      if (note === target) {
+        updateProvenance(target);
+        setHint('');
+      }
+    } catch (err) {
+      // Never let a save rejection break the chain (it would strand later saves).
+      console.warn('Autosave failed', err);
       if (note === target) setHint('Not saved — will retry on next edit');
-      return;
-    }
-    // onSave (app-controller handleSave) stamped modified + human provenance on
-    // the same note object; reflect it in the provenance panel. The transient
-    // "Saving…" hint is cleared once saved — the "Updated … by you" provenance
-    // line below is the single resting record, so we don't show a duplicate
-    // "Saved <time>" next to an identical "Updated <time>".
-    if (note === target) {
-      updateProvenance(target);
-      setHint('');
     }
   }
-  // Flush any pending save immediately (e.g. when leaving the note).
+  // Flush any pending save immediately (e.g. when leaving the note) AND await the
+  // whole chain, so callers know both the queued and any in-flight write finished.
   function flush() {
     if (saveTimer) {
-      cancelSave();
-      return doSave();
+      clearTimeout(saveTimer);
+      saveTimer = null;
+      saveQueue.enqueue();
     }
-    return Promise.resolve();
+    return saveQueue.settle();
   }
   function setHint(text) {
     savedHint.textContent = text;
@@ -728,9 +744,10 @@ export function createNoteEditor({
     clear,
     focusTitle: () => titleInput.focus(),
     getNote: () => note,
-    // True while a debounced save is queued — lets callers (cross-window sync)
-    // avoid clobbering in-progress local edits with a remote re-read.
-    hasPendingSave: () => saveTimer !== null,
+    // True while a debounced save is queued OR a write is in flight — lets
+    // callers (cross-window sync) avoid clobbering in-progress local edits with
+    // a remote re-read while a save is still settling.
+    hasPendingSave: () => saveTimer !== null || saveQueue.isRunning(),
     destroy,
   };
 }

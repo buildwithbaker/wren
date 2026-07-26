@@ -1895,6 +1895,22 @@ button {
   from { opacity: 0; transform: translate(-50%, 6px); }
   to   { opacity: 1; transform: translate(-50%, 0); }
 }
+/* Inline action button inside a toast (e.g. "Open" the conflict copy). */
+.sc-toast-action {
+  margin-left: 4px;
+  padding: 2px 10px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sc-toast-action:hover {
+  background: var(--wr-panel-bg);
+  color: var(--wr-panel-text);
+}
 
 /* =========================================================================
    Open Full App link (extension popup only — JS conditional)

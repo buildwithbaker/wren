@@ -283,25 +283,27 @@ export class FileSystemAdapter {
 
   async deleteNote(noteId) {
     this._assertReady();
-    if (isInboxId(noteId)) {
-      // Delete inside the _inbox/ subfolder. If the subfolder is gone the file
-      // is already absent — treat as a no-op.
-      const inboxDir = await this._getInboxDirHandle({ create: false });
-      if (!inboxDir) return;
-      await inboxDir.removeEntry(inboxBaseName(noteId));
-      return;
-    }
-    if (isArchiveId(noteId)) {
-      const archiveDir = await this._getArchiveDirHandle({ create: false });
-      if (!archiveDir) return;
-      await archiveDir.removeEntry(archiveBaseName(noteId));
-      return;
-    }
-    // Top-level note: SOFT-delete into .trash/ (recoverable by a manual file
-    // move) rather than hard-removing. The main-app delete used to call
-    // removeEntry directly, so a mis-fired confirm permanently destroyed the
-    // note; now it's recoverable.
-    await this._moveToTrash(this._dirHandle, noteId);
+    return this._guarded(async () => {
+      if (isInboxId(noteId)) {
+        // Delete inside the _inbox/ subfolder. If the subfolder is gone the file
+        // is already absent — treat as a no-op.
+        const inboxDir = await this._getInboxDirHandle({ create: false });
+        if (!inboxDir) return;
+        await inboxDir.removeEntry(inboxBaseName(noteId));
+        return;
+      }
+      if (isArchiveId(noteId)) {
+        const archiveDir = await this._getArchiveDirHandle({ create: false });
+        if (!archiveDir) return;
+        await archiveDir.removeEntry(archiveBaseName(noteId));
+        return;
+      }
+      // Top-level note: SOFT-delete into .trash/ (recoverable by a manual file
+      // move) rather than hard-removing. The main-app delete used to call
+      // removeEntry directly, so a mis-fired confirm permanently destroyed the
+      // note; now it's recoverable.
+      await this._moveToTrash(this._dirHandle, noteId);
+    });
   }
 
   /**
@@ -340,7 +342,10 @@ export class FileSystemAdapter {
   async _getInboxDirHandle({ create = false } = {}) {
     try {
       return await this._dirHandle.getDirectoryHandle(INBOX_DIR, { create });
-    } catch {
+    } catch (err) {
+      // A revoked permission must NOT masquerade as "no _inbox/" — re-throw it so
+      // the caller (via _guarded) routes to reconnect. Genuine absence → null.
+      if (FileSystemAdapter._isPermissionError(err)) throw err;
       return null;
     }
   }
@@ -426,21 +431,23 @@ export class FileSystemAdapter {
     if (!isInboxId(noteId)) {
       throw new Error(`promoteInboxNote requires an _inbox/ id, got "${noteId}"`);
     }
-    const inboxDir = await this._getInboxDirHandle({ create: false });
-    if (!inboxDir) throw new Error('_inbox/ subfolder not found');
-    const baseName = inboxBaseName(noteId);
-    const srcHandle = await inboxDir.getFileHandle(baseName);
-    const content = await (await srcHandle.getFile()).text();
+    return this._guarded(async () => {
+      const inboxDir = await this._getInboxDirHandle({ create: false });
+      if (!inboxDir) throw new Error('_inbox/ subfolder not found');
+      const baseName = inboxBaseName(noteId);
+      const srcHandle = await inboxDir.getFileHandle(baseName);
+      const content = await (await srcHandle.getFile()).text();
 
-    const destName = await uniqueNoteName(baseName, (name) => this._fileExists(name));
-    const destHandle = await this._dirHandle.getFileHandle(destName, { create: true });
-    const writable = await destHandle.createWritable();
-    await writable.write(content);
-    await writable.close();
-    await inboxDir.removeEntry(baseName);
+      const destName = await uniqueNoteName(baseName, (name) => this._fileExists(name));
+      const destHandle = await this._dirHandle.getFileHandle(destName, { create: true });
+      const writable = await destHandle.createWritable();
+      await writable.write(content);
+      await writable.close();
+      await inboxDir.removeEntry(baseName);
 
-    const after = await destHandle.getFile();
-    return { id: destName, revision: String(after.lastModified) };
+      const after = await destHandle.getFile();
+      return { id: destName, revision: String(after.lastModified) };
+    });
   }
 
   /**
@@ -459,9 +466,11 @@ export class FileSystemAdapter {
     if (!isInboxId(noteId)) {
       throw new Error(`discardInboxNote requires an _inbox/ id, got "${noteId}"`);
     }
-    const inboxDir = await this._getInboxDirHandle({ create: false });
-    if (!inboxDir) throw new Error('_inbox/ subfolder not found');
-    return { id: await this._moveToTrash(inboxDir, inboxBaseName(noteId)) };
+    return this._guarded(async () => {
+      const inboxDir = await this._getInboxDirHandle({ create: false });
+      if (!inboxDir) throw new Error('_inbox/ subfolder not found');
+      return { id: await this._moveToTrash(inboxDir, inboxBaseName(noteId)) };
+    });
   }
 
   // ---- Archive (_archive/) — Note Lifecycle B -------------------------------
@@ -474,7 +483,9 @@ export class FileSystemAdapter {
   async _getArchiveDirHandle({ create = false } = {}) {
     try {
       return await this._dirHandle.getDirectoryHandle(ARCHIVE_DIR, { create });
-    } catch {
+    } catch (err) {
+      // Re-throw a revoked permission (see _getInboxDirHandle); absence → null.
+      if (FileSystemAdapter._isPermissionError(err)) throw err;
       return null;
     }
   }
@@ -538,25 +549,27 @@ export class FileSystemAdapter {
     if (isInboxId(noteId) || isArchiveId(noteId)) {
       throw new Error(`archiveNote requires a top-level id, got "${noteId}"`);
     }
-    const srcHandle = await this._dirHandle.getFileHandle(noteId);
-    const content = await (await srcHandle.getFile()).text();
+    return this._guarded(async () => {
+      const srcHandle = await this._dirHandle.getFileHandle(noteId);
+      const content = await (await srcHandle.getFile()).text();
 
-    const archiveDir = await this._dirHandle.getDirectoryHandle(ARCHIVE_DIR, { create: true });
-    const destName = await uniqueNoteName(noteId, async (name) => {
-      try {
-        await archiveDir.getFileHandle(name);
-        return true;
-      } catch {
-        return false;
-      }
+      const archiveDir = await this._dirHandle.getDirectoryHandle(ARCHIVE_DIR, { create: true });
+      const destName = await uniqueNoteName(noteId, async (name) => {
+        try {
+          await archiveDir.getFileHandle(name);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      const destHandle = await archiveDir.getFileHandle(destName, { create: true });
+      const writable = await destHandle.createWritable();
+      await writable.write(content);
+      await writable.close();
+      await this._dirHandle.removeEntry(noteId);
+
+      return { id: `${ARCHIVE_DIR}/${destName}` };
     });
-    const destHandle = await archiveDir.getFileHandle(destName, { create: true });
-    const writable = await destHandle.createWritable();
-    await writable.write(content);
-    await writable.close();
-    await this._dirHandle.removeEntry(noteId);
-
-    return { id: `${ARCHIVE_DIR}/${destName}` };
   }
 
   /**
@@ -572,21 +585,23 @@ export class FileSystemAdapter {
     if (!isArchiveId(noteId)) {
       throw new Error(`unarchiveNote requires an _archive/ id, got "${noteId}"`);
     }
-    const archiveDir = await this._getArchiveDirHandle({ create: false });
-    if (!archiveDir) throw new Error('_archive/ subfolder not found');
-    const baseName = archiveBaseName(noteId);
-    const srcHandle = await archiveDir.getFileHandle(baseName);
-    const content = await (await srcHandle.getFile()).text();
+    return this._guarded(async () => {
+      const archiveDir = await this._getArchiveDirHandle({ create: false });
+      if (!archiveDir) throw new Error('_archive/ subfolder not found');
+      const baseName = archiveBaseName(noteId);
+      const srcHandle = await archiveDir.getFileHandle(baseName);
+      const content = await (await srcHandle.getFile()).text();
 
-    const destName = await uniqueNoteName(baseName, (name) => this._fileExists(name));
-    const destHandle = await this._dirHandle.getFileHandle(destName, { create: true });
-    const writable = await destHandle.createWritable();
-    await writable.write(content);
-    await writable.close();
-    await archiveDir.removeEntry(baseName);
+      const destName = await uniqueNoteName(baseName, (name) => this._fileExists(name));
+      const destHandle = await this._dirHandle.getFileHandle(destName, { create: true });
+      const writable = await destHandle.createWritable();
+      await writable.write(content);
+      await writable.close();
+      await archiveDir.removeEntry(baseName);
 
-    const after = await destHandle.getFile();
-    return { id: destName, revision: String(after.lastModified) };
+      const after = await destHandle.getFile();
+      return { id: destName, revision: String(after.lastModified) };
+    });
   }
 
   /**
@@ -642,14 +657,16 @@ export class FileSystemAdapter {
    */
   async createNote(content, { title = '', created = '' } = {}) {
     this._assertReady();
-    const desired = buildNoteFilename(created, title);
-    const candidate = await uniqueNoteName(desired, (name) => this._fileExists(name));
-    const fileHandle = await this._dirHandle.getFileHandle(candidate, { create: true });
-    const writable = await fileHandle.createWritable();
-    await writable.write(content);
-    await writable.close();
-    const after = await fileHandle.getFile();
-    return { id: candidate, revision: String(after.lastModified) };
+    return this._guarded(async () => {
+      const desired = buildNoteFilename(created, title);
+      const candidate = await uniqueNoteName(desired, (name) => this._fileExists(name));
+      const fileHandle = await this._dirHandle.getFileHandle(candidate, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(content);
+      await writable.close();
+      const after = await fileHandle.getFile();
+      return { id: candidate, revision: String(after.lastModified) };
+    });
   }
 
   /**
@@ -669,21 +686,23 @@ export class FileSystemAdapter {
    */
   async renameNote(noteId, desiredName) {
     this._assertReady();
-    if (desiredName === noteId) {
-      const existing = await this._dirHandle.getFileHandle(noteId);
-      const f = await existing.getFile();
-      return { id: noteId, revision: String(f.lastModified) };
-    }
-    const newName = await uniqueNoteName(desiredName, (name) => this._fileExists(name));
-    const srcHandle = await this._dirHandle.getFileHandle(noteId);
-    const content = await (await srcHandle.getFile()).text();
-    const destHandle = await this._dirHandle.getFileHandle(newName, { create: true });
-    const writable = await destHandle.createWritable();
-    await writable.write(content);
-    await writable.close();
-    await this._dirHandle.removeEntry(noteId);
-    const after = await destHandle.getFile();
-    return { id: newName, revision: String(after.lastModified) };
+    return this._guarded(async () => {
+      if (desiredName === noteId) {
+        const existing = await this._dirHandle.getFileHandle(noteId);
+        const f = await existing.getFile();
+        return { id: noteId, revision: String(f.lastModified) };
+      }
+      const newName = await uniqueNoteName(desiredName, (name) => this._fileExists(name));
+      const srcHandle = await this._dirHandle.getFileHandle(noteId);
+      const content = await (await srcHandle.getFile()).text();
+      const destHandle = await this._dirHandle.getFileHandle(newName, { create: true });
+      const writable = await destHandle.createWritable();
+      await writable.write(content);
+      await writable.close();
+      await this._dirHandle.removeEntry(noteId);
+      const after = await destHandle.getFile();
+      return { id: newName, revision: String(after.lastModified) };
+    });
   }
 
   async _fileExists(name) {
@@ -727,5 +746,18 @@ export class FileSystemAdapter {
       });
     }
     return err;
+  }
+
+  // Run a mutation, re-typing a revoked File System Access permission
+  // (NotAllowedError/SecurityError) as AdapterAuthError so callers route to the
+  // reconnect flow instead of a dead-end alert(). Previously only read/write
+  // mapped; delete/create/rename/archive/promote let the raw DOMException escape
+  // (audit S8). Non-permission errors pass through unchanged.
+  async _guarded(fn) {
+    try {
+      return await fn();
+    } catch (err) {
+      throw this._mapPermissionError(err);
+    }
   }
 }
