@@ -212,11 +212,18 @@ export class TauriFsAdapter {
     // notes are promoted/discarded, never written back in place).
     const abs = joinPath(this._base, noteId);
 
+    // Create-intent is signalled by an empty/zero expectedRevision (createNote
+    // path + the conflict-copy writer). Any other write must target an existing
+    // file: writeTextFile always creates, so a plain update whose target
+    // vanished (renamed/deleted underneath us) would otherwise resurrect the
+    // stale filename. Guard it and surface a ConflictError instead.
+    const allowCreate = expectedRevision === '' || expectedRevision === '0';
+    const present = await exists(abs);
     if (expectedRevision !== undefined) {
       let currentRev = null;
-      if (await exists(abs)) {
+      if (present) {
         currentRev = revOf(await stat(abs));
-      } else if (expectedRevision !== '' && expectedRevision !== '0') {
+      } else if (!allowCreate) {
         // File vanished underneath a conditional (non-create) write.
         throw new ConflictError('File missing during conditional write', {
           localRevision: expectedRevision,
@@ -229,6 +236,12 @@ export class TauriFsAdapter {
           remoteRevision: currentRev,
         });
       }
+    } else if (!present) {
+      // Plain update whose target vanished — do not resurrect it.
+      throw new ConflictError('Note file missing on write (renamed or deleted underneath us)', {
+        localRevision: '',
+        remoteRevision: 'deleted',
+      });
     }
 
     await writeTextFile(abs, content);

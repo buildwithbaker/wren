@@ -7,6 +7,7 @@
 //   note.md -> note.sync-conflict-YYYYMMDD-HHMMSS-{deviceShortId}.md
 
 import { openScrybeDb } from '../notes-store.js';
+import { ADAPTER_TYPES } from '../storage/StorageAdapter.js';
 
 // Device ID lives in the same 'handles' store under a distinct key. Cheap to
 // share; avoids creating a third object store just for one row.
@@ -56,6 +57,50 @@ export async function getDeviceShortId() {
   const shortId = full.replace(/-/g, '').slice(0, DEVICE_SHORT_LEN);
   await writeDeviceRecord({ fullId: full, shortId, createdAt: new Date().toISOString() });
   return shortId;
+}
+
+/**
+ * Preserve a losing edit as a conflict copy when a conditional write throws
+ * ConflictError (another window / editor / device wrote the note between our
+ * read and our write). The copy is a normal note that shows up in listNotes,
+ * named with the Syncthing-style suffix so it's recognizable and sorts next to
+ * the original. Backend-agnostic without touching the adapters:
+ *   - FS / Tauri: the filename IS the id, so writeNote(conflictName, content, '')
+ *     creates a new file (empty expectedRevision = explicit create-intent).
+ *   - Drive: the id is an opaque fileId, so mint the file with createNote, then
+ *     rename it to the conflict-copy convention (best-effort).
+ *
+ * @param {import('../storage/StorageAdapter.js').StorageAdapter} adapter
+ * @param {{id: string, filename?: string, title?: string, created?: string}} note
+ * @param {string} localContent - the unsaved text to preserve
+ * @param {string} [deviceShortId] - injectable for tests; defaults to the
+ *   persisted per-device id.
+ * @returns {Promise<string>} the conflict-copy file name
+ */
+export async function writeConflictCopy(adapter, note, localContent, deviceShortId) {
+  const shortId = deviceShortId || (await getDeviceShortId());
+  const baseName = note.filename || note.id;
+  const conflictName = generateConflictFilename(baseName, shortId);
+
+  if (typeof adapter.backendId === 'function' && adapter.backendId() === ADAPTER_TYPES.DRIVE) {
+    const created = await adapter.createNote(localContent, {
+      title: note.title || '',
+      created: note.created || '',
+    });
+    if (typeof adapter.renameNote === 'function') {
+      try {
+        await adapter.renameNote(created.id, conflictName);
+      } catch {
+        // A rename collision leaves the createNote default name in place — the
+        // user's text is still preserved, which is the point.
+      }
+    }
+    return conflictName;
+  }
+
+  // FS / Tauri: empty expectedRevision signals create-intent to writeNote.
+  await adapter.writeNote(conflictName, localContent, '');
+  return conflictName;
 }
 
 // ---- Internal ----------------------------------------------------------

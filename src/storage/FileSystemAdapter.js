@@ -228,7 +228,25 @@ export class FileSystemAdapter {
         }
       }
 
-      const fileHandle = await this._dirHandle.getFileHandle(noteId, { create: true });
+      // Only mint a new file when the caller explicitly signals create-intent
+      // (empty/zero expectedRevision — used by createNote-style writes and the
+      // conflict-copy writer). A plain update whose target has vanished
+      // (renamed or deleted underneath us) must NEVER be resurrected via
+      // create:true — that recreates the stale filename after a rename. Surface
+      // it as a ConflictError so the caller can re-resolve or write a copy.
+      const allowCreate = expectedRevision === '' || expectedRevision === '0';
+      let fileHandle;
+      try {
+        fileHandle = await this._dirHandle.getFileHandle(noteId, { create: allowCreate });
+      } catch (missingErr) {
+        if (!allowCreate && missingErr && missingErr.name === 'NotFoundError') {
+          throw new ConflictError('Note file missing on write (renamed or deleted underneath us)', {
+            localRevision: expectedRevision || '',
+            remoteRevision: 'deleted',
+          });
+        }
+        throw missingErr;
+      }
       const writable = await fileHandle.createWritable();
       await writable.write(content);
       await writable.close();
