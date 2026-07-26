@@ -389,9 +389,12 @@ export function createApp({ root, enableServiceWorker = false }) {
         if (!isSignedIn()) {
           try {
             await requestAccessToken({ silent: true });
-          } catch {
-            // Silent failed — user needs to re-tap to sign in.
-            return renderDriveSignIn({ reason: 'expired' });
+          } catch (err) {
+            // Silent re-acquire failed (common on mobile after the webview
+            // sleeps). Log the reason for diagnosis and offer a dedicated
+            // one-tap resume rather than the generic sign-in screen (audit S5).
+            console.warn('Drive silent token re-acquire failed at boot', err);
+            return renderDriveResume({ hint: getStoredLoginHint() });
           }
         }
         const drive = new DriveAdapter();
@@ -400,7 +403,8 @@ export function createApp({ root, enableServiceWorker = false }) {
         await renderApp();
       } catch (err) {
         if (err instanceof AdapterAuthError) {
-          return renderDriveSignIn({ reason: 'expired' });
+          console.warn('Drive session expired at boot', err);
+          return renderDriveResume({ hint: getStoredLoginHint() });
         }
         console.error('Drive boot failed', err);
         return renderDriveSignIn({ reason: 'error', error: err });
@@ -715,12 +719,55 @@ export function createApp({ root, enableServiceWorker = false }) {
     screenShell(card);
   }
 
+  // The last Google account Wren signed in with, if we ever recorded one, used
+  // as a login_hint so a returning user resumes without an account picker. With
+  // the drive.file scope Wren can't read the account email, so this stays empty
+  // this round (populating it would need an openid/email scope we deliberately
+  // avoid); the plumbing is here for when a hint becomes available.
+  function getStoredLoginHint() {
+    try {
+      return localStorage.getItem('wren.driveLoginHint') || '';
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * Dedicated one-tap "Resume with Google" screen for the common mobile case: a
+   * dropped/expired Drive session on boot. Simpler than the full sign-in screen
+   * (one primary action) and passes a login_hint when known so the returning
+   * account is pre-selected. No FedCM this round (audit S5).
+   */
+  function renderDriveResume({ hint = '' } = {}) {
+    currentScreen = () => renderDriveResume({ hint });
+    const card = document.createElement('div');
+    card.className = 'sc-screen-card';
+    card.innerHTML = `
+      <img src="./icon.svg" alt="Wren" />
+      <h1>Resume your Drive notes</h1>
+      <p>Your Google sign-in paused — common on mobile after the app sleeps. Tap to pick up where you left off.</p>`;
+    const resume = document.createElement('button');
+    resume.className = 'sc-btn sc-btn--primary';
+    resume.textContent = 'Resume with Google';
+    resume.addEventListener('click', () => startDriveSignIn(resume, { loginHint: hint }));
+    const switchBtn = document.createElement('button');
+    switchBtn.className = 'sc-btn sc-btn--ghost';
+    switchBtn.style.marginLeft = '8px';
+    switchBtn.textContent = 'Use local files instead';
+    switchBtn.addEventListener('click', async () => {
+      await clearStoredBackend();
+      renderStorageChoice();
+    });
+    card.append(resume, switchBtn);
+    screenShell(card);
+  }
+
   /**
    * Click-handler-context Drive sign-in. On iOS standalone PWAs, an extra
    * confirmation modal is required so the user-activation chain survives into
    * the requestAccessToken call (Decision P2c.1).
    */
-  async function startDriveSignIn(triggerBtn) {
+  async function startDriveSignIn(triggerBtn, { loginHint = '' } = {}) {
     if (isIosStandalonePwa()) {
       const proceed = await confirmDialog({
         title: 'Connect to Google Drive?',
@@ -730,20 +777,20 @@ export function createApp({ root, enableServiceWorker = false }) {
       });
       if (!proceed) return;
       // We are now in the modal-confirm click handler.
-      await completeDriveSignIn(triggerBtn);
+      await completeDriveSignIn(triggerBtn, { loginHint });
     } else {
-      await completeDriveSignIn(triggerBtn);
+      await completeDriveSignIn(triggerBtn, { loginHint });
     }
   }
 
-  async function completeDriveSignIn(triggerBtn) {
+  async function completeDriveSignIn(triggerBtn, { loginHint = '' } = {}) {
     if (triggerBtn) {
       triggerBtn.disabled = true;
       triggerBtn.textContent = 'Opening sign-in window…';
     }
     try {
       await initTokenClient({ onTokenChange: handleTokenChange });
-      await requestAccessToken({ silent: false });
+      await requestAccessToken({ silent: false, loginHint });
       const drive = new DriveAdapter();
       await drive.initialize();
       adapter = drive;
