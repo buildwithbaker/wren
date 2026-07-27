@@ -93,6 +93,7 @@ export function createApp({ root, enableServiceWorker = false }) {
   let flushOnHideBound = false;
   let currentScreen = null;
   let backendChipEl = null;
+  let skipLinkEl = null;
   let driveBannerEl = null;
   let kanbanView = null;
   let compactView = null;
@@ -433,6 +434,10 @@ export function createApp({ root, enableServiceWorker = false }) {
     const screen = document.createElement('main');
     screen.className = 'sc-screen';
     screen.id = 'main-content';
+    // Skip-link targets need to be able to hold focus, or the anchor scrolls
+    // without moving the caret and the next Tab starts from the top again
+    // (audit U19 — same reason the main shell's containers carry it).
+    screen.tabIndex = -1;
     screen.style.gridColumn = '1 / -1';
     screen.appendChild(innerNode);
     wrap.appendChild(screen);
@@ -830,6 +835,8 @@ export function createApp({ root, enableServiceWorker = false }) {
     skipLink.href = '#main-content';
     skipLink.textContent = 'Skip to content';
     appEl.appendChild(skipLink);
+    // Retargeted by applyViewMode() — see syncSkipLinkTarget (audit U19).
+    skipLinkEl = skipLink;
 
     driveBannerEl = buildDriveBanner();
     if (driveBannerEl) appEl.appendChild(driveBannerEl);
@@ -911,6 +918,8 @@ export function createApp({ root, enableServiceWorker = false }) {
     // Compact view is a full-width sibling of the two-panel layout, shown when
     // data-view='compact'. Card click / + / Expand all route back to the stored
     // full mode (loadViewMode → list|kanban) and then take the normal path.
+    // Compact's container needs an id + a focus target so the skip link can
+    // point at it on the default landing view (audit U19).
     compactView = createCompactView({
       onSelect: (id) => {
         // Leaving Compact to open a note: restore the full mode, but never land
@@ -942,6 +951,9 @@ export function createApp({ root, enableServiceWorker = false }) {
       });
     }
 
+    compactView.element.id = 'compact-content';
+    compactView.element.tabIndex = -1;
+    main.tabIndex = -1;
     appEl.append(sidebar, main, compactView.element);
     root.append(appEl, buildFooter({ compact: true }));
     revealWindow();
@@ -1175,11 +1187,24 @@ export function createApp({ root, enableServiceWorker = false }) {
     }
     if (kanban) kanbanView.refresh();
     if (compact) compactView.setNotes(notes);
+    syncSkipLinkTarget(compact);
     // Keep the Expanded-view pin in sync with the persisted state (it may have
     // been toggled from the Compact bar while the sidebar was hidden).
     sidebarPin?.sync();
     updateViewToggle(mode);
     lastEffectiveMode = mode;
+  }
+
+  // "Skip to content" pointed at #main-content unconditionally, but Compact —
+  // which is the DEFAULT landing view — hides .sc-main outright
+  // (.sc-app[data-view='compact'] .sc-main { display: none }). Jumping to a
+  // display:none element does nothing: focus stays put and the link is a
+  // no-op exactly where a keyboard user meets it first. Retarget it to
+  // whichever container is actually on screen. Both targets carry
+  // tabindex="-1" so the anchor moves focus, not just the scroll position.
+  function syncSkipLinkTarget(compact) {
+    if (!skipLinkEl) return;
+    skipLinkEl.href = compact ? '#compact-content' : '#main-content';
   }
 
   function buildViewToggle() {

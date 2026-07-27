@@ -391,9 +391,13 @@ button {
   gap: 8px;
 }
 
-/* note card */
+/* note card. The card is a container (audit U14 — it used to be a <button>
+   with interactive chips nested inside it); .sc-card-open is the real button
+   that opens the note, and the chips / archive / pop-out controls are its
+   siblings. */
 .sc-card {
   text-align: left;
+  cursor: pointer;
   border: 1px solid rgba(var(--wr-ink-rgb), 0.08);
   border-radius: var(--wr-radius-card);
   padding: 11px 12px;
@@ -412,7 +416,21 @@ button {
 .sc-card.is-active {
   outline-color: var(--wr-accent);
 }
+.sc-card-open {
+  display: block;
+  width: 100%;
+  /* Leave the top-right cluster (archive + pop-out) clear of the title. */
+  padding: 0 56px 0 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
 .sc-card-title {
+  display: block;
   font-weight: 650;
   font-size: 14.5px;
   color: var(--wr-ink);
@@ -421,6 +439,7 @@ button {
   text-overflow: ellipsis;
 }
 .sc-card-preview {
+  display: block;
   font-size: 12.5px;
   color: var(--wr-paper-muted);
   margin-top: 2px;
@@ -429,6 +448,7 @@ button {
   text-overflow: ellipsis;
 }
 .sc-card-meta {
+  display: block;
   font-size: 11px;
   color: var(--wr-paper-muted);
   margin-top: 7px;
@@ -891,7 +911,11 @@ button {
   white-space: nowrap;
 }
 
-/* card color swatches */
+/* card color swatches. The dot stays 20px for the look; a transparent
+   pseudo-element grows the *hit area* to 26x26 so the control clears the 24px
+   minimum-target guidance on touch (audit U15). The row's 6px gap is wider
+   than the 3px the pseudo-element bleeds on each side, so neighbouring hit
+   areas never overlap and a tap can't land on the wrong colour. */
 .sc-cardcolors {
   display: inline-flex;
   gap: 6px;
@@ -905,6 +929,12 @@ button {
   padding: 0;
   position: relative;
   transition: transform var(--wr-trans), box-shadow var(--wr-trans);
+}
+.sc-swatch::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
 }
 .sc-swatch:hover {
   transform: scale(1.12);
@@ -956,6 +986,8 @@ button {
   margin-top: 6px;
 }
 .sc-mtag {
+  /* Rendered as a <button> when clickable (audit U14), so reset the UA font. */
+  font-family: inherit;
   display: inline-flex;
   align-items: center;
   gap: 1px;
@@ -979,6 +1011,8 @@ button {
 }
 .sc-mtag--clickable {
   cursor: pointer;
+  /* Keep the chip's own 1px border as the only outline-ish edge. */
+  appearance: none;
   transition: border-color var(--wr-trans);
 }
 .sc-mtag--clickable:hover,
@@ -1001,7 +1035,17 @@ button {
   background: transparent;
   color: inherit;
   opacity: 0.65;
+  position: relative;
   transition: background var(--wr-trans), opacity var(--wr-trans);
+}
+/* 16px glyph, 24px hit area (audit U15). The chip has 6px of padding to its
+   right, so the 4px bleed stays inside the chip and never overlaps the next
+   chip's target. */
+.sc-tag-remove::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
 }
 .sc-tag-remove:hover {
   opacity: 1;
@@ -1260,7 +1304,13 @@ button {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 16px;
+  /* index.html ships viewport-fit=cover, so on an iOS PWA the layout extends
+     under the home indicator and the notch/rounded corners. Pad the fixed
+     bottom chrome by the safe-area insets (audit U12); env() resolves to 0 on
+     every platform that has no inset, so this is a no-op elsewhere. */
+  padding: 8px 16px calc(8px + env(safe-area-inset-bottom)) 16px;
+  padding-left: calc(16px + env(safe-area-inset-left));
+  padding-right: calc(16px + env(safe-area-inset-right));
   font-size: 12px;
   color: var(--wr-panel-muted);
   background: var(--wr-panel-bg);
@@ -1631,8 +1681,9 @@ button {
    ========================================================================= */
 .sc-theme-toggle {
   position: fixed;
-  bottom: 14px;
-  right: 14px;
+  /* Safe-area aware: see the note on .sc-footer (audit U12). */
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  right: calc(14px + env(safe-area-inset-right));
   z-index: 50;
   display: inline-flex;
   align-items: center;
@@ -1661,8 +1712,9 @@ button {
    ========================================================================= */
 .sc-install-button {
   position: fixed;
-  bottom: 14px;
-  left: 14px;
+  /* Safe-area aware: see the note on .sc-footer (audit U12). */
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  left: calc(14px + env(safe-area-inset-left));
   z-index: 50;
   display: inline-flex;
   align-items: center;
@@ -1878,7 +1930,7 @@ button {
 /* Toast — used by Drive-disconnected write attempts */
 .sc-toast {
   position: fixed;
-  bottom: 56px;
+  bottom: calc(56px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
   background: var(--wr-panel-text);
@@ -1919,8 +1971,10 @@ button {
    ========================================================================= */
 .sc-open-full-app {
   position: fixed;
-  top: 14px;
-  right: 14px;
+  /* Top-right chrome: keep it clear of the notch / rounded corners under
+     viewport-fit=cover (audit U12). */
+  top: calc(14px + env(safe-area-inset-top));
+  right: calc(14px + env(safe-area-inset-right));
   z-index: 50;
   display: inline-flex;
   align-items: center;
@@ -2150,6 +2204,7 @@ body.has-open-full-app .sc-brand {
   font-weight: 500;
 }
 .sc-kanban-card {
+  position: relative;
   background: var(--wr-note-bg, var(--wr-panel-bg));
   border-radius: var(--wr-radius-sm);
   padding: 10px;
@@ -2157,6 +2212,85 @@ body.has-open-full-app .sc-brand {
   box-shadow: var(--wr-shadow-sm);
   color: var(--wr-ink);
   transition: transform var(--wr-trans);
+}
+/* The real "open this note" control inside the card (audit U13). Full-bleed so
+   the card still reads as one clickable surface, with the right edge kept
+   clear of the move button. */
+.sc-kanban-card-open {
+  display: block;
+  width: 100%;
+  padding: 0 26px 0 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+/* Keyboard equivalent of dragging the card between columns. */
+.sc-kanban-card-move {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--wr-radius-sm);
+  background: rgba(var(--wr-ink-rgb), 0.06);
+  color: var(--wr-ink);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity var(--wr-trans), background var(--wr-trans);
+}
+.sc-kanban-card:hover .sc-kanban-card-move,
+.sc-kanban-card-move:focus-visible,
+.sc-kanban-card-move[aria-expanded='true'] {
+  opacity: 0.85;
+}
+.sc-kanban-card-move:hover {
+  opacity: 1;
+  background: rgba(var(--wr-ink-rgb), 0.14);
+}
+/* Move-to-column menu. position:fixed is set in JS; it lives on <body> so the
+   board's scrolling columns can't clip it. */
+.sc-kanban-movemenu {
+  z-index: 120;
+  min-width: 160px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--wr-border);
+  border-radius: var(--wr-radius-sm);
+  background: var(--wr-panel-bg);
+  box-shadow: var(--wr-shadow-md);
+}
+.sc-kanban-movemenu-item {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  min-height: 24px;
+  border: 0;
+  border-radius: var(--wr-radius-sm);
+  background: none;
+  color: var(--wr-panel-text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.sc-kanban-movemenu-item:hover,
+.sc-kanban-movemenu-item:focus-visible {
+  background: var(--wr-accent-tint);
+  outline: none;
+}
+.sc-kanban-movemenu-empty {
+  padding: 7px 10px;
+  font-size: 12.5px;
+  color: var(--wr-panel-muted);
 }
 .sc-kanban-card:hover {
   transform: translateY(-1px);
@@ -2260,6 +2394,9 @@ body.has-open-full-app .sc-brand {
   position: absolute;
   top: 8px;
   right: 8px;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
   display: inline-grid;
   place-items: center;
   width: 26px;
@@ -2284,6 +2421,9 @@ body.has-open-full-app .sc-brand {
   position: absolute;
   top: 8px;
   right: 40px;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
   display: inline-grid;
   place-items: center;
   width: 26px;
@@ -2301,6 +2441,17 @@ body.has-open-full-app .sc-brand {
 .sc-card-archive:hover {
   opacity: 1;
   background: rgba(var(--wr-ink-rgb), 0.14);
+}
+
+/* Touch and pen have no hover, so an opacity:0 "reveal on hover" control is
+   simply unreachable there (audit U15). Show the card/board actions outright
+   on any coarse pointer. */
+@media (pointer: coarse) {
+  .sc-card-popout,
+  .sc-card-archive,
+  .sc-kanban-card-move {
+    opacity: 0.85;
+  }
 }
 
 /* ---- Due-date chip on cards (Note Lifecycle A2) ------------------------- */
