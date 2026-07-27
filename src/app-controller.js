@@ -2037,6 +2037,12 @@ export function createApp({ root, enableServiceWorker = false }) {
       if (before === after) return;
 
       updated.modified = new Date().toISOString();
+      // A drag between columns is a human edit exactly like a save from the
+      // editor, so stamp the same provenance handleSave does (:1802–1803).
+      // Without this an AI-edited note keeps reading "edited by AI" in the
+      // last-updated panel after a person has moved its card.
+      updated.lastEditedBy = 'human';
+      updated.lastEdited = updated.modified;
       // Conditional on the revision we just read so a concurrent write is caught
       // instead of silently clobbered.
       const res = await adapter.writeNote(noteId, serializeNote(updated), revision);
@@ -2048,6 +2054,8 @@ export function createApp({ root, enableServiceWorker = false }) {
         n.tags = updated.tags;
         n.modified = updated.modified;
         n.revision = res.revision;
+        n.lastEditedBy = updated.lastEditedBy;
+        n.lastEdited = updated.lastEdited;
       }
       notes.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
       list.setNotes(notes);

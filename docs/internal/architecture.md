@@ -172,7 +172,7 @@ Both backends implement the same interface (`src/storage/StorageAdapter.js`):
 - **Drive identity:** GIS Token Model, in-memory token (page reload drops it; `requestAccessToken({silent:true})` re-acquires silently after first consent). The folder is found-or-created with an `appProperties.wrenAppFolder=1` marker so it survives renames.
 - **Conflict copies** follow Syncthing convention: `note.md → note.sync-conflict-20260527-143022-abc1234.md`, where the suffix is the first 7 chars of a stable per-device UUID stored in IndexedDB.
 
-See [`STORAGE.md`](STORAGE.md) for the full phase log, decisions (KB Module 05 references), retry/backoff behavior, and the two pending empirical probes (Q1 `If-Match` support, Q2 `drive.file` foreign-file visibility).
+See [`STORAGE.md`](STORAGE.md) for the full phase log, decisions (KB Module 05 references), retry/backoff behavior, and the empirical probes (Q1 `If-Match` support — closed 2026-07-27 as unanswerable by self-probe; Q2 `drive.file` foreign-file visibility — still open).
 
 **Current state (per STORAGE.md):** single-device Drive round-trip works (Phase 2b.1). Multi-device pull-on-resume, conflict detection/badges, and a sync runner are **not yet shipped** (Phase 2b.2 / 2c). On Drive, last-write-wins; earlier content is recoverable from Drive's revision history but not the Wren UI.
 
