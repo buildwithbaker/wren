@@ -105,58 +105,40 @@ describe('Sidebar card structure (U14)', () => {
 
 describe('Skip link target follows the visible container (U19)', () => {
   it('lands on Compact and points the skip link at the Compact container', async () => {
-    // Force the FS backend to boot straight into the main app shell so the
-    // Compact landing view actually renders (the real adapter can't be ready
-    // in a headless DOM, and boot() would stop at storage-choice).
-    vi.resetModules();
-    // jsdom has no File System Access API, so boot() would bail to the
-    // "browser not supported" screen before the app shell ever renders.
-    vi.doMock('../src/notes-store.js', async (importOriginal) => {
-      const actual = await importOriginal();
-      return { ...actual, isSupported: () => true, getStoredDirHandle: async () => ({}) };
-    });
-    vi.doMock('../src/storage/index.js', async (importOriginal) => {
-      const actual = await importOriginal();
-      const stub = {
-        backendId: () => actual.ADAPTER_TYPES.FS,
-        initialize: async () => {},
-        isReady: async () => true,
-        listNotes: async () => [],
-        readNote: async () => ({ content: '', revision: '' }),
-        getDirHandleFor: () => null,
-      };
-      return {
-        ...actual,
-        resolveBackend: async () => actual.ADAPTER_TYPES.FS,
-        chooseFsAdapter: async () => stub,
-      };
-    });
+    // Uses the shared app harness (tests/helpers/mount-app.js) rather than a
+    // local set of module mocks — it boots the real controller against a fake
+    // StorageAdapter, which is the only way the Compact landing view renders in
+    // a headless DOM.
+    const { mountApp } = await import('./helpers/mount-app.js');
+    const app = await mountApp({ notes: [] });
 
-    const { createApp } = await import('../src/app-controller.js');
-    const root = document.createElement('div');
-    document.body.appendChild(root);
-    createApp({ root, enableServiceWorker: false });
-    for (let i = 0; i < 100 && !document.querySelector('.sc-app'); i++) {
-      await new Promise((r) => setTimeout(r, 10));
-    }
-
-    const app = document.querySelector('.sc-app');
-    expect(app).toBeTruthy();
     // Default landing view is Compact — the exact state the old skip link broke in.
-    expect(app.dataset.view).toBe('compact');
+    expect(app.app.dataset.view).toBe('compact');
 
     const skip = document.querySelector('.sc-skip-link');
     expect(skip.getAttribute('href')).toBe('#compact-content');
 
     const target = document.getElementById('compact-content');
     expect(target).toBeTruthy();
-    // display:none is what made the old #main-content target a dead link.
-    expect(document.querySelector('#main-content').style.display).toBe('');
     expect(target.style.display).not.toBe('none');
-    // An anchor only MOVES FOCUS to a target that can hold it.
+    // #main-content is the container Compact hides — the old dead target.
+    // An anchor only MOVES FOCUS to a target that can hold it, so both carry
+    // tabindex="-1".
     expect(target.getAttribute('tabindex')).toBe('-1');
     expect(document.querySelector('#main-content').getAttribute('tabindex')).toBe('-1');
-    vi.doUnmock('../src/storage/index.js');
-    vi.doUnmock('../src/notes-store.js');
+  });
+
+  it('follows the switch out of Compact back to #main-content', async () => {
+    const { mountApp } = await import('./helpers/mount-app.js');
+    const app = await mountApp({ notes: [] });
+    expect(document.querySelector('.sc-skip-link').getAttribute('href')).toBe('#compact-content');
+
+    app.setView('list');
+
+    const retargeted = await app.waitFor(
+      () => document.querySelector('.sc-skip-link').getAttribute('href') === '#main-content'
+    );
+    expect(retargeted).toBeTruthy();
+    expect(app.app.dataset.view).not.toBe('compact');
   });
 });
