@@ -19,6 +19,7 @@ import {
   TauriFsAdapter,
   DriveAdapter,
   AdapterAuthError,
+  ConflictError,
   resolveBackend,
   chooseFsAdapter,
 } from './storage/index.js';
@@ -37,6 +38,7 @@ import {
 } from './notes-store.js';
 import { createNoteEditor } from './ui/note-editor.js';
 import { createBroadcast } from './sync/broadcast.js';
+import { writeConflictCopy } from './sync/conflictDetection.js';
 import { loadGeometry, saveGeometry, geometryEquals } from './sticky/geometry.js';
 import { addToRegistry, removeFromRegistry } from './sticky/registry.js';
 import { parseStickyParams } from './sticky/opener.js';
@@ -280,7 +282,7 @@ export function createStickyApp({ root }) {
     broadcast.onNoteSaved((msg) => {
       if (!isSameNote(msg)) return;
       if (noteEditor.hasPendingSave()) return;
-      refreshFromDisk();
+      refreshFromDisk(msg);
     });
 
     // Position/size memory + open-sticky registry.
@@ -305,7 +307,10 @@ export function createStickyApp({ root }) {
       // syncBackendFilename). Renaming changes the FS storage id, which would
       // churn ids while the main app is open; the main app reconciles the file
       // name on its next save of this note. Stickies only ever write content.
-      const { revision } = await adapter.writeNote(note.id, serializeNote(note));
+      // Conditional on our known revision so a concurrent write (the main app
+      // or another sticky) is detected instead of silently overwritten.
+      const content = serializeNote(note);
+      const { revision } = await adapter.writeNote(note.id, content, note.revision);
       note.revision = revision;
       note.firstLine = firstLineOf(note.body);
     } catch (err) {
@@ -316,6 +321,10 @@ export function createStickyApp({ root }) {
         // leave the editor mounted. Full-screen reconnect cards are still used
         // at boot (openNoteFlow), where there is no unsaved content at risk.
         showSaveReconnectBanner(note);
+        return false;
+      }
+      if (err instanceof ConflictError) {
+        await handleSaveConflict(note);
         return false;
       }
       console.error('Sticky save failed', err);
@@ -369,10 +378,17 @@ export function createStickyApp({ root }) {
   // Re-read the note from the active adapter and re-open it in the editor. Used
   // when a peer window saved this note. Guarded by hasPendingSave() at the call
   // site so local edits win.
-  async function refreshFromDisk() {
+  async function refreshFromDisk(msg) {
+    // A rename broadcast carries this note's NEW storage id under the same
+    // wrenId (an FS rename changes the id). Adopt it before reading so we never
+    // read — or on the next save WRITE — the stale id (a stale write would 404
+    // or, worse, resurrect the old filename via create-on-write).
+    if (msg && msg.id && msg.id !== storageId && msg.wrenId && wrenId && msg.wrenId === wrenId) {
+      storageId = msg.id;
+    }
     try {
       const { content, revision } = await adapter.readNote(storageId);
-      const fresh = toNote(content, storageId);
+      const fresh = toNote(content, storageId); // fresh.id === storageId → editor adopts the new id
       fresh.revision = revision;
       await noteEditor.openNote(fresh);
       applyWindowColor(fresh.color);
@@ -381,6 +397,37 @@ export function createStickyApp({ root }) {
       if (err instanceof AdapterAuthError) return; // a save attempt will surface it
       console.warn('Sticky refresh failed', err);
     }
+  }
+
+  // A conditional write hit a concurrent change (the main app or another sticky
+  // wrote this note since we last read it). Preserve this sticky's losing edit
+  // as a `.sync-conflict-…` copy so nothing typed is lost, tell the user, then
+  // reload the winning version from disk.
+  async function handleSaveConflict(note) {
+    let conflictName;
+    try {
+      conflictName = await writeConflictCopy(adapter, note, serializeNote(note));
+    } catch (err) {
+      console.error('Sticky conflict copy failed', err);
+      showStickyNotice('Edited elsewhere — copy your text; a conflict copy could not be written.');
+      return;
+    }
+    showStickyNotice(`Edited elsewhere — your changes were kept as “${conflictName}”.`);
+    await refreshFromDisk({ id: storageId, wrenId });
+  }
+
+  // Transient, non-destructive status strip at the top of the sticky. Leaves the
+  // editor mounted (unlike the reconnect banner) and auto-dismisses.
+  function showStickyNotice(text) {
+    root.querySelector('.sc-sticky-notice')?.remove();
+    const notice = document.createElement('div');
+    notice.className = 'sc-sticky-notice';
+    notice.setAttribute('role', 'status');
+    notice.style.cssText =
+      'background:#8A5A00;color:#fff;padding:8px 12px;font-size:13px;line-height:1.4;';
+    notice.textContent = text;
+    root.prepend(notice);
+    setTimeout(() => notice.remove(), 5000);
   }
 
   function isSameNote(msg) {

@@ -72,7 +72,16 @@ export class FileSystemAdapter {
    */
   async initialize() {
     if (!isSupported()) return; // adapter remains not-ready; caller checks isReady()
-    const stored = await getStoredDirHandle();
+    let stored;
+    try {
+      stored = await getStoredDirHandle();
+    } catch {
+      // The handle store couldn't be READ (transient IndexedDB failure). Leave
+      // the adapter not-ready and return — boot re-probes and routes to the
+      // reconnect/retry screen. Do NOT treat this as "no handle": that path
+      // leads to storage-choice, where re-picking overwrites the real handle.
+      return;
+    }
     if (!stored) return;
     const perm = await queryPermission(stored);
     if (perm === 'granted') {
@@ -105,7 +114,19 @@ export class FileSystemAdapter {
 
   /** Re-request permission on a previously stored handle. User-gesture path. */
   async reconnect() {
-    const stored = this._dirHandle || (await getStoredDirHandle());
+    let stored = this._dirHandle;
+    if (!stored) {
+      try {
+        stored = await getStoredDirHandle();
+      } catch {
+        // Read failure — surface as a recoverable auth error so the UI keeps the
+        // reconnect/retry affordance rather than dropping to storage-choice.
+        throw new AdapterAuthError('Could not read the saved folder handle.', {
+          backendId: this.backendId(),
+          recoverable: true,
+        });
+      }
+    }
     if (!stored) {
       throw new AdapterAuthError('No stored folder handle to reconnect.', {
         backendId: this.backendId(),
@@ -228,7 +249,25 @@ export class FileSystemAdapter {
         }
       }
 
-      const fileHandle = await this._dirHandle.getFileHandle(noteId, { create: true });
+      // Only mint a new file when the caller explicitly signals create-intent
+      // (empty/zero expectedRevision — used by createNote-style writes and the
+      // conflict-copy writer). A plain update whose target has vanished
+      // (renamed or deleted underneath us) must NEVER be resurrected via
+      // create:true — that recreates the stale filename after a rename. Surface
+      // it as a ConflictError so the caller can re-resolve or write a copy.
+      const allowCreate = expectedRevision === '' || expectedRevision === '0';
+      let fileHandle;
+      try {
+        fileHandle = await this._dirHandle.getFileHandle(noteId, { create: allowCreate });
+      } catch (missingErr) {
+        if (!allowCreate && missingErr && missingErr.name === 'NotFoundError') {
+          throw new ConflictError('Note file missing on write (renamed or deleted underneath us)', {
+            localRevision: expectedRevision || '',
+            remoteRevision: 'deleted',
+          });
+        }
+        throw missingErr;
+      }
       const writable = await fileHandle.createWritable();
       await writable.write(content);
       await writable.close();
@@ -258,7 +297,37 @@ export class FileSystemAdapter {
       await archiveDir.removeEntry(archiveBaseName(noteId));
       return;
     }
-    await this._dirHandle.removeEntry(noteId);
+    // Top-level note: SOFT-delete into .trash/ (recoverable by a manual file
+    // move) rather than hard-removing. The main-app delete used to call
+    // removeEntry directly, so a mis-fired confirm permanently destroyed the
+    // note; now it's recoverable.
+    await this._moveToTrash(this._dirHandle, noteId);
+  }
+
+  /**
+   * Move a file from `srcDirHandle` into the notes-folder `.trash/` subfolder
+   * (created on demand), preserving content. Collisions get a " (N)" suffix.
+   * Write-new-then-delete-old, so a mid-failure never loses the file. Returns
+   * the new `.trash/<name>` id.
+   */
+  async _moveToTrash(srcDirHandle, name) {
+    const srcHandle = await srcDirHandle.getFileHandle(name);
+    const content = await (await srcHandle.getFile()).text();
+    const trashDir = await this._dirHandle.getDirectoryHandle(TRASH_DIR, { create: true });
+    const destName = await uniqueNoteName(name, async (n) => {
+      try {
+        await trashDir.getFileHandle(n);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    const destHandle = await trashDir.getFileHandle(destName, { create: true });
+    const writable = await destHandle.createWritable();
+    await writable.write(content);
+    await writable.close();
+    await srcDirHandle.removeEntry(name);
+    return `${TRASH_DIR}/${destName}`;
   }
 
   // ---- Inbox (_inbox/) — AI write-back staging (phase 4) ----------------
@@ -392,26 +461,7 @@ export class FileSystemAdapter {
     }
     const inboxDir = await this._getInboxDirHandle({ create: false });
     if (!inboxDir) throw new Error('_inbox/ subfolder not found');
-    const baseName = inboxBaseName(noteId);
-    const srcHandle = await inboxDir.getFileHandle(baseName);
-    const content = await (await srcHandle.getFile()).text();
-
-    const trashDir = await this._dirHandle.getDirectoryHandle(TRASH_DIR, { create: true });
-    const destName = await uniqueNoteName(baseName, async (name) => {
-      try {
-        await trashDir.getFileHandle(name);
-        return true;
-      } catch {
-        return false;
-      }
-    });
-    const destHandle = await trashDir.getFileHandle(destName, { create: true });
-    const writable = await destHandle.createWritable();
-    await writable.write(content);
-    await writable.close();
-    await inboxDir.removeEntry(baseName);
-
-    return { id: `${TRASH_DIR}/${destName}` };
+    return { id: await this._moveToTrash(inboxDir, inboxBaseName(noteId)) };
   }
 
   // ---- Archive (_archive/) — Note Lifecycle B -------------------------------

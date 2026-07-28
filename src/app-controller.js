@@ -16,10 +16,12 @@ import {
   exportNoteDownload,
   buildNoteFilename,
   getStoredDirHandle,
+  isStoragePersisted,
 } from './notes-store.js';
 import {
   ADAPTER_TYPES,
   AdapterAuthError,
+  ConflictError,
   FileSystemAdapter,
   TauriFsAdapter,
   DriveAdapter,
@@ -50,6 +52,7 @@ import { addTagToNote, parseTag, getAllTags, getAllNamespaces } from './tags/tag
 import { getStoredTheme, cycleTheme, initTheme } from './theme.js';
 import { getSyncState, setSyncState, clearSyncState } from './sync/syncStateStore.js';
 import { createBroadcast } from './sync/broadcast.js';
+import { writeConflictCopy } from './sync/conflictDetection.js';
 import { openSticky } from './sticky/opener.js';
 import { readRegistry, clearRegistry } from './sticky/registry.js';
 import {
@@ -354,18 +357,21 @@ export function createApp({ root, enableServiceWorker = false }) {
         return;
       }
       // Not ready (FileSystemAdapter only — the native adapter is always ready
-      // after initialize, having auto-created its folder). Distinguish a
-      // brand-new install (no saved directory handle → local default with
-      // nothing chosen yet) from an existing FS user whose folder permission
-      // lapsed. The former lands on the storage-choice onboarding (local
-      // primary, Drive experimental); the latter reconnects.
-      let hasHandle = false;
+      // after initialize, having auto-created its folder). Distinguish THREE
+      // cases:
+      //   - handle present → existing FS user whose permission lapsed → reconnect
+      //   - handle genuinely absent → brand-new install → storage-choice onboarding
+      //   - handle store UNREADABLE (read failure) → we do NOT know, so route to
+      //     reconnect/retry. NEVER fall through to storage-choice on a read
+      //     failure: re-picking there overwrites the real handle (audit S3).
+      let stored;
       try {
-        hasHandle = !!(await getStoredDirHandle());
-      } catch {
-        /* ignore — treat as brand-new */
+        stored = await getStoredDirHandle();
+      } catch (err) {
+        console.error('Reading the saved folder handle failed at boot', err);
+        return renderFsReconnect(fs, { readFailed: true });
       }
-      if (hasHandle) return renderFsReconnect(fs);
+      if (stored) return renderFsReconnect(fs);
       return renderStorageChoice();
     }
 
@@ -548,18 +554,72 @@ export function createApp({ root, enableServiceWorker = false }) {
     screenShell(card);
   }
 
-  function renderFsReconnect(fs) {
-    currentScreen = () => renderFsReconnect(fs);
+  // A promoted "Install Wren" button for the reconnect screen. Installing the
+  // PWA is the DURABLE fix for repeated folder re-prompts (permission then
+  // persists), so when it's offerable we surface it as a primary CTA. Returns
+  // null when install can't be offered (already installed, or no prompt event).
+  function buildReconnectInstallCta() {
+    if (!canInstall()) return null;
+    const btn = document.createElement('button');
+    btn.className = 'sc-btn sc-btn--primary';
+    btn.textContent = 'Install Wren';
+    btn.addEventListener('click', async () => {
+      if (!installPrompt) return;
+      try {
+        await installPrompt.prompt();
+        await installPrompt.userChoice;
+      } catch (err) {
+        console.warn('Install prompt failed', err);
+      }
+      installPrompt = null;
+      if (currentScreen) currentScreen();
+    });
+    return btn;
+  }
+
+  function renderFsReconnect(fs, { readFailed = false } = {}) {
+    currentScreen = () => renderFsReconnect(fs, { readFailed });
     const card = document.createElement('div');
     card.className = 'sc-screen-card';
+    const heading = readFailed ? 'Couldn’t read your notes folder' : 'Reconnect your notes folder';
+    const copy = readFailed
+      ? 'Wren couldn’t read your saved folder just now — a temporary storage hiccup, not lost notes. Try again, or reconnect below. Don’t pick a new folder unless you actually want to switch.'
+      : 'Your browser needs you to confirm access to your notes folder again.';
     card.innerHTML = `
       <img src="./icon.svg" alt="Wren" />
-      <h1>Reconnect your notes folder</h1>
-      <p>Your browser needs you to confirm access to your notes folder again.</p>`;
+      <h1>${heading}</h1>
+      <p>${copy}</p>`;
+
+    const installed = isInstalled();
+    const installCta = installed ? null : buildReconnectInstallCta();
+
+    // Guidance — this screen previously gave none (audit S6). Installed users get
+    // told how to stop the prompt for good; browser-tab users are nudged to
+    // install (which makes folder permission persist).
+    const tip = document.createElement('p');
+    tip.className = 'sc-hint';
+    if (installed) {
+      tip.textContent =
+        'When your browser asks, choose “Allow on every visit” so Wren stops prompting each session.';
+    } else if (installCta) {
+      tip.textContent =
+        'Tip: install Wren as an app and your folder permission persists — no more re-granting every session.';
+    } else {
+      tip.textContent =
+        'Tip: install Wren from your browser menu and your folder permission persists across sessions.';
+    }
+    card.appendChild(tip);
+
+    // On a read failure the recovery is a retry (re-read IndexedDB), not a
+    // permission re-grant; reuse the primary button for it.
     const grant = document.createElement('button');
-    grant.className = 'sc-btn sc-btn--primary';
-    grant.textContent = 'Grant access';
+    grant.className = installCta ? 'sc-btn sc-btn--ghost' : 'sc-btn sc-btn--primary';
+    grant.textContent = readFailed ? 'Try again' : 'Grant access';
     grant.addEventListener('click', async () => {
+      if (readFailed) {
+        await boot();
+        return;
+      }
       try {
         await fs.reconnect();
         adapter = fs;
@@ -570,6 +630,7 @@ export function createApp({ root, enableServiceWorker = false }) {
         }
       }
     });
+
     const choose = document.createElement('button');
     choose.className = 'sc-btn sc-btn--ghost';
     choose.style.marginLeft = '8px';
@@ -583,9 +644,9 @@ export function createApp({ root, enableServiceWorker = false }) {
         if (err?.name !== 'AbortError') alert('Could not open that folder.');
       }
     });
-    card.append(grant, choose);
-    const install = buildInstallSection();
-    if (install) card.appendChild(install);
+
+    if (installCta) card.append(installCta, grant, choose);
+    else card.append(grant, choose);
     screenShell(card);
   }
 
@@ -792,7 +853,10 @@ export function createApp({ root, enableServiceWorker = false }) {
     // full mode (loadViewMode → list|kanban) and then take the normal path.
     compactView = createCompactView({
       onSelect: (id) => {
-        setViewMode(loadViewMode());
+        // Leaving Compact to open a note: restore the full mode, but never land
+        // in Kanban — its editor is hidden, so the note would open invisibly
+        // (audit U1/U2). Fall back to List, mirroring the sidebar/new-note guards.
+        setViewMode(loadViewMode() === 'kanban' ? 'list' : loadViewMode());
         openNote(id);
       },
       // Desktop: pop a fresh sticky out right here (stay in Compact). Browser:
@@ -873,19 +937,22 @@ export function createApp({ root, enableServiceWorker = false }) {
   // Last-write-wins; no conflict UI (consistent with Drive Phase 2b.1).
   async function handleRemoteNoteSaved(msg) {
     if (!adapter || isDriveDisconnected()) return;
-    const target =
-      notes.find((n) => n.id === msg.id) ||
-      (msg.wrenId ? notes.find((n) => n.wrenId === msg.wrenId) : null);
-    if (!target) return; // unknown note (e.g. created elsewhere) — caught on next load
+    let idx = notes.findIndex((n) => n.id === msg.id);
+    if (idx === -1 && msg.wrenId) idx = notes.findIndex((n) => n.wrenId === msg.wrenId);
+    if (idx === -1) return; // unknown note (e.g. created elsewhere) — caught on next load
+    const oldId = notes[idx].id;
+    // A rename broadcast carries the note's NEW storage id under the same wrenId
+    // (FS renames change the id). Adopt it before reading so we never read — or
+    // later write — the stale id (which would 404 or resurrect the old file).
+    const currentId = msg.id && msg.id !== oldId ? msg.id : oldId;
     try {
-      const { content, revision, name } = await adapter.readNote(target.id);
-      const parsed = parseNote(content, target.id);
-      const idx = notes.findIndex((n) => n.id === target.id);
-      if (idx === -1) return;
+      const { content, revision, name } = await adapter.readNote(currentId);
+      const parsed = parseNote(content, currentId);
       const updated = {
         ...notes[idx],
+        id: currentId,
         wrenId: parsed.wrenId || notes[idx].wrenId,
-        filename: name || notes[idx].filename,
+        filename: name || (currentId !== oldId ? currentId : notes[idx].filename),
         title: parsed.title,
         body: parsed.body,
         color: parsed.color,
@@ -903,13 +970,14 @@ export function createApp({ root, enableServiceWorker = false }) {
       notes.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
       list.setNotes(notes);
       compactView?.setNotes(notes);
-      list.setActive(noteEditor.getNote()?.id || null);
       if (effectiveViewMode() === 'kanban') kanbanView.refresh();
       const open = noteEditor.getNote();
-      if (open && open.id === updated.id && !noteEditor.hasPendingSave()) {
+      // Re-open when the editor holds this note under EITHER its old or new id,
+      // so a rename adopts the new id in the open editor too.
+      if (open && (open.id === updated.id || open.id === oldId) && !noteEditor.hasPendingSave()) {
         await noteEditor.openNote(updated);
-        list.setActive(updated.id);
       }
+      list.setActive(noteEditor.getNote()?.id || null);
       regenerateIndex();
     } catch (err) {
       if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
@@ -1301,6 +1369,9 @@ export function createApp({ root, enableServiceWorker = false }) {
         revision: '',
         readOnly: true,
       };
+      // In Kanban the editor is hidden behind the board, so open would look like
+      // "nothing happened" — switch to List first (mirrors the sidebar guard).
+      if (effectiveViewMode() === 'kanban') setViewMode('list');
       await noteEditor.openNote(fresh, { readOnly: true, readOnlyLabel: 'Archived · read-only' });
       list.setActive(archiveId);
       appEl.dataset.view = 'editor';
@@ -1364,6 +1435,9 @@ export function createApp({ root, enableServiceWorker = false }) {
         revision: '',
         readOnly: true,
       };
+      // In Kanban the editor is hidden behind the board, so open would look like
+      // "nothing happened" — switch to List first (mirrors the sidebar guard).
+      if (effectiveViewMode() === 'kanban') setViewMode('list');
       await noteEditor.openNote(fresh, { readOnly: true, readOnlyLabel: 'Staged · read-only' });
       list.setActive(inboxId);
       appEl.dataset.view = 'editor';
@@ -1655,8 +1729,11 @@ export function createApp({ root, enableServiceWorker = false }) {
       if (from === 'kanban' && effectiveViewMode() === 'kanban') kanbanView.refresh();
       return;
     }
-    // Browser fallback: surface the note in the full editor.
-    setViewMode(from === 'compact' ? loadViewMode() : 'list');
+    // Browser fallback: surface the note in the full editor. Never land in
+    // Kanban (its editor is hidden → the new note would open invisibly); fall
+    // back to List.
+    const restore = from === 'compact' ? loadViewMode() : 'list';
+    setViewMode(restore === 'kanban' ? 'list' : restore);
     await openNote(note.id, { focusTitle: true });
   }
 
@@ -1678,7 +1755,10 @@ export function createApp({ root, enableServiceWorker = false }) {
     note.lastEdited = note.modified;
     const content = serializeNote(note);
     try {
-      const { revision } = await adapter.writeNote(note.id, content);
+      // Pass the note's known revision so the adapter can detect a concurrent
+      // write (another window / editor / device) and throw ConflictError rather
+      // than blindly overwriting the winner's changes.
+      const { revision } = await adapter.writeNote(note.id, content, note.revision);
       note.revision = revision;
       note.firstLine = firstLineOf(note.body);
       await syncBackendFilename(note);
@@ -1692,9 +1772,12 @@ export function createApp({ root, enableServiceWorker = false }) {
         else renderFsReconnect(adapter);
         return false;
       }
-      // ConflictError is technically possible but Phase 2b.1 doesn't surface
-      // conflicts — last-write-wins per spec. Log and report failure so the
-      // editor shows "Not saved" rather than a false success.
+      // Concurrent-write conflict: preserve this window's unsaved text as a
+      // conflict copy (never silently overwrite), then reload the winner.
+      if (err instanceof ConflictError) {
+        await handleSaveConflict(note, content);
+        return false;
+      }
       console.error('Save failed', err);
       return false;
     }
@@ -1764,6 +1847,41 @@ export function createApp({ root, enableServiceWorker = false }) {
     }
   }
 
+  /**
+   * A conditional write hit a concurrent change (another window / editor /
+   * device wrote this note since we last read it). Syncthing-style resolution:
+   * keep whatever is now on disk as the canonical note, preserve THIS window's
+   * losing edit as a `.sync-conflict-…` copy so nothing is lost, tell the user
+   * where it went, and reload the editor to the winning version.
+   *
+   * @param {object} note - the in-memory note whose save conflicted
+   * @param {string} localContent - the serialized text that failed to save
+   */
+  async function handleSaveConflict(note, localContent) {
+    let conflictName;
+    try {
+      conflictName = await writeConflictCopy(adapter, note, localContent);
+    } catch (err) {
+      console.error('Could not write conflict copy', err);
+      showToast('Edited elsewhere — copy your text; a conflict copy could not be written.');
+      return;
+    }
+    showToast(`Edited elsewhere — your changes were kept as “${conflictName}”.`);
+    // Adopt the winner's revision so a subsequent save overwrites (last-write-
+    // wins) rather than spawning an endless chain of conflict copies.
+    try {
+      const { revision } = await adapter.readNote(note.id);
+      note.revision = revision;
+    } catch {
+      /* the note may itself have been renamed/deleted — refresh will resolve it */
+    }
+    try {
+      await handleRemoteNoteSaved({ id: note.id, wrenId: note.wrenId });
+    } catch (err) {
+      console.warn('Post-conflict refresh failed', err);
+    }
+  }
+
   async function handleDelete(note) {
     if (isDriveDisconnected()) {
       showDriveDisconnectedToast('Reconnect Drive to delete notes.');
@@ -1802,7 +1920,7 @@ export function createApp({ root, enableServiceWorker = false }) {
       return;
     }
     try {
-      const { content } = await adapter.readNote(noteId);
+      const { content, revision } = await adapter.readNote(noteId);
       const parsed = parseNote(content, noteId);
       let updated;
       if (value === '_untagged') {
@@ -1823,7 +1941,9 @@ export function createApp({ root, enableServiceWorker = false }) {
       if (before === after) return;
 
       updated.modified = new Date().toISOString();
-      const res = await adapter.writeNote(noteId, serializeNote(updated));
+      // Conditional on the revision we just read so a concurrent write is caught
+      // instead of silently clobbered.
+      const res = await adapter.writeNote(noteId, serializeNote(updated), revision);
 
       // Keep the in-memory model in sync so both the board and the sidebar
       // list reflect the move without a full reload.
@@ -1841,6 +1961,14 @@ export function createApp({ root, enableServiceWorker = false }) {
     } catch (err) {
       if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
         showDriveDisconnected();
+        return;
+      }
+      if (err instanceof ConflictError) {
+        // The card was edited elsewhere between our read and write. Re-read and
+        // refresh the board rather than clobbering the concurrent change; the
+        // drop can simply be retried.
+        showToast('Card changed elsewhere — refreshed. Try the move again.');
+        await handleRemoteNoteSaved({ id: noteId });
         return;
       }
       console.error('Kanban move failed', err);
@@ -2086,6 +2214,24 @@ export function createApp({ root, enableServiceWorker = false }) {
         })
       );
       pop.appendChild(toDrive);
+    }
+
+    // Diagnostics: surface whether the browser granted persistent storage. On a
+    // local backend this is the difference between folder permission surviving
+    // eviction and getting re-prompted every session (audit S6). Filled async.
+    if (!isDrive) {
+      const persistLine = document.createElement('p');
+      persistLine.className = 'sc-popover-hint';
+      persistLine.textContent = 'Persistent storage: checking…';
+      pop.appendChild(persistLine);
+      isStoragePersisted().then((state) => {
+        persistLine.textContent =
+          state === true
+            ? 'Persistent storage: on (folder access should stick).'
+            : state === false
+              ? 'Persistent storage: off — install Wren so folder access persists.'
+              : 'Persistent storage: unavailable in this browser.';
+      });
     }
 
     document.body.appendChild(pop);
