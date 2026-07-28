@@ -432,8 +432,10 @@ export function toPreviewText(markdown) {
 // subdirs are already skipped; only the reserved top-level files need a name
 // guard. `.wren-index.json` is also excluded by the FS .md filter and the Drive
 // NOTE_MIME query, but it is listed here too for robustness. Exported so both
-// storage adapters can share one definition. TODO(ai-phase4+): extend if more
-// reserved names are added.
+// storage adapters can share one definition: this Set is the single place a new
+// reserved top-level name has to be registered, and `isReservedNoteName` below
+// is its only read path, so a later AI phase adding a reserved file changes
+// exactly these two lines and nothing else.
 const RESERVED_NOTE_NAMES = new Set([
   '_index.md',
   'tasks.md',

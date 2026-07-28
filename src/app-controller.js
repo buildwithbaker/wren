@@ -93,6 +93,10 @@ export function createApp({ root, enableServiceWorker = false }) {
   let flushOnHideBound = false;
   let currentScreen = null;
   let backendChipEl = null;
+  let skipLinkEl = null;
+  // Set synchronously the first time setupDesktop() runs; desktopIntegration
+  // itself only lands when the async setup resolves.
+  let desktopSetupStarted = false;
   let driveBannerEl = null;
   let kanbanView = null;
   let compactView = null;
@@ -433,6 +437,10 @@ export function createApp({ root, enableServiceWorker = false }) {
     const screen = document.createElement('main');
     screen.className = 'sc-screen';
     screen.id = 'main-content';
+    // Skip-link targets need to be able to hold focus, or the anchor scrolls
+    // without moving the caret and the next Tab starts from the top again
+    // (audit U19 — same reason the main shell's containers carry it).
+    screen.tabIndex = -1;
     screen.style.gridColumn = '1 / -1';
     screen.appendChild(innerNode);
     wrap.appendChild(screen);
@@ -830,6 +838,8 @@ export function createApp({ root, enableServiceWorker = false }) {
     skipLink.href = '#main-content';
     skipLink.textContent = 'Skip to content';
     appEl.appendChild(skipLink);
+    // Retargeted by applyViewMode() — see syncSkipLinkTarget (audit U19).
+    skipLinkEl = skipLink;
 
     driveBannerEl = buildDriveBanner();
     if (driveBannerEl) appEl.appendChild(driveBannerEl);
@@ -911,6 +921,8 @@ export function createApp({ root, enableServiceWorker = false }) {
     // Compact view is a full-width sibling of the two-panel layout, shown when
     // data-view='compact'. Card click / + / Expand all route back to the stored
     // full mode (loadViewMode → list|kanban) and then take the normal path.
+    // Compact's container needs an id + a focus target so the skip link can
+    // point at it on the default landing view (audit U19).
     compactView = createCompactView({
       onSelect: (id) => {
         // Leaving Compact to open a note: restore the full mode, but never land
@@ -942,6 +954,9 @@ export function createApp({ root, enableServiceWorker = false }) {
       });
     }
 
+    compactView.element.id = 'compact-content';
+    compactView.element.tabIndex = -1;
+    main.tabIndex = -1;
     appEl.append(sidebar, main, compactView.element);
     root.append(appEl, buildFooter({ compact: true }));
     revealWindow();
@@ -971,7 +986,14 @@ export function createApp({ root, enableServiceWorker = false }) {
   // pops out a fresh sticky and never adds a note to the in-app list, so a
   // capture never depends on which view happens to be open.
   function setupDesktop() {
-    if (desktopIntegration) return;
+    // Guard on a SYNCHRONOUS flag, not on desktopIntegration: that is only
+    // assigned when the setup promise resolves, so a second renderApp() during
+    // the Drive-reconnect race (which can fire while the first setup is still
+    // in flight) sailed past the check and registered the tray/hotkey handlers
+    // — and a second anonymous focus listener that could never be removed —
+    // twice over (audit U21).
+    if (desktopSetupStarted) return;
+    desktopSetupStarted = true;
     setupDesktopIntegration({
       onNewNote: () => handleNewPopOut({ from: 'hotkey' }),
       // Quit-time flush: land any pending debounced save before the app exits.
@@ -1175,11 +1197,24 @@ export function createApp({ root, enableServiceWorker = false }) {
     }
     if (kanban) kanbanView.refresh();
     if (compact) compactView.setNotes(notes);
+    syncSkipLinkTarget(compact);
     // Keep the Expanded-view pin in sync with the persisted state (it may have
     // been toggled from the Compact bar while the sidebar was hidden).
     sidebarPin?.sync();
     updateViewToggle(mode);
     lastEffectiveMode = mode;
+  }
+
+  // "Skip to content" pointed at #main-content unconditionally, but Compact —
+  // which is the DEFAULT landing view — hides .sc-main outright
+  // (.sc-app[data-view='compact'] .sc-main { display: none }). Jumping to a
+  // display:none element does nothing: focus stays put and the link is a
+  // no-op exactly where a keyboard user meets it first. Retarget it to
+  // whichever container is actually on screen. Both targets carry
+  // tabindex="-1" so the anchor moves focus, not just the scroll position.
+  function syncSkipLinkTarget(compact) {
+    if (!skipLinkEl) return;
+    skipLinkEl.href = compact ? '#compact-content' : '#main-content';
   }
 
   function buildViewToggle() {
@@ -1976,9 +2011,8 @@ export function createApp({ root, enableServiceWorker = false }) {
       await openNote(id);
     });
     toast.appendChild(open);
-    document.body.appendChild(toast);
     // Longer than a plain toast — it carries an action the user may want to take.
-    setTimeout(() => toast.remove(), 9000);
+    mountToast(toast, 9000);
   }
 
   async function handleDelete(note) {
@@ -2037,6 +2071,12 @@ export function createApp({ root, enableServiceWorker = false }) {
       if (before === after) return;
 
       updated.modified = new Date().toISOString();
+      // A drag between columns is a human edit exactly like a save from the
+      // editor, so stamp the same provenance handleSave does (:1802–1803).
+      // Without this an AI-edited note keeps reading "edited by AI" in the
+      // last-updated panel after a person has moved its card.
+      updated.lastEditedBy = 'human';
+      updated.lastEdited = updated.modified;
       // Conditional on the revision we just read so a concurrent write is caught
       // instead of silently clobbered.
       const res = await adapter.writeNote(noteId, serializeNote(updated), revision);
@@ -2048,6 +2088,8 @@ export function createApp({ root, enableServiceWorker = false }) {
         n.tags = updated.tags;
         n.modified = updated.modified;
         n.revision = res.revision;
+        n.lastEditedBy = updated.lastEditedBy;
+        n.lastEdited = updated.lastEdited;
       }
       notes.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
       list.setNotes(notes);
@@ -2116,12 +2158,37 @@ export function createApp({ root, enableServiceWorker = false }) {
   }
 
   // Lightweight toast: temporary div, auto-removes. No persistent state.
+  // Toasts used to be individually position:fixed at the same coordinates, so
+  // two in flight rendered exactly on top of each other and the first was
+  // unreadable. They now live in a shared stack container (audit U21).
+  function toastStack() {
+    let stack = document.querySelector('.sc-toast-stack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.className = 'sc-toast-stack';
+      // Announce toasts without stealing focus; the stack is a pass-through
+      // layer so it can't intercept clicks meant for the app beneath it.
+      stack.setAttribute('role', 'status');
+      stack.setAttribute('aria-live', 'polite');
+      document.body.appendChild(stack);
+    }
+    return stack;
+  }
+
+  function mountToast(toast, ttlMs) {
+    toastStack().appendChild(toast);
+    setTimeout(() => {
+      toast.remove();
+      const stack = document.querySelector('.sc-toast-stack');
+      if (stack && !stack.childElementCount) stack.remove();
+    }, ttlMs);
+  }
+
   function showToast(msg) {
     const toast = document.createElement('div');
     toast.className = 'sc-toast';
     toast.textContent = msg;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3200);
+    mountToast(toast, 3200);
   }
 
   function showDriveDisconnectedToast(msg) {

@@ -37,6 +37,12 @@ export const HIGHLIGHT_COLORS = [
 ];
 
 // Builds the note-header card color picker. Returns { element, setValue }.
+//
+// role="radiogroup" is a promise about keyboard behaviour, not just a label:
+// a radio group is ONE tab stop, and arrow keys move (and select) within it.
+// This group was announcing itself as a radiogroup while leaving all seven
+// swatches individually tabbable and arrow keys inert (audit U20). It now
+// implements the roving-tabindex pattern the role implies.
 export function createCardColorPicker({ value = 'default', onChange }) {
   const wrap = document.createElement('div');
   wrap.className = 'sc-cardcolors';
@@ -44,6 +50,7 @@ export function createCardColorPicker({ value = 'default', onChange }) {
   wrap.setAttribute('aria-label', 'Note color');
 
   const buttons = new Map();
+  const order = [];
   for (const color of CARD_COLORS) {
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -52,19 +59,48 @@ export function createCardColorPicker({ value = 'default', onChange }) {
     btn.title = color.label;
     btn.setAttribute('role', 'radio');
     btn.setAttribute('aria-label', color.label);
+    btn.tabIndex = -1;
     btn.addEventListener('click', () => {
       setValue(color.id);
       onChange?.(color.id);
     });
     buttons.set(color.id, btn);
+    order.push({ id: color.id, btn });
     wrap.appendChild(btn);
   }
 
+  // Arrow keys move to the adjacent swatch AND select it (the standard radio
+  // group behaviour — a radio group has no "focused but unselected" state).
+  // Home/End jump to the ends. The list wraps, matching native radios.
+  wrap.addEventListener('keydown', (e) => {
+    const keys = ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'];
+    if (!keys.includes(e.key)) return;
+    const current = order.findIndex(({ btn }) => btn === document.activeElement);
+    if (current === -1) return;
+    e.preventDefault();
+    let next;
+    if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = order.length - 1;
+    else {
+      const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1;
+      next = (current + step + order.length) % order.length;
+    }
+    const target = order[next];
+    setValue(target.id);
+    target.btn.focus();
+    onChange?.(target.id);
+  });
+
   function setValue(id) {
+    // Fall back to the first swatch so the group always has exactly one tab
+    // stop, even when the note carries a colour that is no longer in the
+    // palette.
+    const known = buttons.has(id);
     for (const [cid, btn] of buttons) {
-      const active = cid === id;
-      btn.classList.toggle('is-active', active);
-      btn.setAttribute('aria-checked', active ? 'true' : 'false');
+      const active = known ? cid === id : cid === order[0]?.id;
+      btn.classList.toggle('is-active', known && cid === id);
+      btn.setAttribute('aria-checked', known && cid === id ? 'true' : 'false');
+      btn.tabIndex = active ? 0 : -1;
     }
   }
 

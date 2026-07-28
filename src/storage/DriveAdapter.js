@@ -38,11 +38,6 @@ const NOTE_MIME = 'text/markdown';
 const MAX_ATTEMPTS = 5;
 const MAX_BACKOFF_MS = 60_000;
 
-// Whether If-Match: <headRevisionId> on multipart PATCH is honored by Drive
-// for blob files. Set empirically once during runtime by the writeNote probe.
-// null = untested, true = supported (preferred), false = not supported (fall
-// back to read-before-write only).
-let IF_MATCH_SUPPORTED = null;
 
 /**
  * Drive-backed adapter.
@@ -558,27 +553,30 @@ export class DriveAdapter {
   /**
    * Update an existing note's content.
    *
-   * Conflict detection strategy (Decision P2b.3):
-   *   1. Try If-Match: <expectedRevision> first. If Drive honors it,
-   *      response is 412 on stale; we surface ConflictError. Subsequent
-   *      writes skip the explicit pre-fetch.
-   *   2. If Drive ignores If-Match (returns 200 on stale), fall back to
-   *      read-before-write: fetch headRevisionId, compare, then write.
+   * Conflict detection strategy (Decision P2b.3, simplified 2026-07-27):
+   *   1. Read-before-write: fetch headRevisionId, compare against
+   *      expectedRevision, throw ConflictError on mismatch. This is the
+   *      detection path that actually runs.
+   *   2. If-Match: <expectedRevision> is still attached to the PATCH as a
+   *      second line of defence against a write that lands between our
+   *      pre-fetch and our upload. Drive does not document If-Match support
+   *      for multipart blob uploads, so a 412 is a bonus, never a guarantee.
    *
-   * The first call self-tests: tries If-Match. If the server returns 412 OR
-   * the write succeeds with If-Match honored, set IF_MATCH_SUPPORTED = true.
-   * If the server appears to ignore If-Match (write goes through despite a
-   * stale value), we cannot tell without a second probe; we conservatively
-   * stick with read-before-write for subsequent calls.
+   * Earlier revisions kept an IF_MATCH_SUPPORTED probe flag meant to skip the
+   * pre-fetch once Drive proved it honored If-Match. It could only ever be set
+   * to true (a 412) and never to false — a server that silently ignores
+   * If-Match returns 200, which is indistinguishable from a legitimate
+   * same-revision write — so the flag could never learn "unsupported" and the
+   * read-before-write branch was the only one that ever mattered. The flag is
+   * gone; read-before-write is now unconditional for conditional writes.
    */
   async writeNote(noteId, content, expectedRevision) {
     this._assertReady();
 
-    // Pre-write read-before-write when If-Match is not known to be honored,
-    // OR when caller provided no expected revision (we still want to short
-    // circuit if the file moved underneath us, but with no expectation we
-    // simply do an unconditional PATCH).
-    if (expectedRevision !== undefined && IF_MATCH_SUPPORTED !== true) {
+    // Read-before-write whenever the caller supplied an expectation. With no
+    // expectation there is nothing to compare against, so the PATCH below is
+    // unconditional by design (explicit create/overwrite intent).
+    if (expectedRevision !== undefined) {
       const meta = await this._getFileMeta(noteId, 'headRevisionId');
       if (meta.headRevisionId && meta.headRevisionId !== expectedRevision) {
         throw new ConflictError('Revision mismatch (read-before-write)', {
@@ -593,8 +591,9 @@ export class DriveAdapter {
     const headers = {
       'Content-Type': `multipart/related; boundary=${boundary}`,
     };
-    if (expectedRevision !== undefined && IF_MATCH_SUPPORTED !== false) {
-      // Probe / use If-Match. expectedRevision is the etag-like value.
+    if (expectedRevision !== undefined) {
+      // Belt-and-braces on top of the read-before-write above; harmless when
+      // Drive ignores it. expectedRevision is the etag-like value.
       headers['If-Match'] = expectedRevision;
     }
 
@@ -606,8 +605,8 @@ export class DriveAdapter {
       );
     } catch (e) {
       if (e && e.status === 412) {
-        // If-Match honored AND stale - mark feature supported.
-        IF_MATCH_SUPPORTED = true;
+        // If-Match honored AND stale — a write landed between our pre-fetch
+        // and this upload.
         // Need the current remote revision so the conflict error is informative.
         let remoteRev = 'unknown';
         try {
@@ -624,9 +623,6 @@ export class DriveAdapter {
       throw e;
     }
 
-    // First successful write with If-Match attached - we can't be certain
-    // Drive enforced it (could have been a coincidental same-revision write),
-    // so leave IF_MATCH_SUPPORTED as-is unless we've already proven 412 works.
     const meta = await resp.json();
     return { revision: meta.headRevisionId || '' };
   }
@@ -850,8 +846,18 @@ export class DriveAdapter {
    *
    * On non-OK responses, throws an Error with status, body, and (for 403)
    * the parsed reason so callers can branch on quota vs. permission.
+   *
+   * @param {string} url
+   * @param {RequestInit} [opts]
+   * @param {number} [attempt] - retry counter for backoff (429/5xx/quota 403).
+   * @param {boolean} [reauthed] - true once the single silent token
+   *   re-acquire has been spent. Tracked separately from `attempt` because a
+   *   429/5xx retry also increments `attempt`: keying off `attempt === 0`
+   *   meant a 401 arriving on any later attempt fell through to the generic
+   *   error path and surfaced as "Save failed" instead of the Drive reconnect
+   *   banner.
    */
-  async _driveFetch(url, opts = {}, attempt = 0) {
+  async _driveFetch(url, opts = {}, attempt = 0, reauthed = false) {
     let token = getAccessToken();
     if (!token) {
       // Silent refresh - if this fails, surface to the caller as auth error.
@@ -872,17 +878,26 @@ export class DriveAdapter {
 
     if (resp.ok) return resp;
 
-    // 401 - one silent re-acquire, then retry.
-    if (resp.status === 401 && attempt === 0) {
-      try {
-        await requestAccessToken({ silent: true });
-      } catch {
-        throw new AdapterAuthError('Drive 401 and silent re-acquire failed', {
-          backendId: this.backendId(),
-          recoverable: true,
-        });
+    // 401 - one silent re-acquire, then retry. Any 401 after that re-acquire
+    // (on this attempt or a later one) is a dead Drive session: type it as an
+    // AdapterAuthError so callers route to the reconnect banner instead of a
+    // generic "Save failed".
+    if (resp.status === 401) {
+      if (!reauthed) {
+        try {
+          await requestAccessToken({ silent: true });
+        } catch {
+          throw new AdapterAuthError('Drive 401 and silent re-acquire failed', {
+            backendId: this.backendId(),
+            recoverable: true,
+          });
+        }
+        return this._driveFetch(url, opts, attempt + 1, true);
       }
-      return this._driveFetch(url, opts, attempt + 1);
+      throw new AdapterAuthError('Drive 401 after silent re-acquire', {
+        backendId: this.backendId(),
+        recoverable: true,
+      });
     }
 
     // Read body once for error inspection (we cannot peek-then-replay).
@@ -891,7 +906,7 @@ export class DriveAdapter {
     if (shouldRetry(resp, bodyText) && attempt < MAX_ATTEMPTS - 1) {
       const delay = backoffDelay(resp, attempt);
       await sleep(delay);
-      return this._driveFetch(url, opts, attempt + 1);
+      return this._driveFetch(url, opts, attempt + 1, reauthed);
     }
 
     const err = new Error(
@@ -1029,10 +1044,4 @@ function parseFrontmatterLite(text) {
     else if (key === 'last_edited') out.lastEdited = val;
   }
   return out;
-}
-
-// Test-only accessor for the If-Match probe state. Phase 1 STORAGE.md uses
-// this to document the outcome of empirical Q1.
-export function _ifMatchSupportedState() {
-  return IF_MATCH_SUPPORTED;
 }

@@ -84,12 +84,21 @@ export class FileSystemAdapter {
     }
     if (!stored) return;
     const perm = await queryPermission(stored);
-    if (perm === 'granted') {
+    // Hold the handle in memory for 'granted' AND 'prompt'. 'prompt' means the
+    // grant lapsed (Chrome drops File System Access permission on restart), not
+    // that the folder is gone — and the difference is the whole error taxonomy:
+    //   handle held   -> operations fail with NotAllowedError, which
+    //                    _mapPermissionError types as AdapterAuthError and the
+    //                    UI answers with "reconnect the folder".
+    //   handle absent -> _assertReady throws "no folder handle", which routes
+    //                    to storage-choice and re-picking overwrites the real
+    //                    handle.
+    // isReady() still re-queries permission, so a held-but-unpermitted handle
+    // never reads as ready. 'denied' stays unheld: the user said no, and
+    // reconnect() re-reads from the handle store anyway.
+    if (perm === 'granted' || perm === 'prompt') {
       this._dirHandle = stored;
     }
-    // If perm !== 'granted', we hold the handle in memory but only after the
-    // caller re-requests permission via reconnect(). This mirrors the existing
-    // boot() flow in app-controller.js.
   }
 
   async isReady() {
