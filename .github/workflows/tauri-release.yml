@@ -37,6 +37,7 @@ jobs:
       # build`) then `tauri build`, creates/updates the Release for the tag, and
       # uploads the NSIS installer. Unsigned — no signing secrets are referenced.
       - uses: tauri-apps/tauri-action@v0
+        id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -51,3 +52,35 @@ jobs:
             [download page](https://wren.buildwithbaker.io/download.html) for details.
           releaseDraft: false
           prerelease: false
+
+      # ---- Code signing (audit D5) — INERT until enabled ------------------
+      #
+      # Skipped entirely unless the repository variable SIGNING_ENABLED is set
+      # to 'true' (Settings → Secrets and variables → Actions → Variables), so
+      # merging this changes nothing about today's release: the installer still
+      # ships unsigned and the job still goes green with no secrets configured.
+      #
+      # To turn it on, once SignPath Foundation (or another provider) has
+      # approved the project:
+      #   1. Add secrets SIGNPATH_API_TOKEN and variables SIGNPATH_ORG_ID,
+      #      SIGNPATH_PROJECT_SLUG, SIGNPATH_SIGNING_POLICY_SLUG.
+      #   2. Set variable SIGNING_ENABLED = true.
+      #   3. Update public/signing.html — it currently states the installer is
+      #      NOT signed, and that claim has to stop being true at the same
+      #      moment the signature starts existing.
+      #
+      # Signing runs as a POST-BUILD step on the artifact rather than through
+      # tauri.conf.json's signCommand: SignPath takes a built binary, signs it
+      # in its own infrastructure, and hands it back. Nothing about the Tauri
+      # build changes, which is also why this can sit here switched off.
+      - name: Submit installer for signing
+        if: ${{ vars.SIGNING_ENABLED == 'true' }}
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORG_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.tauri.outputs.artifactId }}
+          wait-for-completion: true
+          output-artifact-directory: signed
