@@ -94,6 +94,9 @@ export function createApp({ root, enableServiceWorker = false }) {
   let currentScreen = null;
   let backendChipEl = null;
   let skipLinkEl = null;
+  // Set synchronously the first time setupDesktop() runs; desktopIntegration
+  // itself only lands when the async setup resolves.
+  let desktopSetupStarted = false;
   let driveBannerEl = null;
   let kanbanView = null;
   let compactView = null;
@@ -983,7 +986,14 @@ export function createApp({ root, enableServiceWorker = false }) {
   // pops out a fresh sticky and never adds a note to the in-app list, so a
   // capture never depends on which view happens to be open.
   function setupDesktop() {
-    if (desktopIntegration) return;
+    // Guard on a SYNCHRONOUS flag, not on desktopIntegration: that is only
+    // assigned when the setup promise resolves, so a second renderApp() during
+    // the Drive-reconnect race (which can fire while the first setup is still
+    // in flight) sailed past the check and registered the tray/hotkey handlers
+    // — and a second anonymous focus listener that could never be removed —
+    // twice over (audit U21).
+    if (desktopSetupStarted) return;
+    desktopSetupStarted = true;
     setupDesktopIntegration({
       onNewNote: () => handleNewPopOut({ from: 'hotkey' }),
       // Quit-time flush: land any pending debounced save before the app exits.
@@ -2001,9 +2011,8 @@ export function createApp({ root, enableServiceWorker = false }) {
       await openNote(id);
     });
     toast.appendChild(open);
-    document.body.appendChild(toast);
     // Longer than a plain toast — it carries an action the user may want to take.
-    setTimeout(() => toast.remove(), 9000);
+    mountToast(toast, 9000);
   }
 
   async function handleDelete(note) {
@@ -2149,12 +2158,37 @@ export function createApp({ root, enableServiceWorker = false }) {
   }
 
   // Lightweight toast: temporary div, auto-removes. No persistent state.
+  // Toasts used to be individually position:fixed at the same coordinates, so
+  // two in flight rendered exactly on top of each other and the first was
+  // unreadable. They now live in a shared stack container (audit U21).
+  function toastStack() {
+    let stack = document.querySelector('.sc-toast-stack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.className = 'sc-toast-stack';
+      // Announce toasts without stealing focus; the stack is a pass-through
+      // layer so it can't intercept clicks meant for the app beneath it.
+      stack.setAttribute('role', 'status');
+      stack.setAttribute('aria-live', 'polite');
+      document.body.appendChild(stack);
+    }
+    return stack;
+  }
+
+  function mountToast(toast, ttlMs) {
+    toastStack().appendChild(toast);
+    setTimeout(() => {
+      toast.remove();
+      const stack = document.querySelector('.sc-toast-stack');
+      if (stack && !stack.childElementCount) stack.remove();
+    }, ttlMs);
+  }
+
   function showToast(msg) {
     const toast = document.createElement('div');
     toast.className = 'sc-toast';
     toast.textContent = msg;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3200);
+    mountToast(toast, 3200);
   }
 
   function showDriveDisconnectedToast(msg) {

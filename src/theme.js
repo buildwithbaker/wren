@@ -5,15 +5,31 @@
 const STORAGE_KEY = 'wren.theme';
 const VALID = new Set(['system', 'light', 'dark']);
 
+// localStorage.getItem throws, not returns null, when storage is unavailable:
+// Chrome/Firefox block it outright when third-party cookies are disabled for
+// the origin, Safari throws in some private-browsing configurations, and an
+// over-quota profile can too. getStoredTheme() runs on the boot path (initTheme
+// + the footer's theme button), so an unguarded throw took the whole app down
+// before first paint (audit U21).
 export function getStoredTheme() {
-  const raw = localStorage.getItem(STORAGE_KEY);
+  let raw = null;
+  try {
+    raw = localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return 'system';
+  }
   return VALID.has(raw) ? raw : 'system';
 }
 
 export function setStoredTheme(theme) {
   if (!VALID.has(theme)) theme = 'system';
-  if (theme === 'system') localStorage.removeItem(STORAGE_KEY);
-  else localStorage.setItem(STORAGE_KEY, theme);
+  try {
+    if (theme === 'system') localStorage.removeItem(STORAGE_KEY);
+    else localStorage.setItem(STORAGE_KEY, theme);
+  } catch {
+    // Storage blocked — the theme still applies for this session, it just
+    // won't survive a reload. Failing the write must not fail the toggle.
+  }
   applyTheme(theme);
 }
 

@@ -18,6 +18,13 @@ import { isTauri } from '../platform.js';
 
 const DEFAULT_W = 320;
 const DEFAULT_H = 360;
+// Floor for a sticky window. A decorationless window has no OS-drawn frame to
+// stop a drag, so without this a resize could shrink the sticky past its own
+// 32px title bar and leave a window with no visible close button and no way to
+// grow it back (audit T3). Deliberately smaller than the default so a user can
+// still make a sticky genuinely small.
+const MIN_W = 220;
+const MIN_H = 160;
 const CASCADE_STEP = 28;
 
 /**
@@ -182,6 +189,8 @@ export async function openStickyTauri(note, { cascadeIndex = 0 } = {}) {
       dragDropEnabled: false,
       width: Math.round(geom.w),
       height: Math.round(geom.h),
+      minWidth: MIN_W,
+      minHeight: MIN_H,
       x: Math.round(geom.x),
       y: Math.round(geom.y),
     });

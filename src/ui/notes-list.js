@@ -192,6 +192,8 @@ export function createNotesList({
   function renderInboxCard(note) {
     const card = document.createElement('div');
     card.className = 'sc-inbox-card';
+    // setActive() clears the highlight by id across both collections.
+    card.dataset.id = note.id;
     if (note.id === activeId) card.classList.add('is-active');
 
     const open = document.createElement('button');
@@ -470,6 +472,13 @@ export function createNotesList({
     setActive(id) {
       activeId = id;
       for (const card of scroll.querySelectorAll('.sc-card')) {
+        card.classList.toggle('is-active', card.dataset.id === id);
+      }
+      // Inbox cards were left out, so opening a staged note and then closing
+      // it (or opening a different note) left the inbox card highlighted for
+      // the rest of the session (audit U21). The active id is a single value
+      // across both collections, so clearing is the same loop.
+      for (const card of root.querySelectorAll('.sc-inbox-card')) {
         card.classList.toggle('is-active', card.dataset.id === id);
       }
     },

@@ -18,6 +18,17 @@ const EVENT_FLUSH_SAVES: &str = "wren://flush-saves";
 // write, short enough not to feel laggy.
 const FLUSH_GRACE_MS: u64 = 600;
 
+// The main window ships `"visible": false` so the first painted frame already
+// has content; the frontend calls window.show() once it has mounted
+// (revealWindow() in app-controller.js, with a 3s belt-and-braces timeout).
+// That makes the ONLY path to a visible app a working JS bundle: a broken or
+// partially-downloaded frontend leaves Wren running with no window at all and
+// no way to get one back except the tray. This is the Rust-side backstop —
+// if the window is still hidden this long after setup, show it regardless, so
+// the worst case is an app showing an error rather than an invisible process
+// (audit T5).
+const REVEAL_FALLBACK_MS: u64 = 5_000;
+
 /// Show, un-minimize, and focus the main window (bringing it back from the tray).
 #[cfg(desktop)]
 fn show_main(app: &tauri::AppHandle) {
@@ -154,6 +165,27 @@ pub fn run() {
             }
           });
         }
+      }
+
+      // ---- Reveal fallback (audit T5) ------------------------------------
+      #[cfg(desktop)]
+      {
+        let handle = app.handle().clone();
+        std::thread::spawn(move || {
+          std::thread::sleep(std::time::Duration::from_millis(REVEAL_FALLBACK_MS));
+          if let Some(w) = handle.get_webview_window("main") {
+            // is_visible() errs on a destroyed window; treat that as "nothing
+            // to reveal" rather than forcing a show on a window that is gone.
+            if let Ok(false) = w.is_visible() {
+              log::warn!(
+                "main window still hidden {REVEAL_FALLBACK_MS}ms after setup - \
+                 revealing from Rust (frontend never called show())"
+              );
+              let _ = w.show();
+              let _ = w.set_focus();
+            }
+          }
+        });
       }
 
       Ok(())

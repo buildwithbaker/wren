@@ -1927,24 +1927,41 @@ button {
   pointer-events: none;
 }
 
-/* Toast — used by Drive-disconnected write attempts */
-.sc-toast {
+/* Toast stack — toasts used to be individually position:fixed at identical
+   coordinates, so a second toast landed exactly on top of the first and both
+   were unreadable. They now stack newest-at-the-bottom in this container, and
+   the container sits ABOVE the modal scrim (z-index 900): a toast fired while
+   a dialog is open used to render behind the scrim and was effectively
+   invisible (audit U21). pointer-events are off on the layer and back on for
+   each toast, so the stack never swallows a click meant for the app. */
+.sc-toast-stack {
   position: fixed;
   bottom: calc(56px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
+  z-index: 950;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: min(420px, calc(100vw - 24px));
+  pointer-events: none;
+}
+.sc-toast {
+  pointer-events: auto;
+  max-width: 100%;
   background: var(--wr-panel-text);
   color: var(--wr-panel-bg);
   padding: 8px 14px;
   border-radius: 6px;
   font-size: 13px;
+  text-align: center;
   box-shadow: var(--wr-shadow-md);
-  z-index: 300;
   animation: sc-toast-in 180ms ease-out;
 }
 @keyframes sc-toast-in {
-  from { opacity: 0; transform: translate(-50%, 6px); }
-  to   { opacity: 1; transform: translate(-50%, 0); }
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 /* Inline action button inside a toast (e.g. "Open" the conflict copy). */
 .sc-toast-action {
