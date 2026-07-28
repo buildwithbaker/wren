@@ -5,6 +5,10 @@
 
 /* ---- Base tokens (shared) ---------------------------------------------- */
 :root {
+  /* Default light. The dark blocks below flip this so native controls (date
+     input, <select>, scrollbars) render matching dark chrome (audit U9). */
+  color-scheme: light;
+
   --wr-font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --wr-mono: 'JetBrains Mono', 'Consolas', ui-monospace, monospace;
 
@@ -83,6 +87,22 @@
   --wr-border-strong: #CDBFA9;
   --wr-field-bg:      #F1E8DB;
   --wr-paper-muted:   rgba(46, 42, 36, 0.55);
+  /* Slate "ink" used for placeholders, hairline borders, and hover washes as
+     rgba(var(--wr-ink-rgb), <alpha>). Kept as an RGB triplet so a single token
+     flips the whole family in dark mode. Light value = the historical #2A3540,
+     so light rendering is byte-identical. */
+  --wr-ink-rgb: 42, 53, 64;
+
+  /* Editor text-color palette (TEXT_COLORS in color-picker.js reference these).
+     Light values = the historical hexes so existing light rendering is unchanged;
+     the dark blocks lift them so text stays legible on dark paper (audit U9). */
+  --wr-tc-ink: #2A3540;
+  --wr-tc-amber: #A07020;
+  --wr-tc-red: #C0392B;
+  --wr-tc-green: #2E7D46;
+  --wr-tc-blue: #2E5082;
+  --wr-tc-purple: #7A4FB5;
+  --wr-tc-rose: #C2407A;
 }
 
 /* ---- Dark chrome (note paper stays light by design) -------------------- */
@@ -90,6 +110,7 @@
    explicit data-theme="dark" on the root element. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
+    color-scheme: dark;
     --wr-primary: #7FA0E8;
     --wr-primary-hover: #96B3EE;
     --wr-primary-soft: #1A2644;
@@ -117,9 +138,21 @@
     --wr-note-rose: #3A2530;
     --wr-note-purple: #2A2238;
     --wr-paper-muted: rgba(230, 235, 242, 0.55);
+    /* Flip the slate-ink overlay family to light so placeholders, hairlines and
+       hover washes are visible on dark paper/chrome (audit U7/U8/U9). */
+    --wr-ink-rgb: 236, 230, 220;
+    /* Lift the editor text palette for legibility on dark paper (audit U9). */
+    --wr-tc-ink: #C7D2DE;
+    --wr-tc-amber: #D9A84E;
+    --wr-tc-red: #E27567;
+    --wr-tc-green: #6FB98A;
+    --wr-tc-blue: #7FA0E8;
+    --wr-tc-purple: #B79BE0;
+    --wr-tc-rose: #E585AC;
   }
 }
 :root[data-theme='dark'] {
+  color-scheme: dark;
   --wr-primary: #7FA0E8;
   --wr-primary-hover: #96B3EE;
   --wr-primary-soft: #1A2644;
@@ -147,6 +180,16 @@
   --wr-note-rose: #3A2530;
   --wr-note-purple: #2A2238;
   --wr-paper-muted: rgba(230, 235, 242, 0.55);
+  /* Slate-ink overlay family flipped light for manual dark (see @media block). */
+  --wr-ink-rgb: 236, 230, 220;
+  /* Editor text palette lifted for manual dark (see @media block). */
+  --wr-tc-ink: #C7D2DE;
+  --wr-tc-amber: #D9A84E;
+  --wr-tc-red: #E27567;
+  --wr-tc-green: #6FB98A;
+  --wr-tc-blue: #7FA0E8;
+  --wr-tc-purple: #B79BE0;
+  --wr-tc-rose: #E585AC;
 }
 
 /* ---- Reset ------------------------------------------------------------- */
@@ -351,7 +394,7 @@ button {
 /* note card */
 .sc-card {
   text-align: left;
-  border: 1px solid rgba(42, 53, 64, 0.08);
+  border: 1px solid rgba(var(--wr-ink-rgb), 0.08);
   border-radius: var(--wr-radius-card);
   padding: 11px 12px;
   color: var(--wr-ink);
@@ -586,7 +629,7 @@ button {
   margin: 16px;
   background: var(--wr-note-bg, #fff);
   color: var(--wr-ink);
-  border: 1px solid rgba(42, 53, 64, 0.1);
+  border: 1px solid rgba(var(--wr-ink-rgb), 0.1);
   border-radius: var(--wr-radius-panel);
   box-shadow: var(--wr-shadow-md);
   overflow: hidden;
@@ -615,7 +658,7 @@ button {
   padding: 4px 2px;
 }
 .sc-title-input::placeholder {
-  color: rgba(42, 53, 64, 0.4);
+  color: rgba(var(--wr-ink-rgb), 0.4);
 }
 .sc-title-input:focus-visible {
   outline: none;
@@ -632,12 +675,11 @@ button {
   margin-right: 6px;
 }
 .sc-editor-more-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  /* Anchor the menu's right edge to the trigger so it opens leftward into the
-     window. left:0 pushed a 230px menu past the right window edge and clipped
-     "Pop out into its own window". */
-  right: 0;
+  /* Fixed so it escapes the editor surface's overflow:hidden clip — an absolute
+     menu was cut off at the bottom in a short window (audit U11). JS
+     (positionDropdown) sets top/right from the trigger and flips it up when it
+     would overflow the viewport bottom. */
+  position: fixed;
   z-index: 50;
   min-width: 230px;
   max-width: min(320px, calc(100vw - 24px));
@@ -667,7 +709,7 @@ button {
   cursor: pointer;
 }
 .sc-editor-more-item:hover {
-  background: rgba(42, 53, 64, 0.08);
+  background: rgba(var(--wr-ink-rgb), 0.08);
 }
 /* Checkbox menu items (Hide due date / Hide tags): the check mark is invisible
    until the item is aria-checked. */
@@ -717,7 +759,7 @@ button {
   transition: background var(--wr-trans), opacity var(--wr-trans), border-color var(--wr-trans);
 }
 .sc-format-toggle:hover {
-  background: rgba(42, 53, 64, 0.08);
+  background: rgba(var(--wr-ink-rgb), 0.08);
   border-color: color-mix(in srgb, var(--wr-ink) 48%, transparent);
   opacity: 1;
 }
@@ -760,13 +802,13 @@ button {
   transition: background var(--wr-trans), opacity var(--wr-trans);
 }
 .sc-tags-btn:hover {
-  background: rgba(42, 53, 64, 0.08);
+  background: rgba(var(--wr-ink-rgb), 0.08);
   opacity: 1;
 }
 .sc-tags-popover {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
+  /* Fixed for the same reason as .sc-editor-more-menu — escapes the surface clip;
+     positionDropdown sets top/right and flips up as needed (audit U11). */
+  position: fixed;
   z-index: 50;
   min-width: 220px;
   max-width: min(280px, calc(100vw - 24px));
@@ -800,7 +842,7 @@ button {
   transition: background var(--wr-trans), opacity var(--wr-trans);
 }
 .sc-iconbtn:hover {
-  background: rgba(42, 53, 64, 0.08);
+  background: rgba(var(--wr-ink-rgb), 0.08);
   opacity: 1;
 }
 .sc-iconbtn--danger:hover {
@@ -858,7 +900,7 @@ button {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  border: 1px solid rgba(42, 53, 64, 0.18);
+  border: 1px solid rgba(var(--wr-ink-rgb), 0.18);
   background: var(--swatch);
   padding: 0;
   position: relative;
@@ -963,7 +1005,7 @@ button {
 }
 .sc-tag-remove:hover {
   opacity: 1;
-  background: rgba(42, 53, 64, 0.14);
+  background: rgba(var(--wr-ink-rgb), 0.14);
 }
 .sc-tagadd {
   display: inline-flex;
@@ -1006,8 +1048,8 @@ button {
   gap: 2px;
   padding: 6px 6px;
   background: var(--wr-note-header-tint);
-  border-top: 1px solid rgba(42, 53, 64, 0.1);
-  border-bottom: 1px solid rgba(42, 53, 64, 0.1);
+  border-top: 1px solid rgba(var(--wr-ink-rgb), 0.1);
+  border-bottom: 1px solid rgba(var(--wr-ink-rgb), 0.1);
 }
 .sc-tbtn {
   display: inline-grid;
@@ -1023,7 +1065,7 @@ button {
   transition: background var(--wr-trans), opacity var(--wr-trans);
 }
 .sc-tbtn:hover {
-  background: rgba(42, 53, 64, 0.09);
+  background: rgba(var(--wr-ink-rgb), 0.09);
   opacity: 1;
 }
 .sc-tbtn.is-active {
@@ -1039,7 +1081,7 @@ button {
   width: 1px;
   align-self: stretch;
   margin: 4px 4px;
-  background: rgba(42, 53, 64, 0.14);
+  background: rgba(var(--wr-ink-rgb), 0.14);
 }
 
 .sc-tbtn--menu {
@@ -1116,7 +1158,7 @@ button {
 }
 .sc-prose p.is-editor-empty:first-child::before {
   content: 'Start writing…';
-  color: rgba(42, 53, 64, 0.4);
+  color: rgba(var(--wr-ink-rgb), 0.4);
   float: left;
   height: 0;
   pointer-events: none;
@@ -1154,20 +1196,20 @@ button {
 .sc-prose blockquote {
   border-left: 3px solid var(--wr-accent);
   padding-left: 0.9em;
-  color: rgba(42, 53, 64, 0.78);
+  color: rgba(var(--wr-ink-rgb), 0.78);
   font-style: italic;
 }
 .sc-prose code {
   font-family: var(--wr-mono);
   font-size: 0.88em;
-  background: rgba(42, 53, 64, 0.09);
+  background: rgba(var(--wr-ink-rgb), 0.09);
   padding: 0.12em 0.35em;
   border-radius: 4px;
 }
 .sc-prose pre {
   font-family: var(--wr-mono);
   font-size: 0.86em;
-  background: rgba(42, 53, 64, 0.92);
+  background: rgba(var(--wr-ink-rgb), 0.92);
   color: #f4f6f9;
   padding: 12px 14px;
   border-radius: var(--wr-radius-sm);
@@ -1184,7 +1226,7 @@ button {
 }
 .sc-prose hr {
   border: 0;
-  border-top: 1px solid rgba(42, 53, 64, 0.18);
+  border-top: 1px solid rgba(var(--wr-ink-rgb), 0.18);
 }
 
 /* task list */
@@ -1852,6 +1894,22 @@ button {
   from { opacity: 0; transform: translate(-50%, 6px); }
   to   { opacity: 1; transform: translate(-50%, 0); }
 }
+/* Inline action button inside a toast (e.g. "Open" the conflict copy). */
+.sc-toast-action {
+  margin-left: 4px;
+  padding: 2px 10px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sc-toast-action:hover {
+  background: var(--wr-panel-bg);
+  color: var(--wr-panel-text);
+}
 
 /* =========================================================================
    Open Full App link (extension popup only — JS conditional)
@@ -1883,6 +1941,12 @@ button {
   color: var(--wr-brown);
 }
 .sc-open-full-app svg { width: 11px; height: 11px; }
+/* Reserve room on the right of the brand header for the fixed "Open Full App"
+   pill so it stops overlapping the backend chip at popup width (audit U18). */
+body.has-open-full-app .sc-brand {
+  /* Pill footprint measured at 117px from the right edge; clear it with a gap. */
+  padding-right: 124px;
+}
 
 /* =========================================================================
    Sidebar tag filter (Phase B of Kanban SOW)
@@ -2172,6 +2236,15 @@ button {
     background: #3A5BA8;
   }
 }
+/* Same dark-contrast fix for the MANUAL Dark toggle (light OS): otherwise white
+   text sits on the light-indigo --wr-primary (#7FA0E8) at ~2.6:1 (audit U8).
+   Uses a deep indigo so white text clears WCAG AA. */
+:root[data-theme='dark'] .sc-btn--primary {
+  background: #2B4A8B;
+}
+:root[data-theme='dark'] .sc-btn--primary:hover {
+  background: #3A5BA8;
+}
 
 /* =========================================================================
    Sticky Float Phase 2 — pop-out affordances, restore bar, sticky window
@@ -2193,7 +2266,7 @@ button {
   height: 26px;
   border-radius: var(--wr-radius-sm);
   color: var(--wr-ink);
-  background: rgba(42, 53, 64, 0.06);
+  background: rgba(var(--wr-ink-rgb), 0.06);
   opacity: 0;
   transition: opacity var(--wr-trans), background var(--wr-trans);
 }
@@ -2203,7 +2276,7 @@ button {
 }
 .sc-card-popout:hover {
   opacity: 1;
-  background: rgba(42, 53, 64, 0.14);
+  background: rgba(var(--wr-ink-rgb), 0.14);
 }
 
 /* Archive hover affordance — mirrors the pop-out, offset so they don't overlap. */
@@ -2217,7 +2290,7 @@ button {
   height: 26px;
   border-radius: var(--wr-radius-sm);
   color: var(--wr-ink);
-  background: rgba(42, 53, 64, 0.06);
+  background: rgba(var(--wr-ink-rgb), 0.06);
   opacity: 0;
   transition: opacity var(--wr-trans), background var(--wr-trans);
 }
@@ -2227,7 +2300,7 @@ button {
 }
 .sc-card-archive:hover {
   opacity: 1;
-  background: rgba(42, 53, 64, 0.14);
+  background: rgba(var(--wr-ink-rgb), 0.14);
 }
 
 /* ---- Due-date chip on cards (Note Lifecycle A2) ------------------------- */
@@ -2243,7 +2316,7 @@ button {
 }
 .sc-due-chip--upcoming {
   color: var(--wr-paper-muted);
-  background: rgba(42, 53, 64, 0.07);
+  background: rgba(var(--wr-ink-rgb), 0.07);
 }
 .sc-due-chip--today {
   color: #8a5a00;

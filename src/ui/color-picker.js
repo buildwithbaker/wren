@@ -6,15 +6,23 @@
 import { CARD_COLORS } from '@/notes-store.js';
 
 // Foreground text colors for the Tiptap Color extension.
+//
+// Values are CSS variables (not literal hexes) so the same note renders legible
+// ink in BOTH themes — a fixed dark "Ink" #2A3540 was invisible on dark paper
+// (audit U9). The Color extension stores the value verbatim as
+// `style="color: var(--wr-tc-…)"`, which tiptap-markdown round-trips unchanged
+// (verified) and resolves per theme at render time (see --wr-tc-* in style.css).
+// Notes authored before this change keep their baked-in hex; only new picks
+// adapt.
 export const TEXT_COLORS = [
   { label: 'Default', value: null },
-  { label: 'Ink', value: '#2A3540' },
-  { label: 'Amber', value: '#A07020' },
-  { label: 'Red', value: '#C0392B' },
-  { label: 'Green', value: '#2E7D46' },
-  { label: 'Blue', value: '#2E5082' },
-  { label: 'Purple', value: '#7A4FB5' },
-  { label: 'Rose', value: '#C2407A' },
+  { label: 'Ink', value: 'var(--wr-tc-ink)' },
+  { label: 'Amber', value: 'var(--wr-tc-amber)' },
+  { label: 'Red', value: 'var(--wr-tc-red)' },
+  { label: 'Green', value: 'var(--wr-tc-green)' },
+  { label: 'Blue', value: 'var(--wr-tc-blue)' },
+  { label: 'Purple', value: 'var(--wr-tc-purple)' },
+  { label: 'Rose', value: 'var(--wr-tc-rose)' },
 ];
 
 // Highlight (text background) colors for the Highlight extension.

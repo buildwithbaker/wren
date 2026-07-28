@@ -174,10 +174,12 @@ function clearPendingTimer() {
  * Request an access token. Must be called from inside a user gesture for
  * non-silent requests, or the browser will block the popup.
  *
- * @param {{silent?: boolean}} [opts]
+ * @param {{silent?: boolean, loginHint?: string}} [opts] - loginHint pre-selects
+ *   the Google account (GIS `hint`) so a returning user resumes without an
+ *   account picker, when a hint is known.
  * @returns {Promise<{token: string, expiresAt: number|null}>}
  */
-export async function requestAccessToken({ silent = false } = {}) {
+export async function requestAccessToken({ silent = false, loginHint = '' } = {}) {
   if (!tokenClient) {
     await initTokenClient({ onTokenChange: onTokenChangeCallback || undefined });
   }
@@ -217,7 +219,10 @@ export async function requestAccessToken({ silent = false } = {}) {
     try {
       // prompt: '' means "silent" — uses an existing session without popup.
       // prompt: 'consent' forces the consent screen (incremental auth, account picker).
-      tokenClient.requestAccessToken({ prompt: silent ? '' : 'consent' });
+      const cfg = { prompt: silent ? '' : 'consent' };
+      // Pre-select the returning account when a hint is known (Resume flow).
+      if (loginHint) cfg.hint = loginHint;
+      tokenClient.requestAccessToken(cfg);
     } catch (err) {
       clearPendingTimer();
       pendingRequest = null;

@@ -75,7 +75,8 @@ export async function getDeviceShortId() {
  * @param {string} localContent - the unsaved text to preserve
  * @param {string} [deviceShortId] - injectable for tests; defaults to the
  *   persisted per-device id.
- * @returns {Promise<string>} the conflict-copy file name
+ * @returns {Promise<{id: string, name: string}>} the conflict copy's storage id
+ *   (so the caller can open it) and its file name (for the toast).
  */
 export async function writeConflictCopy(adapter, note, localContent, deviceShortId) {
   const shortId = deviceShortId || (await getDeviceShortId());
@@ -87,20 +88,25 @@ export async function writeConflictCopy(adapter, note, localContent, deviceShort
       title: note.title || '',
       created: note.created || '',
     });
+    let name = conflictName;
     if (typeof adapter.renameNote === 'function') {
       try {
-        await adapter.renameNote(created.id, conflictName);
+        const res = await adapter.renameNote(created.id, conflictName);
+        name = (res && res.name) || conflictName;
       } catch {
         // A rename collision leaves the createNote default name in place — the
         // user's text is still preserved, which is the point.
+        name = created.name || conflictName;
       }
     }
-    return conflictName;
+    // Drive: the storage id is the opaque fileId (unchanged by rename).
+    return { id: created.id, name };
   }
 
-  // FS / Tauri: empty expectedRevision signals create-intent to writeNote.
+  // FS / Tauri: empty expectedRevision signals create-intent to writeNote; the
+  // filename IS the id.
   await adapter.writeNote(conflictName, localContent, '');
-  return conflictName;
+  return { id: conflictName, name: conflictName };
 }
 
 // ---- Internal ----------------------------------------------------------
