@@ -21,6 +21,12 @@
 //
 //   import { mountApp, frontmatterOf } from './helpers/mount-app.js';
 //   const app = await mountApp({ notes: [...] });
+// jsdom ships no IndexedDB, and Wren uses it for the stored folder handle, the
+// per-note sync state, and the stable device id that names conflict copies.
+// Without a real implementation the conflict-copy path fails at
+// getDeviceShortId() and the app falls back to "a conflict copy could not be
+// written" — so the test would pass for the wrong reason.
+import 'fake-indexeddb/auto';
 import { vi } from 'vitest';
 
 vi.mock('../../src/notes-store.js', async (importOriginal) => {
@@ -97,6 +103,16 @@ export function createFakeAdapter(noteFixtures = []) {
     },
     async writeNote(id, content, expectedRevision) {
       calls.writeNote.push({ id, content, expectedRevision });
+      // Tests set adapter.failNextWriteWith to simulate the other writer
+      // winning the race (a ConflictError from a conditional write). It may be
+      // an Error, or a function (id, attemptedContent) => Error — the function
+      // form lets a test decide what the winner left on disk based on what we
+      // just tried to write.
+      if (adapter.failNextWriteWith) {
+        const spec = adapter.failNextWriteWith;
+        adapter.failNextWriteWith = null;
+        throw typeof spec === 'function' ? spec(id, content) : spec;
+      }
       const f = files.get(id) || { name: id };
       const revision = `rev-${rev++}`;
       files.set(id, { ...f, content, revision, modified: new Date().toISOString() });
@@ -109,9 +125,17 @@ export function createFakeAdapter(noteFixtures = []) {
       files.set(id, { content, revision, name: id, modified: new Date().toISOString() });
       return { id, revision, name: id };
     },
+    // FS semantics: the filename IS the id, so a rename changes the note's
+    // identity and the controller has to cascade the new id (audit S2). A fake
+    // that returned the old id would quietly skip that whole code path.
     async renameNote(id, desiredName) {
       calls.renameNote.push({ id, desiredName });
-      return { id, name: desiredName };
+      const f = files.get(id);
+      if (!f) return { id, name: desiredName };
+      files.delete(id);
+      const revision = `rev-${rev++}`;
+      files.set(desiredName, { ...f, name: desiredName, revision });
+      return { id: desiredName, name: desiredName, revision };
     },
     async deleteNote(id) {
       calls.deleteNote.push({ id });
@@ -145,6 +169,48 @@ export function createFakeAdapter(noteFixtures = []) {
 }
 
 let pendingAdapter = null;
+
+// Every mounted app opens a BroadcastChannel and subscribes to note-saved
+// messages (the cross-window sticky sync). document.body.replaceChildren()
+// does not close it, so without this a previous test's controller keeps
+// listening and runs its handlers — against a torn-down DOM and a stale
+// adapter — every time a later test saves. That showed up as BroadcastChannel
+// errors in stderr and as a conflict test that passed alone and timed out in
+// the file. Track the channels so each mount can shut the old ones down.
+const openChannels = new Set();
+let channelPatched = false;
+
+function trackBroadcastChannels() {
+  if (channelPatched || typeof globalThis.BroadcastChannel !== 'function') return;
+  channelPatched = true;
+  const Native = globalThis.BroadcastChannel;
+  class TrackedBroadcastChannel extends Native {
+    constructor(name) {
+      super(name);
+      openChannels.add(this);
+    }
+    close() {
+      openChannels.delete(this);
+      return super.close();
+    }
+  }
+  globalThis.BroadcastChannel = TrackedBroadcastChannel;
+}
+
+/**
+ * Shut down anything a previously mounted app left running. Called at the top
+ * of mountApp; also exported so a test file can put it in afterEach.
+ */
+export function cleanupApp() {
+  for (const ch of openChannels) {
+    try {
+      ch.close();
+    } catch {
+      /* already closed */
+    }
+  }
+  openChannels.clear();
+}
 
 function stubBrowserGaps() {
   if (!window.matchMedia) {
@@ -204,10 +270,20 @@ async function waitFor(predicate, { timeout = 2000, step = 10 } = {}) {
  * @returns {Promise<{adapter, root, app, setView, card, waitFor, calls}>}
  */
 export async function mountApp({ notes = [], adapter } = {}) {
+  cleanupApp();
+  trackBroadcastChannels();
   stubBrowserGaps();
   pendingAdapter = adapter || createFakeAdapter(notes);
 
   const { createApp } = await import('../../src/app-controller.js');
+  // Resolve the error classes through the SAME mocked storage/index.js the
+  // controller imports. A test that constructs ConflictError from its own
+  // import can get a different class object — the mock factory's
+  // importOriginal() graph is not always the one a plain import() returns —
+  // and then `err instanceof ConflictError` inside the controller is false, so
+  // the conflict silently falls through to the generic "Save failed" branch
+  // and the test passes for the wrong reason. Hand tests the real ones.
+  const { ConflictError, AdapterAuthError } = await import('../../src/storage/index.js');
   const root = document.createElement('div');
   document.body.appendChild(root);
   createApp({ root, enableServiceWorker: false });
@@ -225,6 +301,9 @@ export async function mountApp({ notes = [], adapter } = {}) {
     root,
     app,
     waitFor,
+    cleanup: cleanupApp,
+    /** Error classes from the controller's own module graph. */
+    errors: { ConflictError, AdapterAuthError },
     /** Click the sidebar List|Kanban toggle. */
     setView(mode) {
       const btn = document.querySelector(`.sc-viewtoggle button[data-mode="${mode}"]`);
@@ -234,6 +313,23 @@ export async function mountApp({ notes = [], adapter } = {}) {
     /** The Kanban card element for a note id. */
     card(id) {
       return document.querySelector(`.sc-kanban-card[data-id="${id}"]`);
+    },
+    /** Open a note from the sidebar and wait for the editor to mount. */
+    async openNote(id) {
+      const card = document.querySelector(`.sc-card[data-id="${id}"] .sc-card-open`);
+      if (!card) throw new Error(`no sidebar card for "${id}"`);
+      card.click();
+      const pm = await waitFor(() => document.querySelector('.ProseMirror'));
+      if (!pm) throw new Error('editor never mounted');
+      return pm;
+    },
+    /** Retitle the open note, which is what triggers a debounced save. */
+    setTitle(text) {
+      const input = document.querySelector('.sc-title-input');
+      if (!input) throw new Error('no title input — is a note open?');
+      input.value = text;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      return input;
     },
   };
 }
