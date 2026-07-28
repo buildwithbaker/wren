@@ -2,14 +2,28 @@
 
 Local-first sticky-notes app. Your notes are plain `.md` files (YAML frontmatter + markdown body) stored in a folder you choose on disk via the File System Access API — no account, no cloud.
 
-Ships in two forms that read/write the same folder:
+Ships in three forms that read/write the same folder:
 
-- **PWA** — two-panel web app (installable, works offline)
+- **PWA** — two-panel web app (installable, works offline) — <https://wren.buildwithbaker.io>
 - **Chrome extension** — Manifest V3 single-panel popup
+- **Windows desktop app** — Tauri build with an always-on-top compact window and
+  tear-off sticky notes. Download the installer from
+  [the download page](https://wren.buildwithbaker.io/download) or
+  [GitHub Releases](https://github.com/buildwithbaker/wren/releases).
 
 Built with [Vite](https://vitejs.dev/) and [Tiptap v2](https://tiptap.dev/) (bundled locally — MV3 forbids CDN/inline scripts).
 
 > **Internals:** see [docs/internal/architecture.md](docs/internal/architecture.md) for the full architecture reference — file map, boot flow, storage layer, extension points, and gotchas.
+
+> **Releases and signing:** desktop installers are built only by the
+> [Release workflow](.github/workflows/tauri-release.yml) from a pushed version
+> tag and published as GitHub Release assets. The installer is **not yet
+> code-signed** — see the [Code Signing Policy](https://wren.buildwithbaker.io/signing)
+> for how a release is built, who approves it, and how to verify a download.
+
+> **Contributing:** `main` is protected; changes land through a pull request
+> with CI green. Please read the [Code of Conduct](.github/CODE_OF_CONDUCT.md)
+> and [SECURITY.md](SECURITY.md).
 
 ## Setup
 

@@ -51,6 +51,16 @@ table of the Build with Baker Repo Standard v2.0. Before creating any new file:
 - ES modules only (import/export), never require()
 - 2-space indent
 
+## Code signing (audit D5)
+The Windows installer is **unsigned**. `public/signing.html` (served at
+`/signing`) is the public Code Signing Policy and currently SAYS SO — if signing
+goes live, that page, `public/download.html` and `README.md` all have to stop
+claiming it in the same change. The release workflow already carries a signing
+step, inert behind the repo variable `SIGNING_ENABLED`; do not enable it or
+remove the "not signed" wording independently of each other. Status, the
+SignPath application answers, and the go-live checklist live in
+[`docs/internal/code-signing.md`](docs/internal/code-signing.md).
+
 ## Do not touch
 - dist/ and dist-extension/ are generated - never edit by hand
 - public/sw.js and public/manifest.json location is load-bearing. Vite copies
