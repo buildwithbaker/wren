@@ -53,7 +53,7 @@ jobs:
           releaseDraft: false
           prerelease: false
 
-      # ---- Code signing (audit D5) — INERT until enabled ------------------
+      # ---- Code signing (audit D4) — INERT until enabled ------------------
       #
       # Skipped entirely unless the repository variable SIGNING_ENABLED is set
       # to 'true' (Settings → Secrets and variables → Actions → Variables), so

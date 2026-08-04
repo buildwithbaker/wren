@@ -1,6 +1,9 @@
 # Code signing — status, application answers, go-live checklist
 
-Audit item **D5**. The Windows installer ships **unsigned**, so SmartScreen warns
+Audit item **D4** ("Installer unsigned, no auto-updater"). Not to be confused with
+D5, the `api.github.com` CSP gap, which round 1 already fixed.
+
+The Windows installer ships **unsigned**, so SmartScreen warns
 on first run and `tauri-plugin-updater` can't be adopted (an unsigned updater is
 worse than no updater — it's an unauthenticated code-execution path).
 
@@ -102,4 +105,33 @@ release. Don't promise users otherwise.
 6. Cut a throwaway tag first (e.g. `v1.2.5-rc1`, `prerelease: true`) and confirm
    the signed artifact comes back and verifies under Properties → Digital
    Signatures before advertising a signed release.
-7. Only then revisit `tauri-plugin-updater` (the rest of D5).
+7. Only then revisit `tauri-plugin-updater` (the rest of D4).
+
+## Everything else still open from the 2026-07-25 audit
+
+Verified against `main` (`dc14c02`) on 2026-08-04. 54 findings total; these are
+what is left.
+
+| ID | Sev | Finding | State |
+|---|---|---|---|
+| D4 | High | Installer unsigned, no auto-updater | prep merged (#91); blocked on the SignPath application |
+| S15 | Low | Error UX is `alert()`; Ctrl+1/2/3 hijack browser tab switching | **open** — 10 `alert(` calls in `app-controller.js`, Ctrl+1/2/3 still bound at :135–142 |
+| T1 | Medium | Tauri `fs:scope` relies on `**` matching dotfiles for `.trash/` and `.wren-index.json` | **open** — `capabilities/default.json` has no explicit dotfile entry. Latent while the desktop build is Windows-only; would bite on a macOS/Linux build |
+| T4 | Low | Default hotkeys Ctrl+Alt+N/W collide with AltGr on international layouts | **skipped by design** — existing users have them registered, rebinding exists |
+
+Everything else (D1–D3, D5, E1–E3, M1–M5, S1–S14, T2, T3, T5, U1–U21) is fixed
+and merged across PRs #82, #83, #84, #89, #90, #91 and wren-mcp #10.
+
+## Deploy / release freshness
+
+Two things that are NOT covered by "merged to main", checked 2026-08-04:
+
+- **The live web app lagged main.** `wren.buildwithbaker.io` and
+  `wren-ckn.pages.dev` were both serving `assets/index-DP6vIrmI.js`, a build with
+  none of the round 1–3 markers in it, while a build of `main` produces
+  `index-eNyROFHR.js`. Merging does not deploy — confirm the Cloudflare Pages
+  project actually built after each merge.
+- **The published installer is older still.** The download button points at
+  `releases/latest`, and the newest tag is `v1.2.4` = `6df6a42`, which predates
+  every audit fix. Nothing reaches desktop users until a new version tag is
+  pushed, because the release workflow triggers on `v*` tags, not on merges.
