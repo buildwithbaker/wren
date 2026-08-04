@@ -51,7 +51,7 @@ table of the Build with Baker Repo Standard v2.0. Before creating any new file:
 - ES modules only (import/export), never require()
 - 2-space indent
 
-## Code signing (audit D5)
+## Code signing (audit D4)
 The Windows installer is **unsigned**. `public/signing.html` (served at
 `/signing`) is the public Code Signing Policy and currently SAYS SO — if signing
 goes live, that page, `public/download.html` and `README.md` all have to stop
