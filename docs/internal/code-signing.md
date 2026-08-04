@@ -74,8 +74,9 @@ release. Don't promise users otherwise.
 - [x] Version single-sourced from `package.json` and enforced at build time by
       `scripts/sync-version.mjs`, which satisfies the "consistent product name
       and version metadata" condition
-- [x] Signing step present in the release workflow but **inert** — gated on the
-      repository variable `SIGNING_ENABLED`, so nothing changes until it is set
+- [x] Signing chain present in the release workflow but **inert** — every step
+      gated on the repository variable `SIGNING_ENABLED`, so nothing changes
+      until it is set. See "How the signing chain is wired" below
 
 ## Blocked on Adam (cannot be done from a session)
 
@@ -89,6 +90,36 @@ release. Don't promise users otherwise.
    out for now: the page currently exists mainly to satisfy a pending
    application, and indexing a "we are not signed yet" page is not obviously
    desirable. One line to add when he wants it.
+
+## How the signing chain is wired
+
+SignPath's `github-artifact-id` input wants a GitHub **Actions artifact** id —
+what `actions/upload-artifact` returns. tauri-action does not produce one: it
+uploads to a GitHub **Release**, and its outputs are `releaseId`,
+`releaseHtmlUrl`, `releaseUploadUrl`, `artifactPaths`, `appVersion`. **There is
+no `artifactId` output on tauri-action v0 or v1** — verified against both tags'
+`action.yml`. The first version of this prep passed
+`steps.tauri.outputs.artifactId`, which silently resolves to an empty string and
+would have failed on the first real signing run. Corrected to four gated steps:
+
+1. **Locate the built installer** — parse `steps.tauri.outputs.artifactPaths`
+   (a JSON array of every bundle produced) and pick the `*-setup.exe`.
+2. **Upload it as an Actions artifact** — `actions/upload-artifact@v4`, whose
+   `artifact-id` output is the id SignPath actually wants.
+3. **Submit for signing** — `github-artifact-id:
+   ${{ steps.unsigned.outputs.artifact-id }}`, `wait-for-completion: true`,
+   returning the signed file into `signed/`.
+4. **Replace the release asset** — tauri-action has already attached the
+   UNSIGNED installer, so the signed file must go up with
+   `gh release upload … --clobber`, not alongside it.
+
+The SignPath action is pinned to **v1** on purpose. v2 exists and declares the
+same input names (checked against both `action.yml`s), but v1's `connector-url`
+and `github-token` defaults are the ones verified here. Take the v2 bump —
+Dependabot PR #92 — only after a first signing run has succeeded, so a version
+change and a first-ever signing are never being debugged together. Same reasoning
+holds for the tauri-action v0→v1 bump (#70): it is the one action that actually
+runs at release time.
 
 ## Go-live checklist (only after approval)
 
