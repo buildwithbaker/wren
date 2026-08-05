@@ -140,8 +140,8 @@ runs at release time.
 
 ## Everything else still open from the 2026-07-25 audit
 
-Verified against `main` (`dc14c02`) on 2026-08-04. 54 findings total; these are
-what is left.
+54 findings total. Verified against `main` on 2026-08-04 and re-checked on
+2026-08-05 with S15 and T1 closed. These are what is left.
 
 | ID | Sev | Finding | State |
 |---|---|---|---|
@@ -173,8 +173,10 @@ re-checked 2026-08-05.
   build at or after `dc14c02` can do. The old `wren-ckn` project is still live
   and still serving the stale build; delete it once the new one has carried
   production for a day or two.
-- **The published installer is older still.** The download button points at
-  `releases/latest`, and the newest tag is `v1.2.4` = `6df6a42`, which predates
-  every audit fix. Nothing reaches desktop users until a new version tag is
-  pushed, because the release workflow triggers on `v*` tags, not on merges.
-  Still true as of 2026-08-05 — no `v1.2.5` tag exists.
+- **The published installer lags further still, and always will unless a tag
+  is pushed.** The download button points at `releases/latest`, and the release
+  workflow triggers on `v*` tags, not on merges — so merging audit work reaches
+  web users on the next Cloudflare build and reaches desktop users never. As of
+  2026-08-05 the newest tag was `v1.2.4` = `6df6a42`, predating every audit fix;
+  this branch bumps to 1.2.5 so that gap can be closed by pushing the tag. Treat
+  "did a tag go out?" as a separate question from "did it merge?" every time.
