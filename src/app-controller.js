@@ -124,11 +124,16 @@ export function createApp({ root, enableServiceWorker = false }) {
   mountOpenFullApp();
 
   // View-mode keyboard shortcuts (only act once the app shell is mounted).
-  // NOTE: Ctrl+1/Ctrl+2/Ctrl+3 are browser tab-switch shortcuts in a normal
-  // tab; in the standalone PWA window (the primary full-app context) there are
-  // no tabs so the override is harmless. Documented as a known caveat.
+  //
+  // Ctrl+1/2/3 switch browser tabs. Wren used to bind them unconditionally and
+  // call that a documented caveat, which meant that in an ordinary tab the app
+  // silently ate a shortcut the browser owns and the user did not agree to give
+  // up (audit S15). The binding is now installed only where there are no tabs to
+  // steal from: an installed PWA window, or the Tauri desktop shell. In a normal
+  // browser tab Ctrl+1/2/3 goes back to doing what the browser says it does.
   window.addEventListener('keydown', (e) => {
     if (!kanbanView) return;
+    if (!isTablessWindow()) return;
     // Stand down while a modal is open — the view switch must not fire
     // "underneath" a dialog/panel (audit U10).
     if (isModalOpen()) return;
@@ -510,7 +515,7 @@ export function createApp({ root, enableServiceWorker = false }) {
       } catch (err) {
         if (err?.name !== 'AbortError') {
           console.error('Folder pick failed', err);
-          alert('Could not open that folder. Please try again.');
+          showErrorToast('Could not open that folder. Please try again.');
         }
       }
     });
@@ -660,7 +665,7 @@ export function createApp({ root, enableServiceWorker = false }) {
         adapter = fs;
         await renderApp();
       } catch (err) {
-        if (err?.name !== 'AbortError') alert('Could not open that folder.');
+        if (err?.name !== 'AbortError') showErrorToast('Could not open that folder.');
       }
     });
 
@@ -810,7 +815,7 @@ export function createApp({ root, enableServiceWorker = false }) {
         triggerBtn.textContent = 'Sign in to Google Drive';
       }
       if (err?.code === 'popup_blocked') {
-        alert(
+        showErrorToast(
           'Sign-in window didn’t open. Allow pop-ups for this site (or tap the Sign in button again).'
         );
       } else if (err?.code === 'no_token') {
@@ -1396,7 +1401,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     } catch (err) {
       if (routeAuthError(err)) return;
       console.error('Archive failed', err);
-      alert('Could not archive that note.');
+      showErrorToast('Could not archive that note.');
       return;
     }
     if (noteEditor.getNote && noteEditor.getNote()?.id === noteId) {
@@ -1421,7 +1426,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     } catch (err) {
       if (routeAuthError(err)) return false;
       console.error('Unarchive failed', err);
-      alert('Could not unarchive that note.');
+      showErrorToast('Could not unarchive that note.');
       return false;
     }
     await loadNotes();
@@ -1556,7 +1561,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     } catch (err) {
       if (routeAuthError(err)) return;
       console.error('Promote failed', err);
-      alert('Could not move that note into your notes.');
+      showErrorToast('Could not move that note into your notes.');
       return;
     }
     // If the promoted note was open in the editor, drop back to the list.
@@ -1597,7 +1602,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     } catch (err) {
       if (routeAuthError(err)) return;
       console.error('Discard failed', err);
-      alert('Could not discard that staged note.');
+      showErrorToast('Could not discard that staged note.');
       return;
     }
     // If the discarded note was open, clear the editor.
@@ -1784,7 +1789,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     } catch (err) {
       if (routeAuthError(err)) return null;
       console.error('Could not create note', err);
-      alert('Could not create a new note.');
+      showErrorToast('Could not create a new note.');
       return null;
     }
   }
@@ -2025,7 +2030,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     } catch (err) {
       if (routeAuthError(err)) return;
       console.error('Delete failed', err);
-      alert('Could not delete the note.');
+      showErrorToast('Could not delete the note.');
       return;
     }
     notes = notes.filter((n) => n.id !== note.id);
@@ -2189,6 +2194,41 @@ export function createApp({ root, enableServiceWorker = false }) {
     toast.className = 'sc-toast';
     toast.textContent = msg;
     mountToast(toast, 3200);
+  }
+
+  // Errors that used to be alert() (audit S15). alert() blocks the whole page,
+  // cannot be styled, reads badly on mobile, and in the desktop shell can land
+  // behind the window. A toast replaces it — but a failure must not look like
+  // ordinary chatter, so error toasts are visually distinct, live roughly twice
+  // as long, and carry role="alert" so assistive tech announces them at once
+  // rather than waiting for a pause, which is what the stack's polite
+  // aria-live would otherwise do.
+  function showErrorToast(msg) {
+    const toast = document.createElement('div');
+    toast.className = 'sc-toast sc-toast-error';
+    toast.setAttribute('role', 'alert');
+    toast.textContent = msg;
+    mountToast(toast, 6000);
+  }
+
+  // True where the window has no browser tab strip to steal shortcuts from:
+  // an installed/standalone PWA, or the Tauri desktop shell. Both checks are
+  // wrapped because matchMedia is absent in some embedded webviews and reading
+  // an undefined global throws.
+  function isTablessWindow() {
+    try {
+      if (window.__TAURI_INTERNALS__ || window.__TAURI__) return true;
+    } catch {
+      /* not a Tauri webview */
+    }
+    try {
+      if (window.matchMedia?.('(display-mode: standalone)')?.matches) return true;
+      if (window.matchMedia?.('(display-mode: window-controls-overlay)')?.matches) return true;
+    } catch {
+      /* matchMedia unavailable */
+    }
+    // iOS Safari's pre-standard installed-app flag.
+    return window.navigator?.standalone === true;
   }
 
   function showDriveDisconnectedToast(msg) {

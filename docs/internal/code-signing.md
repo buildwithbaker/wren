@@ -74,8 +74,9 @@ release. Don't promise users otherwise.
 - [x] Version single-sourced from `package.json` and enforced at build time by
       `scripts/sync-version.mjs`, which satisfies the "consistent product name
       and version metadata" condition
-- [x] Signing step present in the release workflow but **inert** — gated on the
-      repository variable `SIGNING_ENABLED`, so nothing changes until it is set
+- [x] Signing chain present in the release workflow but **inert** — every step
+      gated on the repository variable `SIGNING_ENABLED`, so nothing changes
+      until it is set. See "How the signing chain is wired" below
 
 ## Blocked on Adam (cannot be done from a session)
 
@@ -89,6 +90,36 @@ release. Don't promise users otherwise.
    out for now: the page currently exists mainly to satisfy a pending
    application, and indexing a "we are not signed yet" page is not obviously
    desirable. One line to add when he wants it.
+
+## How the signing chain is wired
+
+SignPath's `github-artifact-id` input wants a GitHub **Actions artifact** id —
+what `actions/upload-artifact` returns. tauri-action does not produce one: it
+uploads to a GitHub **Release**, and its outputs are `releaseId`,
+`releaseHtmlUrl`, `releaseUploadUrl`, `artifactPaths`, `appVersion`. **There is
+no `artifactId` output on tauri-action v0 or v1** — verified against both tags'
+`action.yml`. The first version of this prep passed
+`steps.tauri.outputs.artifactId`, which silently resolves to an empty string and
+would have failed on the first real signing run. Corrected to four gated steps:
+
+1. **Locate the built installer** — parse `steps.tauri.outputs.artifactPaths`
+   (a JSON array of every bundle produced) and pick the `*-setup.exe`.
+2. **Upload it as an Actions artifact** — `actions/upload-artifact@v4`, whose
+   `artifact-id` output is the id SignPath actually wants.
+3. **Submit for signing** — `github-artifact-id:
+   ${{ steps.unsigned.outputs.artifact-id }}`, `wait-for-completion: true`,
+   returning the signed file into `signed/`.
+4. **Replace the release asset** — tauri-action has already attached the
+   UNSIGNED installer, so the signed file must go up with
+   `gh release upload … --clobber`, not alongside it.
+
+The SignPath action is pinned to **v1** on purpose. v2 exists and declares the
+same input names (checked against both `action.yml`s), but v1's `connector-url`
+and `github-token` defaults are the ones verified here. Take the v2 bump —
+Dependabot PR #92 — only after a first signing run has succeeded, so a version
+change and a first-ever signing are never being debugged together. Same reasoning
+holds for the tauri-action v0→v1 bump (#70): it is the one action that actually
+runs at release time.
 
 ## Go-live checklist (only after approval)
 
@@ -109,29 +140,43 @@ release. Don't promise users otherwise.
 
 ## Everything else still open from the 2026-07-25 audit
 
-Verified against `main` (`dc14c02`) on 2026-08-04. 54 findings total; these are
-what is left.
+54 findings total. Verified against `main` on 2026-08-04 and re-checked on
+2026-08-05 with S15 and T1 closed. These are what is left.
 
 | ID | Sev | Finding | State |
 |---|---|---|---|
 | D4 | High | Installer unsigned, no auto-updater | prep merged (#91); blocked on the SignPath application |
-| S15 | Low | Error UX is `alert()`; Ctrl+1/2/3 hijack browser tab switching | **open** — 10 `alert(` calls in `app-controller.js`, Ctrl+1/2/3 still bound at :135–142 |
-| T1 | Medium | Tauri `fs:scope` relies on `**` matching dotfiles for `.trash/` and `.wren-index.json` | **open** — `capabilities/default.json` has no explicit dotfile entry. Latent while the desktop build is Windows-only; would bite on a macOS/Linux build |
+| S15 | Low | Error UX is `alert()`; Ctrl+1/2/3 hijack browser tab switching | **fixed** — all nine `alert()` calls now raise a distinct error toast (`role="alert"`, 6s); the view shortcut binds only in a tabless window |
+| T1 | Medium | Tauri `fs:scope` relies on `**` matching dotfiles for `.trash/` and `.wren-index.json` | **fixed** — `.trash`, `.trash/**` and `.wren-index.json` are named explicitly in `capabilities/default.json` |
 | T4 | Low | Default hotkeys Ctrl+Alt+N/W collide with AltGr on international layouts | **skipped by design** — existing users have them registered, rebinding exists |
 
-Everything else (D1–D3, D5, E1–E3, M1–M5, S1–S14, T2, T3, T5, U1–U21) is fixed
+Everything else (D1–D3, D5, E1–E3, M1–M5, S1–S15, T1–T3, T5, U1–U21) is fixed
 and merged across PRs #82, #83, #84, #89, #90, #91 and wren-mcp #10.
+
+With S15 and T1 closed, **D4 is the only audit finding still open**, and it is
+blocked on the SignPath application rather than on any code.
 
 ## Deploy / release freshness
 
-Two things that are NOT covered by "merged to main", checked 2026-08-04:
+Two things that are NOT covered by "merged to main". First checked 2026-08-04;
+re-checked 2026-08-05.
 
-- **The live web app lagged main.** `wren.buildwithbaker.io` and
-  `wren-ckn.pages.dev` were both serving `assets/index-DP6vIrmI.js`, a build with
-  none of the round 1–3 markers in it, while a build of `main` produces
-  `index-eNyROFHR.js`. Merging does not deploy — confirm the Cloudflare Pages
-  project actually built after each merge.
-- **The published installer is older still.** The download button points at
-  `releases/latest`, and the newest tag is `v1.2.4` = `6df6a42`, which predates
-  every audit fix. Nothing reaches desktop users until a new version tag is
-  pushed, because the release workflow triggers on `v*` tags, not on merges.
+- **The live web app lagged main — now fixed.** On 2026-08-04
+  `wren.buildwithbaker.io` and `wren-ckn.pages.dev` were both serving
+  `assets/index-DP6vIrmI.js`, a build with none of the round 1–3 markers in it.
+  The cause was a dead Git integration on the `wren-ckn` project, which sat on a
+  Cloudflare account that had lost access to the repository. The project was
+  rebuilt as `wren-9p5` under the bakeradm6@gmail.com account and
+  `wren.buildwithbaker.io` repointed to it. Verified 2026-08-05:
+  `wren.buildwithbaker.io` is a CNAME to `wren-9p5.pages.dev` and `/signing`
+  serves the Code Signing Policy page rather than the SPA fallback, which only a
+  build at or after `dc14c02` can do. The old `wren-ckn` project is still live
+  and still serving the stale build; delete it once the new one has carried
+  production for a day or two.
+- **The published installer lags further still, and always will unless a tag
+  is pushed.** The download button points at `releases/latest`, and the release
+  workflow triggers on `v*` tags, not on merges — so merging audit work reaches
+  web users on the next Cloudflare build and reaches desktop users never. As of
+  2026-08-05 the newest tag was `v1.2.4` = `6df6a42`, predating every audit fix;
+  this branch bumps to 1.2.5 so that gap can be closed by pushing the tag. Treat
+  "did a tag go out?" as a separate question from "did it merge?" every time.
