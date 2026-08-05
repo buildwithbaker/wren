@@ -124,14 +124,23 @@ and merged across PRs #82, #83, #84, #89, #90, #91 and wren-mcp #10.
 
 ## Deploy / release freshness
 
-Two things that are NOT covered by "merged to main", checked 2026-08-04:
+Two things that are NOT covered by "merged to main". First checked 2026-08-04;
+re-checked 2026-08-05.
 
-- **The live web app lagged main.** `wren.buildwithbaker.io` and
-  `wren-ckn.pages.dev` were both serving `assets/index-DP6vIrmI.js`, a build with
-  none of the round 1–3 markers in it, while a build of `main` produces
-  `index-eNyROFHR.js`. Merging does not deploy — confirm the Cloudflare Pages
-  project actually built after each merge.
+- **The live web app lagged main — now fixed.** On 2026-08-04
+  `wren.buildwithbaker.io` and `wren-ckn.pages.dev` were both serving
+  `assets/index-DP6vIrmI.js`, a build with none of the round 1–3 markers in it.
+  The cause was a dead Git integration on the `wren-ckn` project, which sat on a
+  Cloudflare account that had lost access to the repository. The project was
+  rebuilt as `wren-9p5` under the bakeradm6@gmail.com account and
+  `wren.buildwithbaker.io` repointed to it. Verified 2026-08-05:
+  `wren.buildwithbaker.io` is a CNAME to `wren-9p5.pages.dev` and `/signing`
+  serves the Code Signing Policy page rather than the SPA fallback, which only a
+  build at or after `dc14c02` can do. The old `wren-ckn` project is still live
+  and still serving the stale build; delete it once the new one has carried
+  production for a day or two.
 - **The published installer is older still.** The download button points at
   `releases/latest`, and the newest tag is `v1.2.4` = `6df6a42`, which predates
   every audit fix. Nothing reaches desktop users until a new version tag is
   pushed, because the release workflow triggers on `v*` tags, not on merges.
+  Still true as of 2026-08-05 — no `v1.2.5` tag exists.

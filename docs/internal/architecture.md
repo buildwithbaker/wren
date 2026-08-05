@@ -10,7 +10,7 @@ Local-first sticky-notes app. Notes are plain `.md` files (YAML frontmatter + ma
 
 Ships in **two forms that read/write the same folder and share the same code**:
 
-- **PWA** — two-panel web app (list + editor), installable, works offline. Served at `https://wren.buildwithbaker.io` (the primary production origin), a custom domain on the `wren-ckn` Cloudflare Pages project (`https://wren-ckn.pages.dev` still resolves but is no longer canonical).
+- **PWA** — two-panel web app (list + editor), installable, works offline. Served at `https://wren.buildwithbaker.io` (the primary production origin), a custom domain on the `wren-9p5` Cloudflare Pages project (`https://wren-9p5.pages.dev` is that project's own domain, not the canonical one).
 - **Chrome extension (MV3)** — single-panel popup. Tiptap is bundled locally because MV3 forbids CDN/inline scripts.
 
 The single most important architectural fact: **`src/` is shared verbatim between both targets.** The PWA entry (`src/main.js`) and the extension entry (`extension/popup.js`) both call `createApp()` from `src/app-controller.js`. The only layout difference is CSS — the `<=640px` rules in `src/styles/style.css` collapse the two-panel layout to the single-panel popup automatically at the popup's ~400px width.
@@ -205,7 +205,7 @@ npm run build      # gen-icons + builds dist/ (PWA) and dist-extension/ (MV3)
 ```
 
 - `npm run build` runs `scripts/gen-icons.mjs` first, then both Vite builds.
-- **PWA deploy:** Cloudflare Pages project `wren-ckn` auto-builds from `main` via Cloudflare's Git integration. Build command `npm run build`, output dir `dist/`, configured **in the Cloudflare dashboard, not in this repo.** There is no GitHub Actions deploy workflow.
+- **PWA deploy:** Cloudflare Pages project `wren-9p5` (Cloudflare account bakeradm6@gmail.com) auto-builds from `main` via Cloudflare's Git integration. Build command `npm run build`, output dir `dist/`, configured **in the Cloudflare dashboard, not in this repo.** There is no GitHub Actions deploy workflow.
 - **Extension deploy:** load `dist-extension/` unpacked in Chrome, or zip it for the Chrome Web Store.
 
 ---
@@ -224,7 +224,7 @@ npm run build      # gen-icons + builds dist/ (PWA) and dist-extension/ (MV3)
 
 - **`dist/` and `dist-extension/` are generated** — never hand-edit.
 - **`public/sw.js` and `public/manifest.json` location is load-bearing.** Vite copies `public/` to the published root; a service worker MUST live at the published root or its scope silently shrinks.
-- **OAuth Client ID in `src/oauth/gisClient.js` is a PUBLIC web client ID** and is safe in version control. Its Authorized JavaScript origins are registered in Google Cloud (project "Wren"): `http://localhost:5173`, `http://localhost`, `https://wren.buildwithbaker.io` (primary production origin), and `https://wren-ckn.pages.dev` (the underlying Cloudflare Pages project domain, still registered). Do not add an origin or change the flow without updating that registration or OAuth login breaks. **There is no client secret** in this repo (GIS Token Model is public-client only) — if one ever appears, stop and rotate it.
+- **OAuth Client ID in `src/oauth/gisClient.js` is a PUBLIC web client ID** and is safe in version control. Its Authorized JavaScript origins are registered in Google Cloud (project "Wren"): `http://localhost:5173`, `http://localhost`, `https://wren.buildwithbaker.io` (primary production origin), and `https://wren-ckn.pages.dev` — the OLD Pages project's domain. The project moved to `wren-9p5` on 2026-08-05 and `https://wren-9p5.pages.dev` is **not yet registered**, so Drive sign-in fails on preview URLs until it is; production is unaffected because the custom domain did not change. Do not add an origin or change the flow without updating that registration or OAuth login breaks. **There is no client secret** in this repo (GIS Token Model is public-client only) — if one ever appears, stop and rotate it.
 - **`DRIVE_SCOPE` is `drive.file` (non-sensitive).** Widening it triggers Google's CASA/brand-verification path — don't change casually.
 - **CSP meta in `index.html` is load-bearing for Drive** — `connect-src www.googleapis.com` is mandatory (Wren's Drive REST calls land there) even though it's not in the GIS docs. `style-src 'unsafe-inline'` is required by Tiptap/ProseMirror runtime style mutations.
 - **Dev-server COOP header** (`vite.config.js` `coopHeadersPlugin`) lets the GIS OAuth popup post back to the opener. Production hosting can't set per-request headers; the popup-blocker backstop in `gisClient.js` compensates.
