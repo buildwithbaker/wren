@@ -1959,6 +1959,16 @@ button {
   box-shadow: var(--wr-shadow-md);
   animation: sc-toast-in 180ms ease-out;
 }
+/* Error toast (audit S15): the replacement for the blocking alert() calls.
+   A failure must not read like ordinary chatter, so it gets the same red
+   left-rule the rest of the app uses for error state. The message text is
+   always explicit ("Could not delete the note."), so the colour reinforces
+   the meaning rather than carrying it. */
+.sc-toast-error {
+  border-left: 3px solid #c0392b;
+  text-align: left;
+  font-weight: 600;
+}
 @keyframes sc-toast-in {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }

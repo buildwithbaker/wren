@@ -146,12 +146,15 @@ what is left.
 | ID | Sev | Finding | State |
 |---|---|---|---|
 | D4 | High | Installer unsigned, no auto-updater | prep merged (#91); blocked on the SignPath application |
-| S15 | Low | Error UX is `alert()`; Ctrl+1/2/3 hijack browser tab switching | **open** — 10 `alert(` calls in `app-controller.js`, Ctrl+1/2/3 still bound at :135–142 |
-| T1 | Medium | Tauri `fs:scope` relies on `**` matching dotfiles for `.trash/` and `.wren-index.json` | **open** — `capabilities/default.json` has no explicit dotfile entry. Latent while the desktop build is Windows-only; would bite on a macOS/Linux build |
+| S15 | Low | Error UX is `alert()`; Ctrl+1/2/3 hijack browser tab switching | **fixed** — all nine `alert()` calls now raise a distinct error toast (`role="alert"`, 6s); the view shortcut binds only in a tabless window |
+| T1 | Medium | Tauri `fs:scope` relies on `**` matching dotfiles for `.trash/` and `.wren-index.json` | **fixed** — `.trash`, `.trash/**` and `.wren-index.json` are named explicitly in `capabilities/default.json` |
 | T4 | Low | Default hotkeys Ctrl+Alt+N/W collide with AltGr on international layouts | **skipped by design** — existing users have them registered, rebinding exists |
 
-Everything else (D1–D3, D5, E1–E3, M1–M5, S1–S14, T2, T3, T5, U1–U21) is fixed
+Everything else (D1–D3, D5, E1–E3, M1–M5, S1–S15, T1–T3, T5, U1–U21) is fixed
 and merged across PRs #82, #83, #84, #89, #90, #91 and wren-mcp #10.
+
+With S15 and T1 closed, **D4 is the only audit finding still open**, and it is
+blocked on the SignPath application rather than on any code.
 
 ## Deploy / release freshness
 
