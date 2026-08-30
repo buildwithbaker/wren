@@ -6,6 +6,7 @@
 
 import { formatModified } from './format.js';
 import { buildDueChip } from './due-chip.js';
+import { lockPageExcept } from './focus-trap.js';
 
 /**
  * @param {{
@@ -62,10 +63,12 @@ export function openArchiveDialog({ notes = [], onOpen, onUnarchive } = {}) {
 
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
+  const unlockPage = lockPageExcept(overlay);
   close.focus();
 
   function cleanup() {
     document.removeEventListener('keydown', onKey);
+    unlockPage();
     overlay.remove();
     if (lastFocused && typeof lastFocused.focus === 'function') {
       try {

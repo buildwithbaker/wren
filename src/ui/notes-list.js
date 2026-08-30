@@ -192,6 +192,8 @@ export function createNotesList({
   function renderInboxCard(note) {
     const card = document.createElement('div');
     card.className = 'sc-inbox-card';
+    // setActive() clears the highlight by id across both collections.
+    card.dataset.id = note.id;
     if (note.id === activeId) card.classList.add('is-active');
 
     const open = document.createElement('button');
@@ -347,95 +349,95 @@ export function createNotesList({
     return el;
   }
 
+  // Audit U14: the card used to be a <button> with a clickable tag-chip row and
+  // two role=button spans inside it. Interactive content nested in a button is
+  // invalid HTML and behaves erratically in screen readers (the inner controls
+  // are often unreachable, and the outer button's accessible name swallows
+  // them). The card is now a plain container; the open action is one real
+  // <button> and every secondary action is a real <button> sibling.
   function renderCard(note) {
-    const card = document.createElement('button');
-    card.type = 'button';
+    const card = document.createElement('div');
     card.className = 'sc-card';
     const safeId = COLOR_BG[note.color] ? note.color : 'default';
     card.style.background = `var(--wr-note-${safeId})`;
     card.dataset.id = note.id;
     if (note.id === activeId) card.classList.add('is-active');
 
-    const title = document.createElement('div');
+    const openBtn = document.createElement('button');
+    openBtn.type = 'button';
+    openBtn.className = 'sc-card-open';
+    openBtn.setAttribute('aria-label', `Open note: ${note.title || 'Untitled'}`);
+
+    const title = document.createElement('span');
     title.className = 'sc-card-title';
     // Subtle AI badge before the title when the note is AI-created/edited.
     if (isAiNote(note)) title.appendChild(buildAiBadge());
     title.append(note.title || 'Untitled');
 
-    const preview = document.createElement('div');
+    const preview = document.createElement('span');
     preview.className = 'sc-card-preview';
     preview.textContent = toPreviewText(note.firstLine) || 'No additional text';
 
-    const meta = document.createElement('div');
+    const meta = document.createElement('span');
     meta.className = 'sc-card-meta';
     meta.textContent = formatModified(note.modified);
 
-    card.append(title, preview);
+    openBtn.append(title, preview);
+    openBtn.addEventListener('click', () => onSelect?.(note.id));
+    card.appendChild(openBtn);
+
     // Due-date chip (Note Lifecycle A2) — null when no due date or hidden per-note.
     const dueChip = note.hideDue ? null : buildDueChip(note.due);
     if (dueChip) card.appendChild(dueChip);
     // Tag chips (Sticky Float Phase 1): visible per-note tag feedback. Chip
-    // click adds the tag to the AND-filter instead of opening the note. Skipped
-    // when the note hides its tags.
+    // click adds the tag to the AND-filter instead of opening the note. Now a
+    // sibling of the open button, so the chips are real buttons rather than
+    // role=button spans smuggled inside one.
     const chips = note.hideTags
       ? null
       : buildTagChips(note.tags, { onTagClick: (tag) => addFilterTag(tag) });
     if (chips) card.appendChild(chips);
     card.appendChild(meta);
 
-    // Archive affordance (Note Lifecycle B2): a hover icon mirroring the pop-out
-    // span. Stops propagation so it archives rather than opening the note.
+    // Archive affordance (Note Lifecycle B2): a hover icon in the card's
+    // top-right cluster. Real <button> now that it is not inside one.
     if (onArchive) {
-      const arch = document.createElement('span');
+      const arch = document.createElement('button');
+      arch.type = 'button';
       arch.className = 'sc-card-archive';
-      arch.setAttribute('role', 'button');
-      arch.tabIndex = 0;
       arch.title = 'Archive note';
-      arch.setAttribute('aria-label', 'Archive note');
+      arch.setAttribute('aria-label', `Archive note: ${note.title || 'Untitled'}`);
       arch.innerHTML =
         '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg>';
-      const doArchive = (e) => {
+      arch.addEventListener('click', (e) => {
         e.stopPropagation();
         onArchive(note.id);
-      };
-      arch.addEventListener('click', doArchive);
-      arch.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          doArchive(e);
-        }
       });
       card.appendChild(arch);
     }
 
     // Pop-out affordance (Sticky Float Phase 2): a small icon shown on hover.
-    // It is a role=button span (not a nested <button>, which would be invalid
-    // inside the card button) and stops propagation so it never opens the note,
-    // matching the tag-chip discipline above.
     if (onPopOut) {
-      const pop = document.createElement('span');
+      const pop = document.createElement('button');
+      pop.type = 'button';
       pop.className = 'sc-card-popout';
-      pop.setAttribute('role', 'button');
-      pop.tabIndex = 0;
       pop.title = 'Pop out into its own window';
-      pop.setAttribute('aria-label', 'Pop out note into its own window');
+      pop.setAttribute('aria-label', `Pop out note into its own window: ${note.title || 'Untitled'}`);
       pop.innerHTML =
         '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 4h6v6" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 4l-8 8" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
       pop.addEventListener('click', (e) => {
         e.stopPropagation();
         onPopOut(note.id);
       });
-      pop.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          e.stopPropagation();
-          onPopOut(note.id);
-        }
-      });
       card.appendChild(pop);
     }
 
-    card.addEventListener('click', () => onSelect?.(note.id));
+    // Mouse convenience: a click on the card's dead space still opens the note.
+    // Clicks on any of the buttons above are theirs alone.
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('button')) return;
+      onSelect?.(note.id);
+    });
     return card;
   }
 
@@ -470,6 +472,13 @@ export function createNotesList({
     setActive(id) {
       activeId = id;
       for (const card of scroll.querySelectorAll('.sc-card')) {
+        card.classList.toggle('is-active', card.dataset.id === id);
+      }
+      // Inbox cards were left out, so opening a staged note and then closing
+      // it (or opening a different note) left the inbox card highlighted for
+      // the rest of the session (audit U21). The active id is a single value
+      // across both collections, so clearing is the same loop.
+      for (const card of root.querySelectorAll('.sc-inbox-card')) {
         card.classList.toggle('is-active', card.dataset.id === id);
       }
     },

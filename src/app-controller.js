@@ -16,10 +16,12 @@ import {
   exportNoteDownload,
   buildNoteFilename,
   getStoredDirHandle,
+  isStoragePersisted,
 } from './notes-store.js';
 import {
   ADAPTER_TYPES,
   AdapterAuthError,
+  ConflictError,
   FileSystemAdapter,
   TauriFsAdapter,
   DriveAdapter,
@@ -46,10 +48,12 @@ import { setupDesktopIntegration, maybeNotifyDueNotes } from './desktop.js';
 import { openShortcutsDialog } from './ui/desktop-panel.js';
 import { openArchiveDialog } from './ui/archive-panel.js';
 import { confirmDialog } from './ui/dialog.js';
+import { isModalOpen } from './ui/focus-trap.js';
 import { addTagToNote, parseTag, getAllTags, getAllNamespaces } from './tags/tag-parser.js';
 import { getStoredTheme, cycleTheme, initTheme } from './theme.js';
 import { getSyncState, setSyncState, clearSyncState } from './sync/syncStateStore.js';
 import { createBroadcast } from './sync/broadcast.js';
+import { writeConflictCopy } from './sync/conflictDetection.js';
 import { openSticky } from './sticky/opener.js';
 import { readRegistry, clearRegistry } from './sticky/registry.js';
 import {
@@ -89,6 +93,10 @@ export function createApp({ root, enableServiceWorker = false }) {
   let flushOnHideBound = false;
   let currentScreen = null;
   let backendChipEl = null;
+  let skipLinkEl = null;
+  // Set synchronously the first time setupDesktop() runs; desktopIntegration
+  // itself only lands when the async setup resolves.
+  let desktopSetupStarted = false;
   let driveBannerEl = null;
   let kanbanView = null;
   let compactView = null;
@@ -116,11 +124,19 @@ export function createApp({ root, enableServiceWorker = false }) {
   mountOpenFullApp();
 
   // View-mode keyboard shortcuts (only act once the app shell is mounted).
-  // NOTE: Ctrl+1/Ctrl+2/Ctrl+3 are browser tab-switch shortcuts in a normal
-  // tab; in the standalone PWA window (the primary full-app context) there are
-  // no tabs so the override is harmless. Documented as a known caveat.
+  //
+  // Ctrl+1/2/3 switch browser tabs. Wren used to bind them unconditionally and
+  // call that a documented caveat, which meant that in an ordinary tab the app
+  // silently ate a shortcut the browser owns and the user did not agree to give
+  // up (audit S15). The binding is now installed only where there are no tabs to
+  // steal from: an installed PWA window, or the Tauri desktop shell. In a normal
+  // browser tab Ctrl+1/2/3 goes back to doing what the browser says it does.
   window.addEventListener('keydown', (e) => {
     if (!kanbanView) return;
+    if (!isTablessWindow()) return;
+    // Stand down while a modal is open — the view switch must not fire
+    // "underneath" a dialog/panel (audit U10).
+    if (isModalOpen()) return;
     if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
     if (e.key === '1') {
       e.preventDefault();
@@ -252,6 +268,9 @@ export function createApp({ root, enableServiceWorker = false }) {
     a.setAttribute('aria-label', 'Open Wren in a full browser tab');
     a.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg><span>Open Full App</span>`;
     document.body.appendChild(a);
+    // Marker so the brand header can reserve room for this fixed pill instead of
+    // letting it overlap the backend chip at popup width (audit U18).
+    document.body.classList.add('has-open-full-app');
   }
 
   // Inline "Open Full App" affordance for screens that would otherwise offer
@@ -354,18 +373,21 @@ export function createApp({ root, enableServiceWorker = false }) {
         return;
       }
       // Not ready (FileSystemAdapter only — the native adapter is always ready
-      // after initialize, having auto-created its folder). Distinguish a
-      // brand-new install (no saved directory handle → local default with
-      // nothing chosen yet) from an existing FS user whose folder permission
-      // lapsed. The former lands on the storage-choice onboarding (local
-      // primary, Drive experimental); the latter reconnects.
-      let hasHandle = false;
+      // after initialize, having auto-created its folder). Distinguish THREE
+      // cases:
+      //   - handle present → existing FS user whose permission lapsed → reconnect
+      //   - handle genuinely absent → brand-new install → storage-choice onboarding
+      //   - handle store UNREADABLE (read failure) → we do NOT know, so route to
+      //     reconnect/retry. NEVER fall through to storage-choice on a read
+      //     failure: re-picking there overwrites the real handle (audit S3).
+      let stored;
       try {
-        hasHandle = !!(await getStoredDirHandle());
-      } catch {
-        /* ignore — treat as brand-new */
+        stored = await getStoredDirHandle();
+      } catch (err) {
+        console.error('Reading the saved folder handle failed at boot', err);
+        return renderFsReconnect(fs, { readFailed: true });
       }
-      if (hasHandle) return renderFsReconnect(fs);
+      if (stored) return renderFsReconnect(fs);
       return renderStorageChoice();
     }
 
@@ -376,9 +398,12 @@ export function createApp({ root, enableServiceWorker = false }) {
         if (!isSignedIn()) {
           try {
             await requestAccessToken({ silent: true });
-          } catch {
-            // Silent failed — user needs to re-tap to sign in.
-            return renderDriveSignIn({ reason: 'expired' });
+          } catch (err) {
+            // Silent re-acquire failed (common on mobile after the webview
+            // sleeps). Log the reason for diagnosis and offer a dedicated
+            // one-tap resume rather than the generic sign-in screen (audit S5).
+            console.warn('Drive silent token re-acquire failed at boot', err);
+            return renderDriveResume({ hint: getStoredLoginHint() });
           }
         }
         const drive = new DriveAdapter();
@@ -387,7 +412,8 @@ export function createApp({ root, enableServiceWorker = false }) {
         await renderApp();
       } catch (err) {
         if (err instanceof AdapterAuthError) {
-          return renderDriveSignIn({ reason: 'expired' });
+          console.warn('Drive session expired at boot', err);
+          return renderDriveResume({ hint: getStoredLoginHint() });
         }
         console.error('Drive boot failed', err);
         return renderDriveSignIn({ reason: 'error', error: err });
@@ -416,6 +442,10 @@ export function createApp({ root, enableServiceWorker = false }) {
     const screen = document.createElement('main');
     screen.className = 'sc-screen';
     screen.id = 'main-content';
+    // Skip-link targets need to be able to hold focus, or the anchor scrolls
+    // without moving the caret and the next Tab starts from the top again
+    // (audit U19 — same reason the main shell's containers carry it).
+    screen.tabIndex = -1;
     screen.style.gridColumn = '1 / -1';
     screen.appendChild(innerNode);
     wrap.appendChild(screen);
@@ -485,7 +515,7 @@ export function createApp({ root, enableServiceWorker = false }) {
       } catch (err) {
         if (err?.name !== 'AbortError') {
           console.error('Folder pick failed', err);
-          alert('Could not open that folder. Please try again.');
+          showErrorToast('Could not open that folder. Please try again.');
         }
       }
     });
@@ -548,18 +578,72 @@ export function createApp({ root, enableServiceWorker = false }) {
     screenShell(card);
   }
 
-  function renderFsReconnect(fs) {
-    currentScreen = () => renderFsReconnect(fs);
+  // A promoted "Install Wren" button for the reconnect screen. Installing the
+  // PWA is the DURABLE fix for repeated folder re-prompts (permission then
+  // persists), so when it's offerable we surface it as a primary CTA. Returns
+  // null when install can't be offered (already installed, or no prompt event).
+  function buildReconnectInstallCta() {
+    if (!canInstall()) return null;
+    const btn = document.createElement('button');
+    btn.className = 'sc-btn sc-btn--primary';
+    btn.textContent = 'Install Wren';
+    btn.addEventListener('click', async () => {
+      if (!installPrompt) return;
+      try {
+        await installPrompt.prompt();
+        await installPrompt.userChoice;
+      } catch (err) {
+        console.warn('Install prompt failed', err);
+      }
+      installPrompt = null;
+      if (currentScreen) currentScreen();
+    });
+    return btn;
+  }
+
+  function renderFsReconnect(fs, { readFailed = false } = {}) {
+    currentScreen = () => renderFsReconnect(fs, { readFailed });
     const card = document.createElement('div');
     card.className = 'sc-screen-card';
+    const heading = readFailed ? 'Couldn’t read your notes folder' : 'Reconnect your notes folder';
+    const copy = readFailed
+      ? 'Wren couldn’t read your saved folder just now — a temporary storage hiccup, not lost notes. Try again, or reconnect below. Don’t pick a new folder unless you actually want to switch.'
+      : 'Your browser needs you to confirm access to your notes folder again.';
     card.innerHTML = `
       <img src="./icon.svg" alt="Wren" />
-      <h1>Reconnect your notes folder</h1>
-      <p>Your browser needs you to confirm access to your notes folder again.</p>`;
+      <h1>${heading}</h1>
+      <p>${copy}</p>`;
+
+    const installed = isInstalled();
+    const installCta = installed ? null : buildReconnectInstallCta();
+
+    // Guidance — this screen previously gave none (audit S6). Installed users get
+    // told how to stop the prompt for good; browser-tab users are nudged to
+    // install (which makes folder permission persist).
+    const tip = document.createElement('p');
+    tip.className = 'sc-hint';
+    if (installed) {
+      tip.textContent =
+        'When your browser asks, choose “Allow on every visit” so Wren stops prompting each session.';
+    } else if (installCta) {
+      tip.textContent =
+        'Tip: install Wren as an app and your folder permission persists — no more re-granting every session.';
+    } else {
+      tip.textContent =
+        'Tip: install Wren from your browser menu and your folder permission persists across sessions.';
+    }
+    card.appendChild(tip);
+
+    // On a read failure the recovery is a retry (re-read IndexedDB), not a
+    // permission re-grant; reuse the primary button for it.
     const grant = document.createElement('button');
-    grant.className = 'sc-btn sc-btn--primary';
-    grant.textContent = 'Grant access';
+    grant.className = installCta ? 'sc-btn sc-btn--ghost' : 'sc-btn sc-btn--primary';
+    grant.textContent = readFailed ? 'Try again' : 'Grant access';
     grant.addEventListener('click', async () => {
+      if (readFailed) {
+        await boot();
+        return;
+      }
       try {
         await fs.reconnect();
         adapter = fs;
@@ -570,6 +654,7 @@ export function createApp({ root, enableServiceWorker = false }) {
         }
       }
     });
+
     const choose = document.createElement('button');
     choose.className = 'sc-btn sc-btn--ghost';
     choose.style.marginLeft = '8px';
@@ -580,12 +665,12 @@ export function createApp({ root, enableServiceWorker = false }) {
         adapter = fs;
         await renderApp();
       } catch (err) {
-        if (err?.name !== 'AbortError') alert('Could not open that folder.');
+        if (err?.name !== 'AbortError') showErrorToast('Could not open that folder.');
       }
     });
-    card.append(grant, choose);
-    const install = buildInstallSection();
-    if (install) card.appendChild(install);
+
+    if (installCta) card.append(installCta, grant, choose);
+    else card.append(grant, choose);
     screenShell(card);
   }
 
@@ -647,12 +732,55 @@ export function createApp({ root, enableServiceWorker = false }) {
     screenShell(card);
   }
 
+  // The last Google account Wren signed in with, if we ever recorded one, used
+  // as a login_hint so a returning user resumes without an account picker. With
+  // the drive.file scope Wren can't read the account email, so this stays empty
+  // this round (populating it would need an openid/email scope we deliberately
+  // avoid); the plumbing is here for when a hint becomes available.
+  function getStoredLoginHint() {
+    try {
+      return localStorage.getItem('wren.driveLoginHint') || '';
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * Dedicated one-tap "Resume with Google" screen for the common mobile case: a
+   * dropped/expired Drive session on boot. Simpler than the full sign-in screen
+   * (one primary action) and passes a login_hint when known so the returning
+   * account is pre-selected. No FedCM this round (audit S5).
+   */
+  function renderDriveResume({ hint = '' } = {}) {
+    currentScreen = () => renderDriveResume({ hint });
+    const card = document.createElement('div');
+    card.className = 'sc-screen-card';
+    card.innerHTML = `
+      <img src="./icon.svg" alt="Wren" />
+      <h1>Resume your Drive notes</h1>
+      <p>Your Google sign-in paused — common on mobile after the app sleeps. Tap to pick up where you left off.</p>`;
+    const resume = document.createElement('button');
+    resume.className = 'sc-btn sc-btn--primary';
+    resume.textContent = 'Resume with Google';
+    resume.addEventListener('click', () => startDriveSignIn(resume, { loginHint: hint }));
+    const switchBtn = document.createElement('button');
+    switchBtn.className = 'sc-btn sc-btn--ghost';
+    switchBtn.style.marginLeft = '8px';
+    switchBtn.textContent = 'Use local files instead';
+    switchBtn.addEventListener('click', async () => {
+      await clearStoredBackend();
+      renderStorageChoice();
+    });
+    card.append(resume, switchBtn);
+    screenShell(card);
+  }
+
   /**
    * Click-handler-context Drive sign-in. On iOS standalone PWAs, an extra
    * confirmation modal is required so the user-activation chain survives into
    * the requestAccessToken call (Decision P2c.1).
    */
-  async function startDriveSignIn(triggerBtn) {
+  async function startDriveSignIn(triggerBtn, { loginHint = '' } = {}) {
     if (isIosStandalonePwa()) {
       const proceed = await confirmDialog({
         title: 'Connect to Google Drive?',
@@ -662,20 +790,20 @@ export function createApp({ root, enableServiceWorker = false }) {
       });
       if (!proceed) return;
       // We are now in the modal-confirm click handler.
-      await completeDriveSignIn(triggerBtn);
+      await completeDriveSignIn(triggerBtn, { loginHint });
     } else {
-      await completeDriveSignIn(triggerBtn);
+      await completeDriveSignIn(triggerBtn, { loginHint });
     }
   }
 
-  async function completeDriveSignIn(triggerBtn) {
+  async function completeDriveSignIn(triggerBtn, { loginHint = '' } = {}) {
     if (triggerBtn) {
       triggerBtn.disabled = true;
       triggerBtn.textContent = 'Opening sign-in window…';
     }
     try {
       await initTokenClient({ onTokenChange: handleTokenChange });
-      await requestAccessToken({ silent: false });
+      await requestAccessToken({ silent: false, loginHint });
       const drive = new DriveAdapter();
       await drive.initialize();
       adapter = drive;
@@ -687,7 +815,7 @@ export function createApp({ root, enableServiceWorker = false }) {
         triggerBtn.textContent = 'Sign in to Google Drive';
       }
       if (err?.code === 'popup_blocked') {
-        alert(
+        showErrorToast(
           'Sign-in window didn’t open. Allow pop-ups for this site (or tap the Sign in button again).'
         );
       } else if (err?.code === 'no_token') {
@@ -715,6 +843,8 @@ export function createApp({ root, enableServiceWorker = false }) {
     skipLink.href = '#main-content';
     skipLink.textContent = 'Skip to content';
     appEl.appendChild(skipLink);
+    // Retargeted by applyViewMode() — see syncSkipLinkTarget (audit U19).
+    skipLinkEl = skipLink;
 
     driveBannerEl = buildDriveBanner();
     if (driveBannerEl) appEl.appendChild(driveBannerEl);
@@ -749,7 +879,11 @@ export function createApp({ root, enableServiceWorker = false }) {
       // (desktop) / list fallback (browser); List mode keeps the normal open.
       onNew: () =>
         effectiveViewMode() === 'kanban' ? handleNewPopOut({ from: 'kanban' }) : handleNew(),
-      onPopOut: (noteId) => handlePopOut(noteId),
+      // No pop-out from the extension popup: it can only open another popup.html
+      // in a tiny 320×360 window (chrome-extension://…?note=), which just kills
+      // the popup rather than floating a sticky (audit E1). Omitting the handler
+      // hides the affordance (notes-list guards on `if (onPopOut)`).
+      onPopOut: isExtensionPopup() ? undefined : (noteId) => handlePopOut(noteId),
       onArchive: (noteId) => handleArchive(noteId),
       onArchiveOpen: () => openArchiveView(),
       onInboxSelect: (id) => openInboxNote(id),
@@ -770,7 +904,9 @@ export function createApp({ root, enableServiceWorker = false }) {
         appEl.dataset.view = 'list';
         list.setActive(null);
       },
-      onPopOut: (note) => handlePopOut(note),
+      // Hidden in the extension popup for the same reason as the sidebar
+      // affordance above (audit E1); note-editor guards on `if (onPopOut)`.
+      onPopOut: isExtensionPopup() ? undefined : (note) => handlePopOut(note),
       // Desktop only: "Check for updates" compares the running version against
       // the latest GitHub Release and prompts to download when behind. In the
       // browser PWA/extension the app auto-updates, so no handler is passed and
@@ -790,9 +926,14 @@ export function createApp({ root, enableServiceWorker = false }) {
     // Compact view is a full-width sibling of the two-panel layout, shown when
     // data-view='compact'. Card click / + / Expand all route back to the stored
     // full mode (loadViewMode → list|kanban) and then take the normal path.
+    // Compact's container needs an id + a focus target so the skip link can
+    // point at it on the default landing view (audit U19).
     compactView = createCompactView({
       onSelect: (id) => {
-        setViewMode(loadViewMode());
+        // Leaving Compact to open a note: restore the full mode, but never land
+        // in Kanban — its editor is hidden, so the note would open invisibly
+        // (audit U1/U2). Fall back to List, mirroring the sidebar/new-note guards.
+        setViewMode(loadViewMode() === 'kanban' ? 'list' : loadViewMode());
         openNote(id);
       },
       // Desktop: pop a fresh sticky out right here (stay in Compact). Browser:
@@ -818,6 +959,9 @@ export function createApp({ root, enableServiceWorker = false }) {
       });
     }
 
+    compactView.element.id = 'compact-content';
+    compactView.element.tabIndex = -1;
+    main.tabIndex = -1;
     appEl.append(sidebar, main, compactView.element);
     root.append(appEl, buildFooter({ compact: true }));
     revealWindow();
@@ -847,8 +991,21 @@ export function createApp({ root, enableServiceWorker = false }) {
   // pops out a fresh sticky and never adds a note to the in-app list, so a
   // capture never depends on which view happens to be open.
   function setupDesktop() {
-    if (desktopIntegration) return;
-    setupDesktopIntegration({ onNewNote: () => handleNewPopOut({ from: 'hotkey' }) })
+    // Guard on a SYNCHRONOUS flag, not on desktopIntegration: that is only
+    // assigned when the setup promise resolves, so a second renderApp() during
+    // the Drive-reconnect race (which can fire while the first setup is still
+    // in flight) sailed past the check and registered the tray/hotkey handlers
+    // — and a second anonymous focus listener that could never be removed —
+    // twice over (audit U21).
+    if (desktopSetupStarted) return;
+    desktopSetupStarted = true;
+    setupDesktopIntegration({
+      onNewNote: () => handleNewPopOut({ from: 'hotkey' }),
+      // Quit-time flush: land any pending debounced save before the app exits.
+      onFlush: () => {
+        if (noteEditor?.hasPendingSave?.()) noteEditor.flush();
+      },
+    })
       .then((api) => {
         desktopIntegration = api;
       })
@@ -873,19 +1030,22 @@ export function createApp({ root, enableServiceWorker = false }) {
   // Last-write-wins; no conflict UI (consistent with Drive Phase 2b.1).
   async function handleRemoteNoteSaved(msg) {
     if (!adapter || isDriveDisconnected()) return;
-    const target =
-      notes.find((n) => n.id === msg.id) ||
-      (msg.wrenId ? notes.find((n) => n.wrenId === msg.wrenId) : null);
-    if (!target) return; // unknown note (e.g. created elsewhere) — caught on next load
+    let idx = notes.findIndex((n) => n.id === msg.id);
+    if (idx === -1 && msg.wrenId) idx = notes.findIndex((n) => n.wrenId === msg.wrenId);
+    if (idx === -1) return; // unknown note (e.g. created elsewhere) — caught on next load
+    const oldId = notes[idx].id;
+    // A rename broadcast carries the note's NEW storage id under the same wrenId
+    // (FS renames change the id). Adopt it before reading so we never read — or
+    // later write — the stale id (which would 404 or resurrect the old file).
+    const currentId = msg.id && msg.id !== oldId ? msg.id : oldId;
     try {
-      const { content, revision, name } = await adapter.readNote(target.id);
-      const parsed = parseNote(content, target.id);
-      const idx = notes.findIndex((n) => n.id === target.id);
-      if (idx === -1) return;
+      const { content, revision, name } = await adapter.readNote(currentId);
+      const parsed = parseNote(content, currentId);
       const updated = {
         ...notes[idx],
+        id: currentId,
         wrenId: parsed.wrenId || notes[idx].wrenId,
-        filename: name || notes[idx].filename,
+        filename: name || (currentId !== oldId ? currentId : notes[idx].filename),
         title: parsed.title,
         body: parsed.body,
         color: parsed.color,
@@ -903,13 +1063,14 @@ export function createApp({ root, enableServiceWorker = false }) {
       notes.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
       list.setNotes(notes);
       compactView?.setNotes(notes);
-      list.setActive(noteEditor.getNote()?.id || null);
       if (effectiveViewMode() === 'kanban') kanbanView.refresh();
       const open = noteEditor.getNote();
-      if (open && open.id === updated.id && !noteEditor.hasPendingSave()) {
+      // Re-open when the editor holds this note under EITHER its old or new id,
+      // so a rename adopts the new id in the open editor too.
+      if (open && (open.id === updated.id || open.id === oldId) && !noteEditor.hasPendingSave()) {
         await noteEditor.openNote(updated);
-        list.setActive(updated.id);
       }
+      list.setActive(noteEditor.getNote()?.id || null);
       regenerateIndex();
     } catch (err) {
       if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
@@ -1041,11 +1202,24 @@ export function createApp({ root, enableServiceWorker = false }) {
     }
     if (kanban) kanbanView.refresh();
     if (compact) compactView.setNotes(notes);
+    syncSkipLinkTarget(compact);
     // Keep the Expanded-view pin in sync with the persisted state (it may have
     // been toggled from the Compact bar while the sidebar was hidden).
     sidebarPin?.sync();
     updateViewToggle(mode);
     lastEffectiveMode = mode;
+  }
+
+  // "Skip to content" pointed at #main-content unconditionally, but Compact —
+  // which is the DEFAULT landing view — hides .sc-main outright
+  // (.sc-app[data-view='compact'] .sc-main { display: none }). Jumping to a
+  // display:none element does nothing: focus stays put and the link is a
+  // no-op exactly where a keyboard user meets it first. Retarget it to
+  // whichever container is actually on screen. Both targets carry
+  // tabindex="-1" so the anchor moves focus, not just the scroll position.
+  function syncSkipLinkTarget(compact) {
+    if (!skipLinkEl) return;
+    skipLinkEl.href = compact ? '#compact-content' : '#main-content';
   }
 
   function buildViewToggle() {
@@ -1225,12 +1399,9 @@ export function createApp({ root, enableServiceWorker = false }) {
     try {
       await adapter.archiveNote(noteId);
     } catch (err) {
-      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
-        showDriveDisconnected();
-        return;
-      }
+      if (routeAuthError(err)) return;
       console.error('Archive failed', err);
-      alert('Could not archive that note.');
+      showErrorToast('Could not archive that note.');
       return;
     }
     if (noteEditor.getNote && noteEditor.getNote()?.id === noteId) {
@@ -1253,12 +1424,9 @@ export function createApp({ root, enableServiceWorker = false }) {
     try {
       await adapter.unarchiveNote(archiveId);
     } catch (err) {
-      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
-        showDriveDisconnected();
-        return false;
-      }
+      if (routeAuthError(err)) return false;
       console.error('Unarchive failed', err);
-      alert('Could not unarchive that note.');
+      showErrorToast('Could not unarchive that note.');
       return false;
     }
     await loadNotes();
@@ -1301,6 +1469,9 @@ export function createApp({ root, enableServiceWorker = false }) {
         revision: '',
         readOnly: true,
       };
+      // In Kanban the editor is hidden behind the board, so open would look like
+      // "nothing happened" — switch to List first (mirrors the sidebar guard).
+      if (effectiveViewMode() === 'kanban') setViewMode('list');
       await noteEditor.openNote(fresh, { readOnly: true, readOnlyLabel: 'Archived · read-only' });
       list.setActive(archiveId);
       appEl.dataset.view = 'editor';
@@ -1364,6 +1535,9 @@ export function createApp({ root, enableServiceWorker = false }) {
         revision: '',
         readOnly: true,
       };
+      // In Kanban the editor is hidden behind the board, so open would look like
+      // "nothing happened" — switch to List first (mirrors the sidebar guard).
+      if (effectiveViewMode() === 'kanban') setViewMode('list');
       await noteEditor.openNote(fresh, { readOnly: true, readOnlyLabel: 'Staged · read-only' });
       list.setActive(inboxId);
       appEl.dataset.view = 'editor';
@@ -1385,12 +1559,9 @@ export function createApp({ root, enableServiceWorker = false }) {
     try {
       await adapter.promoteInboxNote(inboxId);
     } catch (err) {
-      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
-        showDriveDisconnected();
-        return;
-      }
+      if (routeAuthError(err)) return;
       console.error('Promote failed', err);
-      alert('Could not move that note into your notes.');
+      showErrorToast('Could not move that note into your notes.');
       return;
     }
     // If the promoted note was open in the editor, drop back to the list.
@@ -1429,12 +1600,9 @@ export function createApp({ root, enableServiceWorker = false }) {
         await adapter.deleteNote(inboxId);
       }
     } catch (err) {
-      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
-        showDriveDisconnected();
-        return;
-      }
+      if (routeAuthError(err)) return;
       console.error('Discard failed', err);
-      alert('Could not discard that staged note.');
+      showErrorToast('Could not discard that staged note.');
       return;
     }
     // If the discarded note was open, clear the editor.
@@ -1549,10 +1717,7 @@ export function createApp({ root, enableServiceWorker = false }) {
         revision,
       };
     } catch (err) {
-      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
-        showDriveDisconnected();
-        return;
-      }
+      if (routeAuthError(err)) return;
       console.warn('Could not read note', err);
       await loadNotes();
       return;
@@ -1622,12 +1787,9 @@ export function createApp({ root, enableServiceWorker = false }) {
       regenerateIndex();
       return note;
     } catch (err) {
-      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
-        showDriveDisconnected();
-        return null;
-      }
+      if (routeAuthError(err)) return null;
       console.error('Could not create note', err);
-      alert('Could not create a new note.');
+      showErrorToast('Could not create a new note.');
       return null;
     }
   }
@@ -1655,8 +1817,11 @@ export function createApp({ root, enableServiceWorker = false }) {
       if (from === 'kanban' && effectiveViewMode() === 'kanban') kanbanView.refresh();
       return;
     }
-    // Browser fallback: surface the note in the full editor.
-    setViewMode(from === 'compact' ? loadViewMode() : 'list');
+    // Browser fallback: surface the note in the full editor. Never land in
+    // Kanban (its editor is hidden → the new note would open invisibly); fall
+    // back to List.
+    const restore = from === 'compact' ? loadViewMode() : 'list';
+    setViewMode(restore === 'kanban' ? 'list' : restore);
     await openNote(note.id, { focusTitle: true });
   }
 
@@ -1678,7 +1843,10 @@ export function createApp({ root, enableServiceWorker = false }) {
     note.lastEdited = note.modified;
     const content = serializeNote(note);
     try {
-      const { revision } = await adapter.writeNote(note.id, content);
+      // Pass the note's known revision so the adapter can detect a concurrent
+      // write (another window / editor / device) and throw ConflictError rather
+      // than blindly overwriting the winner's changes.
+      const { revision } = await adapter.writeNote(note.id, content, note.revision);
       note.revision = revision;
       note.firstLine = firstLineOf(note.body);
       await syncBackendFilename(note);
@@ -1692,9 +1860,12 @@ export function createApp({ root, enableServiceWorker = false }) {
         else renderFsReconnect(adapter);
         return false;
       }
-      // ConflictError is technically possible but Phase 2b.1 doesn't surface
-      // conflicts — last-write-wins per spec. Log and report failure so the
-      // editor shows "Not saved" rather than a false success.
+      // Concurrent-write conflict: preserve this window's unsaved text as a
+      // conflict copy (never silently overwrite), then reload the winner.
+      if (err instanceof ConflictError) {
+        await handleSaveConflict(note, content);
+        return false;
+      }
       console.error('Save failed', err);
       return false;
     }
@@ -1764,6 +1935,91 @@ export function createApp({ root, enableServiceWorker = false }) {
     }
   }
 
+  /**
+   * A conditional write hit a concurrent change (another window / editor /
+   * device wrote this note since we last read it). Syncthing-style resolution:
+   * keep whatever is now on disk as the canonical note, preserve THIS window's
+   * losing edit as a `.sync-conflict-…` copy so nothing is lost, tell the user
+   * where it went, and reload the editor to the winning version.
+   *
+   * @param {object} note - the in-memory note whose save conflicted
+   * @param {string} localContent - the serialized text that failed to save
+   */
+  async function handleSaveConflict(note, localContent) {
+    // Read the winner now on disk. Adopt its revision (so a later save overwrites
+    // rather than spawning an endless chain of copies) AND compare content: if
+    // our losing edit is byte-identical in the parts that matter, there's nothing
+    // to preserve — skip the copy so fresh typing never silently spawns a side
+    // file the user thinks ate their edit.
+    let diskContent = null;
+    try {
+      const read = await adapter.readNote(note.id);
+      diskContent = read.content;
+      note.revision = read.revision;
+    } catch {
+      /* the note may itself have been renamed/deleted — still preserve below */
+    }
+    if (diskContent !== null && !noteContentDiffers(localContent, diskContent)) {
+      await refreshAfterConflict(note);
+      return;
+    }
+    let copy;
+    try {
+      copy = await writeConflictCopy(adapter, note, localContent);
+    } catch (err) {
+      console.error('Could not write conflict copy', err);
+      showToast('Edited elsewhere — copy your text; a conflict copy could not be written.');
+      return;
+    }
+    showConflictToast(copy);
+    await refreshAfterConflict(note);
+  }
+
+  async function refreshAfterConflict(note) {
+    try {
+      await handleRemoteNoteSaved({ id: note.id, wrenId: note.wrenId });
+    } catch (err) {
+      console.warn('Post-conflict refresh failed', err);
+    }
+  }
+
+  // True when two serialized notes differ in the parts a user cares about
+  // (title/body/tags/color/due) — volatile provenance (modified/last_edited) is
+  // ignored so a mere timestamp bump never triggers a conflict copy.
+  function noteContentDiffers(aRaw, bRaw) {
+    const a = parseNote(aRaw, '');
+    const b = parseNote(bRaw, '');
+    if ((a.body || '') !== (b.body || '')) return true;
+    if ((a.title || '') !== (b.title || '')) return true;
+    if ((a.color || '') !== (b.color || '')) return true;
+    if ((a.due || '') !== (b.due || '')) return true;
+    const at = JSON.stringify((a.tags || []).slice().sort());
+    const bt = JSON.stringify((b.tags || []).slice().sort());
+    return at !== bt;
+  }
+
+  // Conflict toast that NAMES the copy and offers a one-click "Open" so the user
+  // can see exactly where their edit went (audit R2 conflict refinement).
+  function showConflictToast({ id, name }) {
+    const toast = document.createElement('div');
+    toast.className = 'sc-toast';
+    const label = document.createElement('span');
+    label.textContent = `Edited elsewhere — your changes were kept as “${name}”. `;
+    toast.appendChild(label);
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'sc-toast-action';
+    open.textContent = 'Open';
+    open.addEventListener('click', async () => {
+      toast.remove();
+      await loadNotes();
+      await openNote(id);
+    });
+    toast.appendChild(open);
+    // Longer than a plain toast — it carries an action the user may want to take.
+    mountToast(toast, 9000);
+  }
+
   async function handleDelete(note) {
     if (isDriveDisconnected()) {
       showDriveDisconnectedToast('Reconnect Drive to delete notes.');
@@ -1772,12 +2028,9 @@ export function createApp({ root, enableServiceWorker = false }) {
     try {
       await adapter.deleteNote(note.id);
     } catch (err) {
-      if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
-        showDriveDisconnected();
-        return;
-      }
+      if (routeAuthError(err)) return;
       console.error('Delete failed', err);
-      alert('Could not delete the note.');
+      showErrorToast('Could not delete the note.');
       return;
     }
     notes = notes.filter((n) => n.id !== note.id);
@@ -1802,7 +2055,7 @@ export function createApp({ root, enableServiceWorker = false }) {
       return;
     }
     try {
-      const { content } = await adapter.readNote(noteId);
+      const { content, revision } = await adapter.readNote(noteId);
       const parsed = parseNote(content, noteId);
       let updated;
       if (value === '_untagged') {
@@ -1823,7 +2076,15 @@ export function createApp({ root, enableServiceWorker = false }) {
       if (before === after) return;
 
       updated.modified = new Date().toISOString();
-      const res = await adapter.writeNote(noteId, serializeNote(updated));
+      // A drag between columns is a human edit exactly like a save from the
+      // editor, so stamp the same provenance handleSave does (:1802–1803).
+      // Without this an AI-edited note keeps reading "edited by AI" in the
+      // last-updated panel after a person has moved its card.
+      updated.lastEditedBy = 'human';
+      updated.lastEdited = updated.modified;
+      // Conditional on the revision we just read so a concurrent write is caught
+      // instead of silently clobbered.
+      const res = await adapter.writeNote(noteId, serializeNote(updated), revision);
 
       // Keep the in-memory model in sync so both the board and the sidebar
       // list reflect the move without a full reload.
@@ -1832,6 +2093,8 @@ export function createApp({ root, enableServiceWorker = false }) {
         n.tags = updated.tags;
         n.modified = updated.modified;
         n.revision = res.revision;
+        n.lastEditedBy = updated.lastEditedBy;
+        n.lastEdited = updated.lastEdited;
       }
       notes.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
       list.setNotes(notes);
@@ -1841,6 +2104,14 @@ export function createApp({ root, enableServiceWorker = false }) {
     } catch (err) {
       if (err instanceof AdapterAuthError && adapter?.backendId() === ADAPTER_TYPES.DRIVE) {
         showDriveDisconnected();
+        return;
+      }
+      if (err instanceof ConflictError) {
+        // The card was edited elsewhere between our read and write. Re-read and
+        // refresh the board rather than clobbering the concurrent change; the
+        // drop can simply be retried.
+        showToast('Card changed elsewhere — refreshed. Try the move again.');
+        await handleRemoteNoteSaved({ id: noteId });
         return;
       }
       console.error('Kanban move failed', err);
@@ -1867,6 +2138,18 @@ export function createApp({ root, enableServiceWorker = false }) {
     }
   }
 
+  // Route a lapsed-permission error to the matching reconnect screen — Drive's
+  // disconnected banner or the FS folder-reconnect card. Returns true when it
+  // handled an AdapterAuthError (the caller should then bail), false otherwise so
+  // non-auth errors fall through to their own handling. Replaces the Drive-only
+  // guards that let a revoked FS permission dead-end in an alert() (audit S8).
+  function routeAuthError(err) {
+    if (!(err instanceof AdapterAuthError)) return false;
+    if (adapter?.backendId() === ADAPTER_TYPES.DRIVE) showDriveDisconnected();
+    else renderFsReconnect(adapter);
+    return true;
+  }
+
   function showDriveDisconnected() {
     driveDisconnected = true;
     if (driveBannerEl) {
@@ -1880,12 +2163,72 @@ export function createApp({ root, enableServiceWorker = false }) {
   }
 
   // Lightweight toast: temporary div, auto-removes. No persistent state.
+  // Toasts used to be individually position:fixed at the same coordinates, so
+  // two in flight rendered exactly on top of each other and the first was
+  // unreadable. They now live in a shared stack container (audit U21).
+  function toastStack() {
+    let stack = document.querySelector('.sc-toast-stack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.className = 'sc-toast-stack';
+      // Announce toasts without stealing focus; the stack is a pass-through
+      // layer so it can't intercept clicks meant for the app beneath it.
+      stack.setAttribute('role', 'status');
+      stack.setAttribute('aria-live', 'polite');
+      document.body.appendChild(stack);
+    }
+    return stack;
+  }
+
+  function mountToast(toast, ttlMs) {
+    toastStack().appendChild(toast);
+    setTimeout(() => {
+      toast.remove();
+      const stack = document.querySelector('.sc-toast-stack');
+      if (stack && !stack.childElementCount) stack.remove();
+    }, ttlMs);
+  }
+
   function showToast(msg) {
     const toast = document.createElement('div');
     toast.className = 'sc-toast';
     toast.textContent = msg;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3200);
+    mountToast(toast, 3200);
+  }
+
+  // Errors that used to be alert() (audit S15). alert() blocks the whole page,
+  // cannot be styled, reads badly on mobile, and in the desktop shell can land
+  // behind the window. A toast replaces it — but a failure must not look like
+  // ordinary chatter, so error toasts are visually distinct, live roughly twice
+  // as long, and carry role="alert" so assistive tech announces them at once
+  // rather than waiting for a pause, which is what the stack's polite
+  // aria-live would otherwise do.
+  function showErrorToast(msg) {
+    const toast = document.createElement('div');
+    toast.className = 'sc-toast sc-toast-error';
+    toast.setAttribute('role', 'alert');
+    toast.textContent = msg;
+    mountToast(toast, 6000);
+  }
+
+  // True where the window has no browser tab strip to steal shortcuts from:
+  // an installed/standalone PWA, or the Tauri desktop shell. Both checks are
+  // wrapped because matchMedia is absent in some embedded webviews and reading
+  // an undefined global throws.
+  function isTablessWindow() {
+    try {
+      if (window.__TAURI_INTERNALS__ || window.__TAURI__) return true;
+    } catch {
+      /* not a Tauri webview */
+    }
+    try {
+      if (window.matchMedia?.('(display-mode: standalone)')?.matches) return true;
+      if (window.matchMedia?.('(display-mode: window-controls-overlay)')?.matches) return true;
+    } catch {
+      /* matchMedia unavailable */
+    }
+    // iOS Safari's pre-standard installed-app flag.
+    return window.navigator?.standalone === true;
   }
 
   function showDriveDisconnectedToast(msg) {
@@ -2088,7 +2431,39 @@ export function createApp({ root, enableServiceWorker = false }) {
       pop.appendChild(toDrive);
     }
 
+    // Diagnostics: surface whether the browser granted persistent storage. On a
+    // local backend this is the difference between folder permission surviving
+    // eviction and getting re-prompted every session (audit S6). Filled async.
+    if (!isDrive) {
+      const persistLine = document.createElement('p');
+      persistLine.className = 'sc-popover-hint';
+      persistLine.textContent = 'Persistent storage: checking…';
+      pop.appendChild(persistLine);
+      isStoragePersisted().then((state) => {
+        persistLine.textContent =
+          state === true
+            ? 'Persistent storage: on (folder access should stick).'
+            : state === false
+              ? 'Persistent storage: off — install Wren so folder access persists.'
+              : 'Persistent storage: unavailable in this browser.';
+      });
+    }
+
     document.body.appendChild(pop);
+
+    // Clamp to the viewport now that the popover has a measurable size — anchored
+    // at rect.left it was cut off ~74px on the right at a 400px popup width
+    // (audit U16). Nudge left so the right edge stays on-screen, and flip above
+    // the chip if it would overflow the bottom.
+    {
+      const w = pop.offsetWidth;
+      const h = pop.offsetHeight;
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - w - 8));
+      pop.style.left = `${left}px`;
+      if (rect.bottom + 6 + h > window.innerHeight - 8) {
+        pop.style.top = `${Math.max(8, rect.top - h - 6)}px`;
+      }
+    }
 
     // Dismiss on outside click / Escape.
     const dismiss = (ev) => {

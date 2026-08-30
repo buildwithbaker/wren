@@ -5,6 +5,10 @@
 
 /* ---- Base tokens (shared) ---------------------------------------------- */
 :root {
+  /* Default light. The dark blocks below flip this so native controls (date
+     input, <select>, scrollbars) render matching dark chrome (audit U9). */
+  color-scheme: light;
+
   --wr-font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --wr-mono: 'JetBrains Mono', 'Consolas', ui-monospace, monospace;
 
@@ -83,6 +87,22 @@
   --wr-border-strong: #CDBFA9;
   --wr-field-bg:      #F1E8DB;
   --wr-paper-muted:   rgba(46, 42, 36, 0.55);
+  /* Slate "ink" used for placeholders, hairline borders, and hover washes as
+     rgba(var(--wr-ink-rgb), <alpha>). Kept as an RGB triplet so a single token
+     flips the whole family in dark mode. Light value = the historical #2A3540,
+     so light rendering is byte-identical. */
+  --wr-ink-rgb: 42, 53, 64;
+
+  /* Editor text-color palette (TEXT_COLORS in color-picker.js reference these).
+     Light values = the historical hexes so existing light rendering is unchanged;
+     the dark blocks lift them so text stays legible on dark paper (audit U9). */
+  --wr-tc-ink: #2A3540;
+  --wr-tc-amber: #A07020;
+  --wr-tc-red: #C0392B;
+  --wr-tc-green: #2E7D46;
+  --wr-tc-blue: #2E5082;
+  --wr-tc-purple: #7A4FB5;
+  --wr-tc-rose: #C2407A;
 }
 
 /* ---- Dark chrome (note paper stays light by design) -------------------- */
@@ -90,6 +110,7 @@
    explicit data-theme="dark" on the root element. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
+    color-scheme: dark;
     --wr-primary: #7FA0E8;
     --wr-primary-hover: #96B3EE;
     --wr-primary-soft: #1A2644;
@@ -117,9 +138,21 @@
     --wr-note-rose: #3A2530;
     --wr-note-purple: #2A2238;
     --wr-paper-muted: rgba(230, 235, 242, 0.55);
+    /* Flip the slate-ink overlay family to light so placeholders, hairlines and
+       hover washes are visible on dark paper/chrome (audit U7/U8/U9). */
+    --wr-ink-rgb: 236, 230, 220;
+    /* Lift the editor text palette for legibility on dark paper (audit U9). */
+    --wr-tc-ink: #C7D2DE;
+    --wr-tc-amber: #D9A84E;
+    --wr-tc-red: #E27567;
+    --wr-tc-green: #6FB98A;
+    --wr-tc-blue: #7FA0E8;
+    --wr-tc-purple: #B79BE0;
+    --wr-tc-rose: #E585AC;
   }
 }
 :root[data-theme='dark'] {
+  color-scheme: dark;
   --wr-primary: #7FA0E8;
   --wr-primary-hover: #96B3EE;
   --wr-primary-soft: #1A2644;
@@ -147,6 +180,16 @@
   --wr-note-rose: #3A2530;
   --wr-note-purple: #2A2238;
   --wr-paper-muted: rgba(230, 235, 242, 0.55);
+  /* Slate-ink overlay family flipped light for manual dark (see @media block). */
+  --wr-ink-rgb: 236, 230, 220;
+  /* Editor text palette lifted for manual dark (see @media block). */
+  --wr-tc-ink: #C7D2DE;
+  --wr-tc-amber: #D9A84E;
+  --wr-tc-red: #E27567;
+  --wr-tc-green: #6FB98A;
+  --wr-tc-blue: #7FA0E8;
+  --wr-tc-purple: #B79BE0;
+  --wr-tc-rose: #E585AC;
 }
 
 /* ---- Reset ------------------------------------------------------------- */
@@ -200,6 +243,26 @@ button {
   grid-template-columns: 280px minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
+}
+
+/* Explicit rows for the CONTENT grid (renderApp sets data-view; the onboarding
+   screenShell .sc-app does NOT, so it's untouched). Without this the optional
+   Drive banner / sticky restore bar landed in an auto row that split the window
+   roughly in half (audit U3). Fixed slots: banner=row1, restore=row2 (empty
+   slots collapse to 0), and the sidebar/main/compact content fills row3. */
+.sc-app[data-view] {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+.sc-app[data-view] > .sc-drive-banner {
+  grid-row: 1;
+}
+.sc-app[data-view] > .sc-restore-bar {
+  grid-row: 2;
+}
+.sc-app[data-view] > .sc-sidebar,
+.sc-app[data-view] > .sc-main,
+.sc-app[data-view] > .sc-compact {
+  grid-row: 3;
 }
 
 .sc-sidebar {
@@ -328,10 +391,14 @@ button {
   gap: 8px;
 }
 
-/* note card */
+/* note card. The card is a container (audit U14 — it used to be a <button>
+   with interactive chips nested inside it); .sc-card-open is the real button
+   that opens the note, and the chips / archive / pop-out controls are its
+   siblings. */
 .sc-card {
   text-align: left;
-  border: 1px solid rgba(42, 53, 64, 0.08);
+  cursor: pointer;
+  border: 1px solid rgba(var(--wr-ink-rgb), 0.08);
   border-radius: var(--wr-radius-card);
   padding: 11px 12px;
   color: var(--wr-ink);
@@ -349,7 +416,21 @@ button {
 .sc-card.is-active {
   outline-color: var(--wr-accent);
 }
+.sc-card-open {
+  display: block;
+  width: 100%;
+  /* Leave the top-right cluster (archive + pop-out) clear of the title. */
+  padding: 0 56px 0 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
 .sc-card-title {
+  display: block;
   font-weight: 650;
   font-size: 14.5px;
   color: var(--wr-ink);
@@ -358,6 +439,7 @@ button {
   text-overflow: ellipsis;
 }
 .sc-card-preview {
+  display: block;
   font-size: 12.5px;
   color: var(--wr-paper-muted);
   margin-top: 2px;
@@ -366,6 +448,7 @@ button {
   text-overflow: ellipsis;
 }
 .sc-card-meta {
+  display: block;
   font-size: 11px;
   color: var(--wr-paper-muted);
   margin-top: 7px;
@@ -566,7 +649,7 @@ button {
   margin: 16px;
   background: var(--wr-note-bg, #fff);
   color: var(--wr-ink);
-  border: 1px solid rgba(42, 53, 64, 0.1);
+  border: 1px solid rgba(var(--wr-ink-rgb), 0.1);
   border-radius: var(--wr-radius-panel);
   box-shadow: var(--wr-shadow-md);
   overflow: hidden;
@@ -595,7 +678,7 @@ button {
   padding: 4px 2px;
 }
 .sc-title-input::placeholder {
-  color: rgba(42, 53, 64, 0.4);
+  color: rgba(var(--wr-ink-rgb), 0.4);
 }
 .sc-title-input:focus-visible {
   outline: none;
@@ -612,12 +695,11 @@ button {
   margin-right: 6px;
 }
 .sc-editor-more-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  /* Anchor the menu's right edge to the trigger so it opens leftward into the
-     window. left:0 pushed a 230px menu past the right window edge and clipped
-     "Pop out into its own window". */
-  right: 0;
+  /* Fixed so it escapes the editor surface's overflow:hidden clip — an absolute
+     menu was cut off at the bottom in a short window (audit U11). JS
+     (positionDropdown) sets top/right from the trigger and flips it up when it
+     would overflow the viewport bottom. */
+  position: fixed;
   z-index: 50;
   min-width: 230px;
   max-width: min(320px, calc(100vw - 24px));
@@ -647,7 +729,7 @@ button {
   cursor: pointer;
 }
 .sc-editor-more-item:hover {
-  background: rgba(42, 53, 64, 0.08);
+  background: rgba(var(--wr-ink-rgb), 0.08);
 }
 /* Checkbox menu items (Hide due date / Hide tags): the check mark is invisible
    until the item is aria-checked. */
@@ -697,7 +779,7 @@ button {
   transition: background var(--wr-trans), opacity var(--wr-trans), border-color var(--wr-trans);
 }
 .sc-format-toggle:hover {
-  background: rgba(42, 53, 64, 0.08);
+  background: rgba(var(--wr-ink-rgb), 0.08);
   border-color: color-mix(in srgb, var(--wr-ink) 48%, transparent);
   opacity: 1;
 }
@@ -740,13 +822,13 @@ button {
   transition: background var(--wr-trans), opacity var(--wr-trans);
 }
 .sc-tags-btn:hover {
-  background: rgba(42, 53, 64, 0.08);
+  background: rgba(var(--wr-ink-rgb), 0.08);
   opacity: 1;
 }
 .sc-tags-popover {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
+  /* Fixed for the same reason as .sc-editor-more-menu — escapes the surface clip;
+     positionDropdown sets top/right and flips up as needed (audit U11). */
+  position: fixed;
   z-index: 50;
   min-width: 220px;
   max-width: min(280px, calc(100vw - 24px));
@@ -780,7 +862,7 @@ button {
   transition: background var(--wr-trans), opacity var(--wr-trans);
 }
 .sc-iconbtn:hover {
-  background: rgba(42, 53, 64, 0.08);
+  background: rgba(var(--wr-ink-rgb), 0.08);
   opacity: 1;
 }
 .sc-iconbtn--danger:hover {
@@ -797,6 +879,12 @@ button {
   gap: 12px;
   padding: 2px 14px 10px;
   background: var(--wr-note-header-tint);
+  /* Let the right-aligned Due control drop to its own line instead of clipping
+     off the right edge at awkward mid widths (641–695px) — mirrors the sticky
+     variant's wrap (audit U5). margin-left:auto still right-aligns it when it
+     wraps. */
+  flex-wrap: wrap;
+  row-gap: 8px;
 }
 /* Due control pinned to the far right of the color row. */
 .sc-editor-colorrow .sc-due-control {
@@ -823,7 +911,11 @@ button {
   white-space: nowrap;
 }
 
-/* card color swatches */
+/* card color swatches. The dot stays 20px for the look; a transparent
+   pseudo-element grows the *hit area* to 26x26 so the control clears the 24px
+   minimum-target guidance on touch (audit U15). The row's 6px gap is wider
+   than the 3px the pseudo-element bleeds on each side, so neighbouring hit
+   areas never overlap and a tap can't land on the wrong colour. */
 .sc-cardcolors {
   display: inline-flex;
   gap: 6px;
@@ -832,11 +924,17 @@ button {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  border: 1px solid rgba(42, 53, 64, 0.18);
+  border: 1px solid rgba(var(--wr-ink-rgb), 0.18);
   background: var(--swatch);
   padding: 0;
   position: relative;
   transition: transform var(--wr-trans), box-shadow var(--wr-trans);
+}
+.sc-swatch::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
 }
 .sc-swatch:hover {
   transform: scale(1.12);
@@ -888,6 +986,8 @@ button {
   margin-top: 6px;
 }
 .sc-mtag {
+  /* Rendered as a <button> when clickable (audit U14), so reset the UA font. */
+  font-family: inherit;
   display: inline-flex;
   align-items: center;
   gap: 1px;
@@ -911,6 +1011,8 @@ button {
 }
 .sc-mtag--clickable {
   cursor: pointer;
+  /* Keep the chip's own 1px border as the only outline-ish edge. */
+  appearance: none;
   transition: border-color var(--wr-trans);
 }
 .sc-mtag--clickable:hover,
@@ -933,11 +1035,21 @@ button {
   background: transparent;
   color: inherit;
   opacity: 0.65;
+  position: relative;
   transition: background var(--wr-trans), opacity var(--wr-trans);
+}
+/* 16px glyph, 24px hit area (audit U15). The chip has 6px of padding to its
+   right, so the 4px bleed stays inside the chip and never overlaps the next
+   chip's target. */
+.sc-tag-remove::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
 }
 .sc-tag-remove:hover {
   opacity: 1;
-  background: rgba(42, 53, 64, 0.14);
+  background: rgba(var(--wr-ink-rgb), 0.14);
 }
 .sc-tagadd {
   display: inline-flex;
@@ -980,8 +1092,8 @@ button {
   gap: 2px;
   padding: 6px 6px;
   background: var(--wr-note-header-tint);
-  border-top: 1px solid rgba(42, 53, 64, 0.1);
-  border-bottom: 1px solid rgba(42, 53, 64, 0.1);
+  border-top: 1px solid rgba(var(--wr-ink-rgb), 0.1);
+  border-bottom: 1px solid rgba(var(--wr-ink-rgb), 0.1);
 }
 .sc-tbtn {
   display: inline-grid;
@@ -997,7 +1109,7 @@ button {
   transition: background var(--wr-trans), opacity var(--wr-trans);
 }
 .sc-tbtn:hover {
-  background: rgba(42, 53, 64, 0.09);
+  background: rgba(var(--wr-ink-rgb), 0.09);
   opacity: 1;
 }
 .sc-tbtn.is-active {
@@ -1013,7 +1125,7 @@ button {
   width: 1px;
   align-self: stretch;
   margin: 4px 4px;
-  background: rgba(42, 53, 64, 0.14);
+  background: rgba(var(--wr-ink-rgb), 0.14);
 }
 
 .sc-tbtn--menu {
@@ -1090,7 +1202,7 @@ button {
 }
 .sc-prose p.is-editor-empty:first-child::before {
   content: 'Start writing…';
-  color: rgba(42, 53, 64, 0.4);
+  color: rgba(var(--wr-ink-rgb), 0.4);
   float: left;
   height: 0;
   pointer-events: none;
@@ -1128,20 +1240,20 @@ button {
 .sc-prose blockquote {
   border-left: 3px solid var(--wr-accent);
   padding-left: 0.9em;
-  color: rgba(42, 53, 64, 0.78);
+  color: rgba(var(--wr-ink-rgb), 0.78);
   font-style: italic;
 }
 .sc-prose code {
   font-family: var(--wr-mono);
   font-size: 0.88em;
-  background: rgba(42, 53, 64, 0.09);
+  background: rgba(var(--wr-ink-rgb), 0.09);
   padding: 0.12em 0.35em;
   border-radius: 4px;
 }
 .sc-prose pre {
   font-family: var(--wr-mono);
   font-size: 0.86em;
-  background: rgba(42, 53, 64, 0.92);
+  background: rgba(var(--wr-ink-rgb), 0.92);
   color: #f4f6f9;
   padding: 12px 14px;
   border-radius: var(--wr-radius-sm);
@@ -1158,7 +1270,7 @@ button {
 }
 .sc-prose hr {
   border: 0;
-  border-top: 1px solid rgba(42, 53, 64, 0.18);
+  border-top: 1px solid rgba(var(--wr-ink-rgb), 0.18);
 }
 
 /* task list */
@@ -1192,7 +1304,13 @@ button {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 16px;
+  /* index.html ships viewport-fit=cover, so on an iOS PWA the layout extends
+     under the home indicator and the notch/rounded corners. Pad the fixed
+     bottom chrome by the safe-area insets (audit U12); env() resolves to 0 on
+     every platform that has no inset, so this is a no-op elsewhere. */
+  padding: 8px 16px calc(8px + env(safe-area-inset-bottom)) 16px;
+  padding-left: calc(16px + env(safe-area-inset-left));
+  padding-right: calc(16px + env(safe-area-inset-right));
   font-size: 12px;
   color: var(--wr-panel-muted);
   background: var(--wr-panel-bg);
@@ -1264,10 +1382,28 @@ button {
 /* =========================================================================
    Onboarding / unsupported / states
    ========================================================================= */
+/* Onboarding / storage-choice / sign-in screens.
+
+   `overflow-y: auto` is load-bearing, not cosmetic. Without it this flex item
+   keeps its automatic minimum size, so a card taller than the row grows the
+   screen past the shell instead of scrolling inside it - and the pinned footer
+   then sits on top of the card's lower half. In the 400x560 extension popup
+   (which also sets `body { overflow: hidden }`, so the page itself cannot
+   scroll) that buried the storage-choice "Choose folder" button underneath
+   `.sc-footer-links`, leaving first-run users with no way to click it.
+
+   `align-items: safe center` keeps the card vertically centred when the row has
+   room and falls back to start-alignment when it does not, so an overflowing
+   card scrolls from its top edge rather than having its top half pushed out of
+   reach the way plain `center` does. It is listed after `place-items` so a
+   browser without the `safe` keyword simply drops that one declaration and
+   keeps the old centring. */
 .sc-screen {
   flex: 1;
   display: grid;
   place-items: center;
+  align-items: safe center;
+  overflow-y: auto;
   padding: 32px;
 }
 .sc-screen-card {
@@ -1563,8 +1699,9 @@ button {
    ========================================================================= */
 .sc-theme-toggle {
   position: fixed;
-  bottom: 14px;
-  right: 14px;
+  /* Safe-area aware: see the note on .sc-footer (audit U12). */
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  right: calc(14px + env(safe-area-inset-right));
   z-index: 50;
   display: inline-flex;
   align-items: center;
@@ -1593,8 +1730,9 @@ button {
    ========================================================================= */
 .sc-install-button {
   position: fixed;
-  bottom: 14px;
-  left: 14px;
+  /* Safe-area aware: see the note on .sc-footer (audit U12). */
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  left: calc(14px + env(safe-area-inset-left));
   z-index: 50;
   display: inline-flex;
   align-items: center;
@@ -1769,6 +1907,15 @@ button {
   border-left: 3px solid #c0392b;
   border-radius: 4px;
 }
+.sc-popover-hint {
+  margin: 4px 8px 2px;
+  padding: 6px 8px 4px;
+  max-width: 240px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--wr-panel-muted);
+  border-top: 1px solid var(--wr-border, rgba(0, 0, 0, 0.08));
+}
 
 /* Drive-disconnected banner */
 .sc-drive-banner {
@@ -1798,24 +1945,67 @@ button {
   pointer-events: none;
 }
 
-/* Toast — used by Drive-disconnected write attempts */
-.sc-toast {
+/* Toast stack — toasts used to be individually position:fixed at identical
+   coordinates, so a second toast landed exactly on top of the first and both
+   were unreadable. They now stack newest-at-the-bottom in this container, and
+   the container sits ABOVE the modal scrim (z-index 900): a toast fired while
+   a dialog is open used to render behind the scrim and was effectively
+   invisible (audit U21). pointer-events are off on the layer and back on for
+   each toast, so the stack never swallows a click meant for the app. */
+.sc-toast-stack {
   position: fixed;
-  bottom: 56px;
+  bottom: calc(56px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
+  z-index: 950;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: min(420px, calc(100vw - 24px));
+  pointer-events: none;
+}
+.sc-toast {
+  pointer-events: auto;
+  max-width: 100%;
   background: var(--wr-panel-text);
   color: var(--wr-panel-bg);
   padding: 8px 14px;
   border-radius: 6px;
   font-size: 13px;
+  text-align: center;
   box-shadow: var(--wr-shadow-md);
-  z-index: 300;
   animation: sc-toast-in 180ms ease-out;
 }
+/* Error toast (audit S15): the replacement for the blocking alert() calls.
+   A failure must not read like ordinary chatter, so it gets the same red
+   left-rule the rest of the app uses for error state. The message text is
+   always explicit ("Could not delete the note."), so the colour reinforces
+   the meaning rather than carrying it. */
+.sc-toast-error {
+  border-left: 3px solid #c0392b;
+  text-align: left;
+  font-weight: 600;
+}
 @keyframes sc-toast-in {
-  from { opacity: 0; transform: translate(-50%, 6px); }
-  to   { opacity: 1; transform: translate(-50%, 0); }
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+/* Inline action button inside a toast (e.g. "Open" the conflict copy). */
+.sc-toast-action {
+  margin-left: 4px;
+  padding: 2px 10px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sc-toast-action:hover {
+  background: var(--wr-panel-bg);
+  color: var(--wr-panel-text);
 }
 
 /* =========================================================================
@@ -1826,8 +2016,10 @@ button {
    ========================================================================= */
 .sc-open-full-app {
   position: fixed;
-  top: 14px;
-  right: 14px;
+  /* Top-right chrome: keep it clear of the notch / rounded corners under
+     viewport-fit=cover (audit U12). */
+  top: calc(14px + env(safe-area-inset-top));
+  right: calc(14px + env(safe-area-inset-right));
   z-index: 50;
   display: inline-flex;
   align-items: center;
@@ -1848,6 +2040,12 @@ button {
   color: var(--wr-brown);
 }
 .sc-open-full-app svg { width: 11px; height: 11px; }
+/* Reserve room on the right of the brand header for the fixed "Open Full App"
+   pill so it stops overlapping the backend chip at popup width (audit U18). */
+body.has-open-full-app .sc-brand {
+  /* Pill footprint measured at 117px from the right edge; clear it with a gap. */
+  padding-right: 124px;
+}
 
 /* =========================================================================
    Sidebar tag filter (Phase B of Kanban SOW)
@@ -2051,6 +2249,7 @@ button {
   font-weight: 500;
 }
 .sc-kanban-card {
+  position: relative;
   background: var(--wr-note-bg, var(--wr-panel-bg));
   border-radius: var(--wr-radius-sm);
   padding: 10px;
@@ -2058,6 +2257,85 @@ button {
   box-shadow: var(--wr-shadow-sm);
   color: var(--wr-ink);
   transition: transform var(--wr-trans);
+}
+/* The real "open this note" control inside the card (audit U13). Full-bleed so
+   the card still reads as one clickable surface, with the right edge kept
+   clear of the move button. */
+.sc-kanban-card-open {
+  display: block;
+  width: 100%;
+  padding: 0 26px 0 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+/* Keyboard equivalent of dragging the card between columns. */
+.sc-kanban-card-move {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--wr-radius-sm);
+  background: rgba(var(--wr-ink-rgb), 0.06);
+  color: var(--wr-ink);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity var(--wr-trans), background var(--wr-trans);
+}
+.sc-kanban-card:hover .sc-kanban-card-move,
+.sc-kanban-card-move:focus-visible,
+.sc-kanban-card-move[aria-expanded='true'] {
+  opacity: 0.85;
+}
+.sc-kanban-card-move:hover {
+  opacity: 1;
+  background: rgba(var(--wr-ink-rgb), 0.14);
+}
+/* Move-to-column menu. position:fixed is set in JS; it lives on <body> so the
+   board's scrolling columns can't clip it. */
+.sc-kanban-movemenu {
+  z-index: 120;
+  min-width: 160px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--wr-border);
+  border-radius: var(--wr-radius-sm);
+  background: var(--wr-panel-bg);
+  box-shadow: var(--wr-shadow-md);
+}
+.sc-kanban-movemenu-item {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  min-height: 24px;
+  border: 0;
+  border-radius: var(--wr-radius-sm);
+  background: none;
+  color: var(--wr-panel-text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.sc-kanban-movemenu-item:hover,
+.sc-kanban-movemenu-item:focus-visible {
+  background: var(--wr-accent-tint);
+  outline: none;
+}
+.sc-kanban-movemenu-empty {
+  padding: 7px 10px;
+  font-size: 12.5px;
+  color: var(--wr-panel-muted);
 }
 .sc-kanban-card:hover {
   transform: translateY(-1px);
@@ -2093,12 +2371,18 @@ button {
   font-style: italic;
 }
 
-/* Below 640px width (extension popup), hide the whole sidebar header — the
-   view toggle and the Compact/pin group — and force list view. */
+/* Below 640px a view switcher MUST stay reachable — display:none-ing all three
+   (the List|Kanban toggle and the Compact button) trapped the user in whatever
+   mode they were in, with no way back to List (audit U1/U2). The toggle stays in
+   the sidebar head (visible whenever the list panel shows) and the Compact
+   button stays in the footer; the head is just centered/divided so it reads as
+   intentional at narrow width. */
 @media (max-width: 640px) {
-  .sc-sidebar-head { display: none; }
-  .sc-viewtoggle { display: none; }
-  .sc-footer .sc-compact-btn { display: none; }
+  .sc-sidebar-head {
+    justify-content: center;
+    padding: 8px;
+    border-bottom: 1px solid var(--wr-border);
+  }
 }
 
 /* --- A11y/contrast fixes (Test Master 2026-05-30) --- */
@@ -2131,6 +2415,15 @@ button {
     background: #3A5BA8;
   }
 }
+/* Same dark-contrast fix for the MANUAL Dark toggle (light OS): otherwise white
+   text sits on the light-indigo --wr-primary (#7FA0E8) at ~2.6:1 (audit U8).
+   Uses a deep indigo so white text clears WCAG AA. */
+:root[data-theme='dark'] .sc-btn--primary {
+  background: #2B4A8B;
+}
+:root[data-theme='dark'] .sc-btn--primary:hover {
+  background: #3A5BA8;
+}
 
 /* =========================================================================
    Sticky Float Phase 2 — pop-out affordances, restore bar, sticky window
@@ -2146,13 +2439,16 @@ button {
   position: absolute;
   top: 8px;
   right: 8px;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
   display: inline-grid;
   place-items: center;
   width: 26px;
   height: 26px;
   border-radius: var(--wr-radius-sm);
   color: var(--wr-ink);
-  background: rgba(42, 53, 64, 0.06);
+  background: rgba(var(--wr-ink-rgb), 0.06);
   opacity: 0;
   transition: opacity var(--wr-trans), background var(--wr-trans);
 }
@@ -2162,7 +2458,7 @@ button {
 }
 .sc-card-popout:hover {
   opacity: 1;
-  background: rgba(42, 53, 64, 0.14);
+  background: rgba(var(--wr-ink-rgb), 0.14);
 }
 
 /* Archive hover affordance — mirrors the pop-out, offset so they don't overlap. */
@@ -2170,13 +2466,16 @@ button {
   position: absolute;
   top: 8px;
   right: 40px;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
   display: inline-grid;
   place-items: center;
   width: 26px;
   height: 26px;
   border-radius: var(--wr-radius-sm);
   color: var(--wr-ink);
-  background: rgba(42, 53, 64, 0.06);
+  background: rgba(var(--wr-ink-rgb), 0.06);
   opacity: 0;
   transition: opacity var(--wr-trans), background var(--wr-trans);
 }
@@ -2186,7 +2485,18 @@ button {
 }
 .sc-card-archive:hover {
   opacity: 1;
-  background: rgba(42, 53, 64, 0.14);
+  background: rgba(var(--wr-ink-rgb), 0.14);
+}
+
+/* Touch and pen have no hover, so an opacity:0 "reveal on hover" control is
+   simply unreachable there (audit U15). Show the card/board actions outright
+   on any coarse pointer. */
+@media (pointer: coarse) {
+  .sc-card-popout,
+  .sc-card-archive,
+  .sc-kanban-card-move {
+    opacity: 0.85;
+  }
 }
 
 /* ---- Due-date chip on cards (Note Lifecycle A2) ------------------------- */
@@ -2202,7 +2512,7 @@ button {
 }
 .sc-due-chip--upcoming {
   color: var(--wr-paper-muted);
-  background: rgba(42, 53, 64, 0.07);
+  background: rgba(var(--wr-ink-rgb), 0.07);
 }
 .sc-due-chip--today {
   color: #8a5a00;

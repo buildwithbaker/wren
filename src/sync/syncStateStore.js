@@ -114,27 +114,3 @@ export async function clearSyncState(noteId) {
     await reqToPromise(store.delete(noteId));
   });
 }
-
-/**
- * All entries currently in the conflict state.
- *
- * @returns {Promise<SyncStateEntry[]>}
- */
-export async function getAllConflicted() {
-  return withStore('readonly', async (store) => {
-    const all = await reqToPromise(store.getAll());
-    return (all || []).filter((e) => e && e.state === STATES.CONFLICT);
-  });
-}
-
-/**
- * All entries currently marked dirty (local edits not yet pushed).
- *
- * @returns {Promise<SyncStateEntry[]>}
- */
-export async function getAllDirty() {
-  return withStore('readonly', async (store) => {
-    const all = await reqToPromise(store.getAll());
-    return (all || []).filter((e) => e && e.dirty);
-  });
-}

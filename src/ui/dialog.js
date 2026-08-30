@@ -1,5 +1,7 @@
 // dialog.js - minimal accessible confirm modal. Returns a Promise<boolean>.
 
+import { lockPageExcept } from './focus-trap.js';
+
 export function confirmDialog({ title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = false }) {
   return new Promise((resolve) => {
     // Remember what had focus so we can restore it on close (WCAG SC 2.4.3).
@@ -37,10 +39,13 @@ export function confirmDialog({ title, message, confirmLabel = 'Confirm', cancel
     modal.append(h, p, actions);
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
+    // Trap focus: make the rest of the page inert so Tab can't escape the modal.
+    const unlockPage = lockPageExcept(overlay);
     confirm.focus();
 
     function cleanup(result) {
       document.removeEventListener('keydown', onKey);
+      unlockPage();
       overlay.remove();
       if (lastFocused && typeof lastFocused.focus === 'function') {
         try {
@@ -52,8 +57,16 @@ export function confirmDialog({ title, message, confirmLabel = 'Confirm', cancel
       resolve(result);
     }
     function onKey(e) {
-      if (e.key === 'Escape') cleanup(false);
-      else if (e.key === 'Enter') cleanup(true);
+      if (e.key === 'Escape') {
+        cleanup(false);
+      } else if (e.key === 'Enter') {
+        // Enter must respect which control is focused. With the Cancel button
+        // focused, Enter cancels (matching native button activation) — otherwise
+        // a focused Cancel + Enter would confirm a destructive delete. Confirm
+        // is focused by default, so the common case still confirms on Enter.
+        e.preventDefault();
+        cleanup(document.activeElement === cancel ? false : true);
+      }
     }
     cancel.addEventListener('click', () => cleanup(false));
     confirm.addEventListener('click', () => cleanup(true));

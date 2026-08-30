@@ -8,6 +8,27 @@ use tauri::{Emitter, Manager};
 // handleNew() directly, so it needs no event.
 const EVENT_NEW_NOTE: &str = "wren://new-note";
 
+// Fired at Quit so every webview (main app + any open sticky) can flush a pending
+// 500ms debounced save before the process exits. Must match EVENT_FLUSH_SAVES in
+// src/desktop.js / src/sticky-app.js.
+const EVENT_FLUSH_SAVES: &str = "wren://flush-saves";
+
+// How long to wait after the flush event before exiting — long enough for a
+// webview to run its debounced save through the File System Access / Tauri fs
+// write, short enough not to feel laggy.
+const FLUSH_GRACE_MS: u64 = 600;
+
+// The main window ships `"visible": false` so the first painted frame already
+// has content; the frontend calls window.show() once it has mounted
+// (revealWindow() in app-controller.js, with a 3s belt-and-braces timeout).
+// That makes the ONLY path to a visible app a working JS bundle: a broken or
+// partially-downloaded frontend leaves Wren running with no window at all and
+// no way to get one back except the tray. This is the Rust-side backstop —
+// if the window is still hidden this long after setup, show it regardless, so
+// the worst case is an app showing an error rather than an invisible process
+// (audit T5).
+const REVEAL_FALLBACK_MS: u64 = 5_000;
+
 /// Show, un-minimize, and focus the main window (bringing it back from the tray).
 #[cfg(desktop)]
 fn show_main(app: &tauri::AppHandle) {
@@ -104,7 +125,16 @@ pub fn run() {
               let _ = app.emit(EVENT_NEW_NOTE, ());
             }
             "toggle" => toggle_all(app),
-            "quit" => app.exit(0),
+            "quit" => {
+              // Ask every webview to flush a pending debounced save, then exit
+              // after a short grace period so the write can land (audit T2).
+              let _ = app.emit(EVENT_FLUSH_SAVES, ());
+              let handle = app.clone();
+              std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(FLUSH_GRACE_MS));
+                handle.exit(0);
+              });
+            }
             _ => {}
           })
           .on_tray_icon_event(|tray, event| {
@@ -135,6 +165,27 @@ pub fn run() {
             }
           });
         }
+      }
+
+      // ---- Reveal fallback (audit T5) ------------------------------------
+      #[cfg(desktop)]
+      {
+        let handle = app.handle().clone();
+        std::thread::spawn(move || {
+          std::thread::sleep(std::time::Duration::from_millis(REVEAL_FALLBACK_MS));
+          if let Some(w) = handle.get_webview_window("main") {
+            // is_visible() errs on a destroyed window; treat that as "nothing
+            // to reveal" rather than forcing a show on a window that is gone.
+            if let Ok(false) = w.is_visible() {
+              log::warn!(
+                "main window still hidden {REVEAL_FALLBACK_MS}ms after setup - \
+                 revealing from Rust (frontend never called show())"
+              );
+              let _ = w.show();
+              let _ = w.set_focus();
+            }
+          }
+        });
       }
 
       Ok(())

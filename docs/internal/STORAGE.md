@@ -119,9 +119,12 @@ failures, so the scope must track the notes-folder path.
 | `src/sync/syncStateStore.js` | IndexedDB `sync_state` store for per-note sync metadata |
 | `src/sync/conflictDetection.js` | Syncthing-style conflict filenames + stable device id |
 
-`src/storage/index.js`, `src/oauth/index.js`, and `src/sync/index.js` re-export
-each module's public surface so Phase 2b's imports look like
-`import { DriveAdapter } from '../storage';` rather than reaching deep.
+`src/storage/index.js` and `src/oauth/index.js` re-export each module's public
+surface so imports look like `import { DriveAdapter } from '../storage';`
+rather than reaching deep. There is no `src/sync/index.js`: every consumer
+imports `syncStateStore.js` / `conflictDetection.js` / `broadcast.js` directly,
+so the barrel was removed (2026-07-27) rather than left as a zero-importer
+file.
 
 ## Decisions (KB Module 05 references)
 
@@ -136,9 +139,12 @@ each module's public surface so Phase 2b's imports look like
   changes on every content change but not on metadata-only changes.
 - **Truncated exponential backoff with jitter on 429 / 5xx / quota 403** (P1.8).
   Honors `Retry-After` if present; capped at 5 attempts, 60s max delay.
-- **Read-before-write conflict detection, with `If-Match` opportunistically**
-  (P2b.3). See [Empirical Q1](#empirical-questions) below for the runtime
-  probe.
+- **Read-before-write conflict detection, with `If-Match` as a second line of
+  defence** (P2b.3). The read-before-write comparison is unconditional for any
+  write that supplies an `expectedRevision`; the `If-Match` header rides along
+  and turns a race between the pre-fetch and the upload into a 412. See
+  [Empirical Q1](#empirical-questions) for why the old runtime probe was
+  removed.
 - **Separate IndexedDB object store for sync metadata** (P2b.5). Migration
   bumps the `scrybe` database from v1 to v2; the existing `handles` store is
   preserved untouched.
@@ -178,44 +184,24 @@ Q4 are mobile-only and land in Phase 2c.
 
 ### Q1 — Does Drive `files.update` honor `If-Match: <headRevisionId>` for blob content?
 
-**How `DriveAdapter.writeNote` probes:** the first write attaches an
-`If-Match: <expectedRevision>` header alongside the read-before-write check.
+**Status: closed as unanswerable by self-probe (2026-07-27).**
 
-- If Drive returns 412 on a stale revision, the module-level
-  `IF_MATCH_SUPPORTED` flag flips to `true` and subsequent writes skip the
-  pre-fetch (cheaper + closes the TOCTOU window).
-- If Drive returns 200 despite a stale `If-Match`, the flag stays `null`/`false`
-  and we keep read-before-write as the conflict gate.
+`DriveAdapter.writeNote` used to carry a module-level `IF_MATCH_SUPPORTED`
+tri-state flag that was supposed to learn the answer at runtime and then skip
+the read-before-write pre-fetch. It could only ever move in one direction:
 
-**Outcome (pending first interactive write):** `_____________`
+- A 412 proves `If-Match` was honored, so the flag could be set to `true`.
+- A 200 proves nothing. A server that silently ignores `If-Match` returns 200,
+  and so does a server that honors it when the revision genuinely matches. The
+  flag therefore had no path to `false`, and the "unsupported" branch it
+  guarded (`IF_MATCH_SUPPORTED !== false`) was unreachable dead state.
 
-Run by Adam, then update this section with one of:
-
-- `412 received - If-Match works. DriveAdapter optimized.` — and remove the
-  read-before-write path from `writeNote` if you want the optimization.
-- `200 received with stale If-Match - Drive ignores it. Read-before-write retained.`
-
-To run the probe by hand in the dev console:
-
-```js
-const { DriveAdapter } = await import('./storage/DriveAdapter.js');
-const a = new DriveAdapter();
-await a.initialize();
-const notes = await a.listNotes();
-const target = notes[0];
-const fresh = await a.readNote(target.id);
-// Write once at the correct revision to capture a new one
-const after = await a.writeNote(target.id, fresh.content + '\n', fresh.revision);
-// Now write again with the OLD revision - should throw ConflictError
-try {
-  await a.writeNote(target.id, fresh.content + '\nz', fresh.revision);
-  console.log('No conflict caught - If-Match path probably not honored');
-} catch (e) {
-  console.log('Conflict caught:', e.name, e.localRevision, '->', e.remoteRevision);
-}
-const { _ifMatchSupportedState } = await import('./storage/DriveAdapter.js');
-console.log('IF_MATCH_SUPPORTED state:', _ifMatchSupportedState());
-```
+The flag, its test-only accessor `_ifMatchSupportedState()`, and the console
+probe recipe are gone. `writeNote` now always read-before-writes when given an
+`expectedRevision` and always attaches `If-Match`; a 412 is still mapped to
+`ConflictError`, it is just treated as a bonus rather than as evidence to
+optimize on. If the pre-fetch ever needs to be dropped for cost reasons, that
+has to be settled against Drive's published semantics, not by a self-probe.
 
 ### Q2 — Does moving a foreign file into "Wren Notes" grant access under `drive.file`?
 
@@ -328,10 +314,10 @@ on first launch, sign in via GIS, and have notes round-trip through
   `userinfo.email` scope broadens the consent screen; we deferred that
   decision to Phase 2c when the consent screen is being re-reviewed for
   Google brand verification anyway.
-- Empirical Q1 / Q2 outcomes (above) are still pending. Phase 2b.1 does not
-  depend on either — the conflict-detection path that uses `IF_MATCH_SUPPORTED`
-  is currently unreachable (no callers pass `expectedRevision`). The first
-  caller will be the Phase 2b.2 sync runner.
+- Empirical Q1 is closed (see above); Q2 is still pending. The
+  conflict-detection path is no longer unreachable: `handleSave`,
+  `handleKanbanMove`, and the sticky save path all pass `expectedRevision`, so
+  read-before-write runs on every conditional write today.
 
 ## Phase 2b stub list
 
