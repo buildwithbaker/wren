@@ -11,6 +11,12 @@ Ships in three forms that read/write the same folder:
   [the download page](https://wren.buildwithbaker.io/download) or
   [GitHub Releases](https://github.com/buildwithbaker/wren/releases).
 
+> **Chrome extension status - parked.** The MV3 build is complete and still
+> builds from `npm run build:ext`, but it is not published to the Chrome Web
+> Store. Install it by loading `dist-extension/` unpacked in Chrome. The code
+> stays in the repo and stays in the build - parking it is a distribution
+> decision, not a deprecation.
+
 Built with [Vite](https://vitejs.dev/) and [Tiptap v2](https://tiptap.dev/) (bundled locally — MV3 forbids CDN/inline scripts).
 
 > **Internals:** see [docs/internal/architecture.md](docs/internal/architecture.md) for the full architecture reference — file map, boot flow, storage layer, extension points, and gotchas.
