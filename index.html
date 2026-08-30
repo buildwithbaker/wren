@@ -48,16 +48,13 @@
     <meta name="twitter:card" content="summary_large_image" />
 
     <link rel="stylesheet" href="./src/styles/style.css" />
-    <script>
-      (function () {
-        try {
-          var t = localStorage.getItem('wren.theme');
-          if (t === 'light' || t === 'dark') {
-            document.documentElement.setAttribute('data-theme', t);
-          }
-        } catch (e) {}
-      })();
-    </script>
+    <!--
+      Pre-paint theme bootstrap. Self-hosted (not inline) so the strict CSP
+      script-src 'self' allows it without a hash — an inline version was refused
+      on every load and the dark-theme pre-paint never ran in production.
+      Classic (non-module) script so it executes synchronously before paint.
+    -->
+    <script src="./theme-init.js"></script>
   </head>
   <body>
     <div id="app"></div>

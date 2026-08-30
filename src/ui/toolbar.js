@@ -134,11 +134,65 @@ export function createToolbar({ editor }) {
   track(highlight.trigger, () => editor.isActive('highlight'));
   bar.append(highlight.element);
 
+  // --- roving tabindex (audit U20) ------------------------------------------
+  // role="toolbar" is a contract: the whole bar is ONE tab stop and arrow keys
+  // move between its controls. Every button here was individually tabbable, so
+  // a keyboard user had to press Tab ~15 times to get past the formatting bar
+  // and into the note body. Collapse it to a single stop with arrow-key
+  // navigation, which is also what makes the bar skippable.
+  // Deliberately an attribute test, not offsetParent/getBoundingClientRect:
+  // toggling the `hidden` attribute on the swatch popovers is the only way a
+  // control here is ever taken out of play, and an attribute check behaves the
+  // same in a headless DOM as in a browser.
+  function toolbarItems() {
+    return Array.from(bar.querySelectorAll('button')).filter(
+      (b) => !b.disabled && !b.closest('[hidden]')
+    );
+  }
+
+  function setRovingFocus(next) {
+    for (const b of toolbarItems()) b.tabIndex = b === next ? 0 : -1;
+    next?.focus();
+  }
+
+  function syncRovingTabindex() {
+    const items = toolbarItems();
+    if (items.length === 0) return;
+    // Keep whichever control already owns the tab stop; otherwise the first.
+    const owner = items.find((b) => b.tabIndex === 0) || items[0];
+    for (const b of items) b.tabIndex = b === owner ? 0 : -1;
+  }
+
+  bar.addEventListener('keydown', (e) => {
+    const keys = ['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'Home', 'End'];
+    if (!keys.includes(e.key)) return;
+    const items = toolbarItems();
+    const current = items.indexOf(document.activeElement);
+    if (current === -1) return;
+    e.preventDefault();
+    if (e.key === 'Home') return setRovingFocus(items[0]);
+    if (e.key === 'End') return setRovingFocus(items[items.length - 1]);
+    const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1;
+    setRovingFocus(items[(current + step + items.length) % items.length]);
+  });
+
+  // Clicking a control makes it the tab stop, so Shift+Tab out and back
+  // returns where the user last was.
+  bar.addEventListener('focusin', (e) => {
+    const btn = e.target.closest('button');
+    if (btn && bar.contains(btn)) {
+      for (const b of toolbarItems()) b.tabIndex = b === btn ? 0 : -1;
+    }
+  });
+
   // --- active-state sync ----------------------------------------------------
   function update() {
     for (const { el, isActive } of trackers) {
       el.classList.toggle('is-active', !!isActive());
     }
+    // Buttons can appear/disappear (color popovers, conditional controls), so
+    // re-assert the single tab stop whenever the bar is refreshed.
+    syncRovingTabindex();
   }
 
   function onDocClick(e) {

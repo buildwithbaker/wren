@@ -5,6 +5,11 @@
 // predictable. Optionally clickable — the sidebar passes onTagClick to add the
 // tag to the AND-filter; clicks never bubble to the card's open handler.
 //
+// A clickable chip is a real <button> (audit U14). It used to be a
+// role="button" span, because the card itself was a <button> and nesting one
+// button inside another is invalid HTML. The cards are containers now, so the
+// chip can carry native button semantics instead of emulating them.
+//
 // Decision provenance: project-blueprints/wren/future-enhancements/sticky-float-sow.md (Phase 1)
 
 import { parseTag, isValidTag } from '@/tags/tag-parser.js';
@@ -31,7 +36,7 @@ export function buildTagChips(tags, { onTagClick, max = MAX_CHIPS } = {}) {
     const parsed = parseTag(raw);
     if (!parsed) continue;
 
-    const chip = document.createElement('span');
+    const chip = document.createElement(onTagClick ? 'button' : 'span');
     chip.className = 'sc-mtag';
 
     if (parsed.namespace !== '_uncategorized') {
@@ -46,22 +51,16 @@ export function buildTagChips(tags, { onTagClick, max = MAX_CHIPS } = {}) {
     chip.appendChild(val);
 
     if (onTagClick) {
+      chip.type = 'button';
       chip.classList.add('sc-mtag--clickable');
       chip.title = `Filter by "${raw}"`;
-      chip.setAttribute('role', 'button');
-      chip.tabIndex = 0;
+      chip.setAttribute('aria-label', `Filter by "${raw}"`);
       chip.addEventListener('click', (e) => {
-        // The chip sits inside the card's open button — never open the note.
+        // The chip sits on a clickable card — filter, never open the note.
         e.stopPropagation();
         onTagClick(raw);
       });
-      chip.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          e.stopPropagation();
-          onTagClick(raw);
-        }
-      });
+      // Enter/Space are native on <button>; no keydown shim needed.
     }
     row.appendChild(chip);
   }

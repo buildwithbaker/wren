@@ -123,12 +123,14 @@ async function idbDelete(key) {
   }
 }
 
+// Returns the persisted directory handle, or null when the key is genuinely
+// ABSENT (brand-new install). A read FAILURE (IndexedDB open/transaction error)
+// is NOT swallowed — it throws — so callers can distinguish "no handle" from
+// "couldn't read the handle." Misreading a transient read failure as "no handle"
+// is what sent existing users to the storage-choice screen, where re-picking
+// overwrote their real handle (audit S3).
 export async function getStoredDirHandle() {
-  try {
-    return (await idbGet(HANDLE_KEY)) || null;
-  } catch {
-    return null;
-  }
+  return (await idbGet(HANDLE_KEY)) || null;
 }
 
 export async function clearStoredDirHandle() {
@@ -153,7 +155,36 @@ export async function requestPermission(handle, readWrite = true) {
 export async function pickDirectory() {
   const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
   await idbSet(HANDLE_KEY, handle);
+  // First successful pick: ask the browser for PERSISTENT storage so the saved
+  // handle (and, on an installed PWA, the granted folder permission) survives
+  // eviction — directly reduces the re-granting users hit every session. This
+  // runs inside the picker's user gesture, which is when persist() is most
+  // likely to be granted. Best-effort; never block the pick on it.
+  await requestStoragePersistence();
   return handle;
+}
+
+// Ask the browser to persist this origin's storage (best-effort). Returns the
+// resulting boolean persisted-state, or null when the API is unavailable.
+export async function requestStoragePersistence() {
+  try {
+    if (navigator.storage?.persist) return await navigator.storage.persist();
+  } catch {
+    /* persistence is an optimization, not a requirement */
+  }
+  return null;
+}
+
+// Whether the browser has granted persistent storage for this origin. null when
+// the Storage API is unavailable. Surfaced in the backend-chip popover so the
+// re-prompt behavior is diagnosable.
+export async function isStoragePersisted() {
+  try {
+    if (navigator.storage?.persisted) return await navigator.storage.persisted();
+  } catch {
+    /* ignore */
+  }
+  return null;
 }
 
 // --- Frontmatter <-> note ---------------------------------------------------
@@ -401,8 +432,10 @@ export function toPreviewText(markdown) {
 // subdirs are already skipped; only the reserved top-level files need a name
 // guard. `.wren-index.json` is also excluded by the FS .md filter and the Drive
 // NOTE_MIME query, but it is listed here too for robustness. Exported so both
-// storage adapters can share one definition. TODO(ai-phase4+): extend if more
-// reserved names are added.
+// storage adapters can share one definition: this Set is the single place a new
+// reserved top-level name has to be registered, and `isReservedNoteName` below
+// is its only read path, so a later AI phase adding a reserved file changes
+// exactly these two lines and nothing else.
 const RESERVED_NOTE_NAMES = new Set([
   '_index.md',
   'tasks.md',

@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Wren — Sticky Notes",
-  "version": "1.2.0",
+  "version": "1.2.5",
   "description": "Local-first sticky notes. Rich-text notes saved as Markdown files in a folder you choose. No cloud, no account.",
   "author": "Adam Baker / Build with Baker",
   "homepage_url": "https://wren.buildwithbaker.io",
-  "minimum_chrome_version": "86",
+  "minimum_chrome_version": "105",
   "action": {
     "default_popup": "popup.html",
     "default_title": "Wren",

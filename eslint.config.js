@@ -35,6 +35,18 @@ export default [
     },
   },
 
+  // Classic (non-module) browser scripts copied verbatim from public/ — e.g.
+  // the pre-paint theme bootstrap. Not ES modules; loaded via a plain <script>.
+  {
+    files: ['public/**/*.js'],
+    ignores: ['**/sw.js', '**/service-worker.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'script',
+      globals: { ...globals.browser },
+    },
+  },
+
   // Service workers (PWA + extension MV3 background).
   {
     files: ['**/sw.js', '**/service-worker.js'],

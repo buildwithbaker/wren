@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Code Signing Policy — Wren</title>
+<meta name="description" content="How Wren's Windows installer is built, signed, and verified: the build pipeline, who approves a release, and how to check a download is genuine.">
+<link rel="canonical" href="https://wren.buildwithbaker.io/signing" />
+<style>
+  :root {
+    --ink: #2E2A24;
+    --muted: #70675C; /* darkened from #7A7064 (4.43:1) to clear WCAG AA */
+    --brown: #A8542C;
+    --indigo: #2B4A8B;
+    --bg: #FAF4EA;
+    --panel: #FFFFFF;
+    --border: #E5DACA;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .container { max-width: 720px; margin: 0 auto; padding: 48px 24px; }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .brand-mark { width: 34px; height: 34px; border-radius: 8px; }
+  .brand-name { font-weight: 700; font-size: 22px; letter-spacing: -0.01em; color: var(--brown); }
+  h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; margin: 24px 0 8px; }
+  .lede { color: var(--muted); font-size: 17px; margin-bottom: 28px; }
+  h2 { font-size: 20px; font-weight: 600; margin: 32px 0 12px; color: var(--ink); border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+  p, li { color: var(--ink); }
+  a { color: var(--indigo); text-decoration: none; font-weight: 500; }
+  a:hover { text-decoration: underline; }
+  ul, ol { padding-left: 24px; }
+  li { margin: 8px 0; }
+  code { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 0.9em; background: #F1E8DB; padding: 1px 5px; border-radius: 4px; }
+  .callout { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--brown); border-radius: 0 12px 12px 0; padding: 16px 20px; margin: 20px 0; }
+  .callout strong { color: var(--brown); }
+  .download-cta { text-align: center; margin: 32px 0 8px; }
+  .btn-download {
+    display: inline-block;
+    background: var(--brown);
+    color: #fff;
+    font-weight: 700;
+    font-size: 17px;
+    padding: 14px 32px;
+    border-radius: 12px;
+    text-decoration: none;
+    box-shadow: 0 2px 8px rgba(168, 84, 44, 0.25);
+  }
+  .btn-download:hover { background: #934628; text-decoration: none; }
+  .download-sub { color: var(--muted); font-size: 14px; margin-top: 10px; }
+  .footer { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; }
+  .footer a { color: var(--indigo); }
+  .kofi { display: inline-block; background: #C0453F; color: #fff; padding: 3px 10px; border-radius: 12px; font-weight: 600; font-size: 13px; text-decoration: none; }
+  .kofi:hover { background: #A93A34; text-decoration: none; }
+</style>
+<link rel="stylesheet" href="/site-nav.css">
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to content</a>
+<nav class="site-nav" aria-label="Primary">
+  <a class="site-nav-brand" href="/"><img src="/icon.svg" alt="" width="28" height="28"><span>Wren</span></a>
+  <div class="site-nav-links">
+    <a href="/download">Download</a>
+    <a href="/guide">Guide</a>
+    <a href="/privacy">Privacy</a>
+  </div>
+</nav>
+<hr class="site-nav-divider">
+<main class="container" id="main-content">
+
+  <h1>Code Signing Policy</h1>
+  <p class="lede">How the Wren Windows installer is built, who approves it, and how you can check that the copy you downloaded is the one we published.</p>
+
+  <div class="callout">
+    <strong>Status.</strong> Wren's installer is <strong>not yet code-signed</strong>. Windows SmartScreen will warn on first run &mdash; see the <a href="/download">download page</a>. This page describes the signing process being put in place; it will be updated the moment signing goes live.
+  </div>
+
+  <h2>How Wren is built</h2>
+  <p>Every released installer is produced by an automated, public build &mdash; never on a developer's machine, never by hand:</p>
+  <ul>
+    <li>Source lives at <a href="https://github.com/buildwithbaker/wren" target="_blank" rel="noopener">github.com/buildwithbaker/wren</a> under the MIT licence.</li>
+    <li>Pushing a version tag (<code>v1.2.4</code>) triggers the <a href="https://github.com/buildwithbaker/wren/blob/main/.github/workflows/tauri-release.yml" target="_blank" rel="noopener">Release workflow</a>, which builds the Windows NSIS installer on a clean GitHub-hosted runner straight from that tag's source.</li>
+    <li>The workflow uploads the installer to the matching <a href="https://github.com/buildwithbaker/wren/releases" target="_blank" rel="noopener">GitHub Release</a>. That Release asset is the only artifact we publish, and the download button points at it.</li>
+    <li>The build definition is public, so anyone can read exactly how the binary was made and reproduce it from the same tag.</li>
+  </ul>
+
+  <h2>Who approves a release</h2>
+  <p>Wren is a single-maintainer project. Adam Baker (<a href="https://github.com/buildwithbaker" target="_blank" rel="noopener">@buildwithbaker</a>) holds all three roles:</p>
+  <ul>
+    <li><strong>Author</strong> &mdash; writes and commits source changes.</li>
+    <li><strong>Reviewer</strong> &mdash; reviews every change from any outside contributor before it can merge. <code>main</code> is a protected branch: changes land only through a pull request with continuous integration green.</li>
+    <li><strong>Approver</strong> &mdash; decides which tagged build is released and, once signing is live, authorises each signing request individually.</li>
+  </ul>
+  <p>Multi-factor authentication is enabled on the GitHub account and on the code signing service account.</p>
+
+  <h2>What gets signed</h2>
+  <p>Only the Windows installer produced by the automated build above, from Wren's own source. We do not sign locally-built binaries, third-party software, or artifacts from any other project. Signed binaries carry consistent product name, publisher and version metadata, single-sourced from <code>package.json</code> and verified at build time.</p>
+
+  <h2>Verifying a download</h2>
+  <ol>
+    <li>Download only from the <a href="/download">Wren download page</a> or directly from <a href="https://github.com/buildwithbaker/wren/releases" target="_blank" rel="noopener">GitHub Releases</a>. We publish the installer nowhere else.</li>
+    <li>Check the file name matches the release, e.g. <code>Wren_1.2.4_x64-setup.exe</code>.</li>
+    <li>Once signing is live, right-click the installer &rarr; <strong>Properties</strong> &rarr; <strong>Digital Signatures</strong> and confirm the publisher.</li>
+  </ol>
+
+  <h2>Privacy</h2>
+  <p>Code signing does not change what Wren does with your notes: they stay in the folder you choose on your own computer. No note content is transmitted to the signing service &mdash; only the compiled installer is submitted for signing. See the <a href="/privacy">privacy policy</a>.</p>
+
+  <h2>Reporting a problem</h2>
+  <p>If you find an installer claiming to be Wren that did not come from the sources above, or you suspect a signature has been misused, please open a <a href="https://github.com/buildwithbaker/wren/security/advisories/new" target="_blank" rel="noopener">security advisory</a> or see <a href="https://github.com/buildwithbaker/wren/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>.</p>
+
+  <div class="footer">
+    <p>Wren is built by Adam Baker under the Build with Baker creator brand.</p>
+    <p><a href="https://wren.buildwithbaker.io">Wren</a> &middot; <a href="/download">Download</a> &middot; <a href="/guide">Guide</a> &middot; <a href="/mcp">MCP server</a> &middot; <a href="/privacy">Privacy</a> &middot; <a href="https://buildwithbaker.com" target="_blank" rel="noopener">Build with Baker</a> &middot; <a class="kofi" href="https://ko-fi.com/abaker421" target="_blank" rel="noopener">Support on Ko-fi</a></p>
+  </div>
+
+</main>
+</body>
+</html>

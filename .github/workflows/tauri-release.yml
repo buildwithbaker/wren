@@ -37,6 +37,7 @@ jobs:
       # build`) then `tauri build`, creates/updates the Release for the tag, and
       # uploads the NSIS installer. Unsigned — no signing secrets are referenced.
       - uses: tauri-apps/tauri-action@v0
+        id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -51,3 +52,92 @@ jobs:
             [download page](https://wren.buildwithbaker.io/download.html) for details.
           releaseDraft: false
           prerelease: false
+
+      # ---- Code signing (audit D4) — INERT until enabled ------------------
+      #
+      # Every step below is skipped unless the repository variable
+      # SIGNING_ENABLED is set to 'true' (Settings → Secrets and variables →
+      # Actions → Variables). With it unset, merging this changes nothing about
+      # a release: the installer ships unsigned and the job goes green with no
+      # secrets configured.
+      #
+      # THE SHAPE, and why it is not one step:
+      #   SignPath's `github-artifact-id` wants a GitHub *Actions artifact* id —
+      #   the thing actions/upload-artifact returns. tauri-action does not
+      #   produce one: it uploads to a GitHub *Release*, and its outputs are
+      #   releaseId / releaseHtmlUrl / releaseUploadUrl / artifactPaths /
+      #   appVersion. There is no `artifactId` output on tauri-action v0 OR v1.
+      #   An earlier version of this block passed
+      #   `steps.tauri.outputs.artifactId`, which silently resolves to an empty
+      #   string — it would have failed on the first real signing run. So the
+      #   chain has to be: build → upload as an Actions artifact → sign that →
+      #   put the signed file back on the Release.
+      #
+      # To turn it on, once SignPath Foundation (or another provider) has
+      # approved the project:
+      #   1. Add secret SIGNPATH_API_TOKEN and variables SIGNPATH_ORG_ID,
+      #      SIGNPATH_PROJECT_SLUG, SIGNPATH_SIGNING_POLICY_SLUG.
+      #   2. Set variable SIGNING_ENABLED = true.
+      #   3. Update public/signing.html, public/download.html and README.md —
+      #      all three currently state the installer is NOT signed, and that
+      #      has to stop being true at the same moment the signature starts
+      #      existing.
+      #   4. Cut a throwaway prerelease tag first and confirm the asset verifies
+      #      under Properties → Digital Signatures before advertising it.
+      # See docs/internal/code-signing.md.
+
+      - name: Locate the built installer
+        if: ${{ vars.SIGNING_ENABLED == 'true' }}
+        id: installer
+        shell: pwsh
+        run: |
+          # artifactPaths is a JSON array of every bundle tauri-action produced.
+          $paths = '${{ steps.tauri.outputs.artifactPaths }}' | ConvertFrom-Json
+          $exe = $paths | Where-Object { $_ -like '*-setup.exe' } | Select-Object -First 1
+          if (-not $exe) { throw "No NSIS installer in artifactPaths: $($paths -join ', ')" }
+          "path=$exe" >> $env:GITHUB_OUTPUT
+          "name=$(Split-Path $exe -Leaf)" >> $env:GITHUB_OUTPUT
+
+      - name: Upload the installer as an Actions artifact
+        if: ${{ vars.SIGNING_ENABLED == 'true' }}
+        id: unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-installer
+          path: ${{ steps.installer.outputs.path }}
+          if-no-files-found: error
+
+      # Pinned to v1 deliberately. v2 exists and declares the same input names,
+      # but v1's connector-url and github-token defaults are the ones verified
+      # here — take the v2 bump only after a first signing run has succeeded,
+      # so a version change and a first-ever signing are never being debugged
+      # at the same time.
+      - name: Submit the installer for signing
+        if: ${{ vars.SIGNING_ENABLED == 'true' }}
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORG_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      # tauri-action already attached the UNSIGNED installer to the Release, so
+      # the signed file has to replace it (--clobber), not sit alongside it.
+      - name: Replace the release asset with the signed installer
+        if: ${{ vars.SIGNING_ENABLED == 'true' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $name = '${{ steps.installer.outputs.name }}'
+          $signed = Join-Path 'signed' $name
+          if (-not (Test-Path $signed)) {
+            # SignPath may nest the returned artifact; fall back to a search.
+            $found = Get-ChildItem -Path 'signed' -Recurse -Filter '*-setup.exe' | Select-Object -First 1
+            if (-not $found) { throw 'No signed installer came back from SignPath.' }
+            $signed = $found.FullName
+          }
+          gh release upload '${{ github.ref_name }}' "$signed" --clobber

@@ -5458,7 +5458,7 @@ dependencies = [
 
 [[package]]
 name = "wren"
-version = "0.1.0"
+version = "1.2.5"
 dependencies = [
  "log",
  "serde",

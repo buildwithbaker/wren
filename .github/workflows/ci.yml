@@ -21,3 +21,6 @@ jobs:
       - run: npm ci
       - run: npm run lint --if-present
       - run: npm run build
+      # The suite existed but CI never ran it, so a red test could merge
+      # unnoticed. Matches the sibling wren-mcp workflow.
+      - run: npm test
