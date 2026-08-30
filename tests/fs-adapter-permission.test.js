@@ -57,4 +57,32 @@ describe('FileSystemAdapter permission-revocation mapping', () => {
     expect(caught).not.toBeInstanceOf(AdapterAuthError);
     expect(caught.name).toBe('TypeError');
   });
+
+  // Audit R2-2 (S8): the mutation methods used to let a raw DOMException escape,
+  // producing dead-end alert()s instead of routing to the reconnect flow.
+  it('maps NotAllowedError to AdapterAuthError across every mutation', async () => {
+    const each = async (fn) => {
+      const a = new FileSystemAdapter();
+      a._dirHandle = dirThatThrows('NotAllowedError');
+      await expect(fn(a)).rejects.toBeInstanceOf(AdapterAuthError);
+    };
+    await each((a) => a.deleteNote('n.md'));
+    await each((a) => a.createNote('body', { title: 'x', created: '2026-01-01T00:00:00.000Z' }));
+    await each((a) => a.renameNote('a.md', 'b.md'));
+    await each((a) => a.archiveNote('a.md'));
+    await each((a) => a.unarchiveNote('_archive/a.md'));
+  });
+
+  it('a non-permission error still passes through a mutation unchanged', async () => {
+    const a = new FileSystemAdapter();
+    a._dirHandle = dirThatThrows('TypeError');
+    let caught;
+    try {
+      await a.renameNote('a.md', 'b.md');
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).not.toBeInstanceOf(AdapterAuthError);
+    expect(caught.name).toBe('TypeError');
+  });
 });

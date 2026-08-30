@@ -18,6 +18,10 @@ import { isDueOrOverdue, todayStr } from './due.js';
 // button does. Must match EVENT_NEW_NOTE in src-tauri/src/lib.rs.
 const EVENT_NEW_NOTE = 'wren://new-note';
 
+// Fired by the Rust side at Quit; we flush any pending debounced save before the
+// process exits. Must match EVENT_FLUSH_SAVES in src-tauri/src/lib.rs.
+const EVENT_FLUSH_SAVES = 'wren://flush-saves';
+
 // Accelerator strings in Tauri's format. CmdOrCtrl → Ctrl on Windows/Linux,
 // Cmd on macOS. Chosen to avoid the common OS/browser combos.
 export const DEFAULT_HOTKEYS = Object.freeze({
@@ -105,7 +109,7 @@ async function toggleSelf() {
  *   setAutostart?: (on: boolean) => Promise<boolean>,
  * }>}
  */
-export async function setupDesktopIntegration({ onNewNote }) {
+export async function setupDesktopIntegration({ onNewNote, onFlush }) {
   if (!isTauri()) {
     return { enabled: false, warnings: [] };
   }
@@ -113,12 +117,14 @@ export async function setupDesktopIntegration({ onNewNote }) {
   const warnings = [];
 
   // The tray "New note" item shows the window (Rust side) then emits this; run
-  // the same new-note handler the in-app + button does.
+  // the same new-note handler the in-app + button does. Also listen for the
+  // Quit-time flush so a pending debounced save lands before the process exits.
   try {
     const { listen } = await import('@tauri-apps/api/event');
     await listen(EVENT_NEW_NOTE, () => onNewNote?.());
+    await listen(EVENT_FLUSH_SAVES, () => onFlush?.());
   } catch (err) {
-    console.warn('tray new-note listener failed', err);
+    console.warn('tray listener setup failed', err);
   }
 
   // Register the two global hotkeys. Each registration is independent and fails

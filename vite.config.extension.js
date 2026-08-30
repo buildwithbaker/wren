@@ -6,9 +6,10 @@ import { readFileSync } from 'node:fs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Match vite.config.js: define __APP_VERSION__ so the shared app bundle never
-// carries a dangling global (the update check itself is desktop-only).
+// carries a dangling global (the update check itself is desktop-only). Sourced
+// from package.json, the single source of truth (see scripts/sync-version.mjs).
 const APP_VERSION = JSON.parse(
-  readFileSync(resolve(__dirname, 'src-tauri/tauri.conf.json'), 'utf8')
+  readFileSync(resolve(__dirname, 'package.json'), 'utf8')
 ).version;
 
 // Chrome Extension (MV3) build. Bundles Tiptap locally into the popup so no

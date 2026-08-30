@@ -35,7 +35,10 @@
       "identifier": "fs:scope",
       "allow": [
         { "path": "$DOCUMENT/Wren Notes" },
-        { "path": "$DOCUMENT/Wren Notes/**" }
+        { "path": "$DOCUMENT/Wren Notes/**" },
+        { "path": "$DOCUMENT/Wren Notes/.trash" },
+        { "path": "$DOCUMENT/Wren Notes/.trash/**" },
+        { "path": "$DOCUMENT/Wren Notes/.wren-index.json" }
       ]
     },
     "fs:allow-read-dir",
