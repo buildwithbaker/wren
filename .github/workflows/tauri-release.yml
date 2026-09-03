@@ -36,7 +36,7 @@ jobs:
       # tauri-action runs the frontend build (beforeBuildCommand = `npm run
       # build`) then `tauri build`, creates/updates the Release for the tag, and
       # uploads the NSIS installer. Unsigned — no signing secrets are referenced.
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@v1
         id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
