@@ -5,15 +5,22 @@
 // it into the notes-folder root once per session when missing or version-stale
 // (see app-controller). It is Wren-managed and excluded from the notes list.
 //
-// The content is shipped VERBATIM from the Phase 3 spec — do not paraphrase or
-// restructure. Only two tokens are substituted: the version marker and the
-// generatedAt timestamp.
+// The read-side content is shipped VERBATIM from the Phase 3 spec — do not
+// paraphrase or restructure it. Only two tokens are substituted: the version
+// marker and the generatedAt timestamp.
+//
+// v2 rewrote the "Writing" section only. v1 told every AI reading a user's
+// vault that Wren had no write-back channel and that `_inbox/` was reserved for
+// a future version. Both stopped being true once the `_inbox/` staging channel
+// shipped (FileSystemAdapter/TauriFsAdapter INBOX_DIR, the Inbox section in the
+// app, and the wren-mcp server that writes into it), so the doc was actively
+// telling agents not to use a supported feature.
 
 export const AI_CONTRACT_DOC_NAME = 'README-for-AI.md';
 
 // Bump when the contract content changes. app-controller rewrites the on-disk
 // doc when its first line's `<!-- wren-ai-contract v<N> -->` marker is stale.
-export const AI_CONTRACT_VERSION = 1;
+export const AI_CONTRACT_VERSION = 2;
 
 /**
  * Build the README-for-AI.md contents. The first line is always
@@ -88,6 +95,19 @@ The frontmatter \`id\` equals the index \`wrenId\`. \`due\`, \`summary\`, and \`
 
 ## Writing
 
-This contract is **read-oriented**. As of this version Wren does not provide an AI write-back channel — do not create or modify files in this folder unless the user has set up a Wren feature that explicitly supports it. A \`_inbox/\` staging convention is reserved for that purpose in a future Wren version.
+Wren **does** provide an AI write-back channel, and it is the only sanctioned way to change anything in this folder.
+
+- **Do not write to these files directly.** Editing or creating \`.md\` files behind Wren's back races the app's own saves and its index regeneration, and it leaves no record of what an AI changed.
+- **Go through the Wren MCP server** (\`wren-mcp\`) when the user has it installed. Alongside the read tools it exposes write tools that create, update, append to, retag, soft-delete, restore, and promote notes, and it applies the safety rules below on every write.
+- **\`_inbox/\` is the live staging area**, not a future plan. A note created through the write-back channel lands in \`_inbox/\` by default; the user reviews it in Wren's Inbox and either promotes it into the main notes or discards it. Nothing an AI creates joins the corpus on its own.
+
+The write path is guarded, and the guards are worth knowing because they change how you should sequence calls:
+
+- **Read first.** \`wren_read_note\` returns a \`contentHash\`. Every modify tool requires it back as \`expected_content_hash\`; if the note changed on disk since you read it, the write is rejected as a conflict rather than blindly overwriting. Re-read and retry.
+- **Preview with \`dry_run\`.** The modify tools return a diff without writing when \`dry_run: true\`.
+- **Destructive actions need \`confirm: true\`** - soft-deleting a note, and promoting a staged draft into the live notes.
+- **Deletes are reversible.** A soft-deleted note is moved to \`.trash/\`, never removed; \`wren_restore_note\` brings it back by id.
+- **Everything stays inside this folder.** Paths that escape the notes root via \`..\` or an absolute path are rejected.
+- **Provenance is stamped.** Notes written through the channel carry \`created_by\`, \`last_edited_by\` and \`last_edited\` frontmatter, so an AI-authored or AI-edited note stays distinguishable from a human one. Preserve those fields.
 `;
 }

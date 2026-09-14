@@ -1382,10 +1382,28 @@ button {
 /* =========================================================================
    Onboarding / unsupported / states
    ========================================================================= */
+/* Onboarding / storage-choice / sign-in screens.
+
+   `overflow-y: auto` is load-bearing, not cosmetic. Without it this flex item
+   keeps its automatic minimum size, so a card taller than the row grows the
+   screen past the shell instead of scrolling inside it - and the pinned footer
+   then sits on top of the card's lower half. In the 400x560 extension popup
+   (which also sets `body { overflow: hidden }`, so the page itself cannot
+   scroll) that buried the storage-choice "Choose folder" button underneath
+   `.sc-footer-links`, leaving first-run users with no way to click it.
+
+   `align-items: safe center` keeps the card vertically centred when the row has
+   room and falls back to start-alignment when it does not, so an overflowing
+   card scrolls from its top edge rather than having its top half pushed out of
+   reach the way plain `center` does. It is listed after `place-items` so a
+   browser without the `safe` keyword simply drops that one declaration and
+   keeps the old centring. */
 .sc-screen {
   flex: 1;
   display: grid;
   place-items: center;
+  align-items: safe center;
+  overflow-y: auto;
   padding: 32px;
 }
 .sc-screen-card {

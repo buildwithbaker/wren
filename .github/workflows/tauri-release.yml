@@ -101,7 +101,7 @@ jobs:
       - name: Upload the installer as an Actions artifact
         if: ${{ vars.SIGNING_ENABLED == 'true' }}
         id: unsigned
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: unsigned-installer
           path: ${{ steps.installer.outputs.path }}

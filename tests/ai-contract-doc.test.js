@@ -10,7 +10,20 @@ import {
 describe('ai-contract-doc', () => {
   it('exposes the managed file name and version constant', () => {
     expect(AI_CONTRACT_DOC_NAME).toBe('README-for-AI.md');
-    expect(AI_CONTRACT_VERSION).toBe(1);
+    expect(AI_CONTRACT_VERSION).toBe(2);
+  });
+
+  // v1 shipped a "Writing" section that denied the write-back channel existed
+  // and called `_inbox/` a future convention, while the app and wren-mcp were
+  // already using it. Pin the corrected wording so it cannot silently return.
+  it('describes the write-back channel that actually exists', () => {
+    const doc = buildAiContractDoc();
+    expect(doc).not.toMatch(/does not provide an AI write-back channel/);
+    expect(doc).not.toMatch(/reserved for that purpose in a future Wren version/);
+    expect(doc).toContain('`_inbox/` is the live staging area');
+    for (const guard of ['expected_content_hash', 'dry_run', 'confirm: true', '.trash/']) {
+      expect(doc).toContain(guard);
+    }
   });
 
   it('first line is the version marker for the current version', () => {
