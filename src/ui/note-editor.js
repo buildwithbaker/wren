@@ -33,6 +33,32 @@ function positionDropdown(menuEl, triggerEl) {
     below + h <= window.innerHeight - 8 ? `${below}px` : `${Math.max(8, r.top - h - 4)}px`;
 }
 
+/**
+ * localStorage key for the formatting-bar collapse state. Pop-out stickies keep
+ * their own key so collapsing a sticky never moves the main editor's bar, and
+ * vice versa. Pure.
+ *
+ * @param {boolean} sticky - true in a pop-out sticky window
+ * @returns {string}
+ */
+export function formatCollapsedKey(sticky) {
+  return sticky ? 'wren.sticky.formatCollapsed' : 'wren.formatCollapsed';
+}
+
+/**
+ * Resolve the starting collapse state. An explicitly stored value always wins;
+ * with nothing stored, a sticky starts COLLAPSED (small window, opened to write
+ * in) and the main editor starts expanded. Pure.
+ *
+ * @param {boolean} sticky - true in a pop-out sticky window
+ * @param {string|null|undefined} stored - raw localStorage value, or null/undefined
+ * @returns {boolean}
+ */
+export function initialFormatCollapsed(sticky, stored) {
+  if (stored === null || stored === undefined) return !!sticky;
+  return stored === 'true';
+}
+
 export function createNoteEditor({
   onSave,
   onDelete,
@@ -375,11 +401,15 @@ export function createNoteEditor({
   // Formatting-bar toggle: collapses ONLY the Tiptap formatting bar (bold,
   // etc.) so a note can be read/written without that chrome. The color swatches
   // and the Due control are deliberately NOT collapsed; they stay visible.
-  // State is remembered across sessions.
-  const FORMAT_COLLAPSED_KEY = 'wren.formatCollapsed';
-  let formatCollapsed = false;
+  // State is remembered across sessions, under a key that is SEPARATE for
+  // pop-out stickies (2026-09-19). A sticky window is small and is opened to
+  // write in, so it starts collapsed; the main editor keeps its original
+  // expanded-by-default behavior. Two keys, so toggling one never moves the
+  // other. An explicitly stored value always wins over the default.
+  const FORMAT_COLLAPSED_KEY = formatCollapsedKey(sticky);
+  let formatCollapsed = initialFormatCollapsed(sticky, null);
   try {
-    formatCollapsed = localStorage.getItem(FORMAT_COLLAPSED_KEY) === 'true';
+    formatCollapsed = initialFormatCollapsed(sticky, localStorage.getItem(FORMAT_COLLAPSED_KEY));
   } catch {
     /* ignore */
   }
