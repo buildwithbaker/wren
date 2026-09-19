@@ -81,6 +81,23 @@ describe('openStickyTauri window options', () => {
     expect(tauri.calls[0].options.title).toBe('Wren note');
   });
 
+  it('opens at the roomier 432x486 default when nothing is remembered', async () => {
+    // Raised ~35% from 320x360 on 2026-09-19. localStorage is empty in this
+    // suite, so loadGeometry() finds nothing and the defaults are what ship.
+    await openStickyTauri({ id: 'fresh.md', wrenId: 'wren-fresh' });
+    expect(tauri.calls[0].options.width).toBe(432);
+    expect(tauri.calls[0].options.height).toBe(486);
+  });
+
+  it('keeps the audit T3 minimum floor below the default so stickies can still shrink', async () => {
+    await openStickyTauri({ id: 'fresh2.md', wrenId: 'wren-fresh2' });
+    const { width, height, minWidth, minHeight } = tauri.calls[0].options;
+    expect(minWidth).toBe(220);
+    expect(minHeight).toBe(160);
+    expect(minWidth).toBeLessThan(width);
+    expect(minHeight).toBeLessThan(height);
+  });
+
   it('focuses an existing window instead of creating a duplicate', async () => {
     let focused = false;
     tauri.existing = { setFocus: async () => { focused = true; } };

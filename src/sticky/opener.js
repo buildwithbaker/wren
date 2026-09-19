@@ -16,8 +16,12 @@
 import { loadGeometry } from './geometry.js';
 import { isTauri } from '../platform.js';
 
-const DEFAULT_W = 320;
-const DEFAULT_H = 360;
+// Default size for a sticky with no remembered geometry. Raised ~35% from the
+// original 320x360 on 2026-09-19: the old default opened too cramped to write
+// in, and every sticky had to be resized by hand on first open. Only affects
+// notes loadGeometry() has nothing stored for; remembered sizes are untouched.
+const DEFAULT_W = 432;
+const DEFAULT_H = 486;
 // Floor for a sticky window. A decorationless window has no OS-drawn frame to
 // stop a drag, so without this a resize could shrink the sticky past its own
 // 32px title bar and leave a window with no visible close button and no way to
