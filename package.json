@@ -31,7 +31,7 @@
     "@tauri-apps/plugin-notification": "^2.4.0",
     "@tauri-apps/plugin-opener": "^2.5.5",
     "@tiptap/core": "^3.30.4",
-    "@tiptap/extension-highlight": "^3.30.4",
+    "@tiptap/extension-highlight": "^3.31.3",
     "@tiptap/extension-task-item": "^3.30.4",
     "@tiptap/extension-task-list": "^3.30.4",
     "@tiptap/extension-text-style": "^3.30.4",
