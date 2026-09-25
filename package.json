@@ -36,7 +36,7 @@
     "@tiptap/extension-task-list": "^3.30.4",
     "@tiptap/extension-text-style": "^3.30.4",
     "@tiptap/pm": "^3.30.4",
-    "@tiptap/starter-kit": "^3.30.4",
+    "@tiptap/starter-kit": "^3.31.3",
     "tiptap-markdown": "^0.9.0"
   },
   "devDependencies": {
