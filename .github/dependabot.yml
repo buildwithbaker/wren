@@ -3,6 +3,12 @@ updates:
   - package-ecosystem: "npm"
     directory: "/"
     schedule: { interval: "weekly" }
+    # The @tiptap packages pin each other as exact peer versions, so a PR that
+    # bumps one of them alone fails `npm ci` with ERESOLVE (#112, #115, #117).
+    # Group them so they always move together in a single PR.
+    groups:
+      tiptap:
+        patterns: ["@tiptap/*"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule: { interval: "weekly" }

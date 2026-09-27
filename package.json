@@ -7,7 +7,7 @@
   "author": "Adam Baker / Build with Baker",
   "license": "MIT",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "icons": "node scripts/gen-icons.mjs",

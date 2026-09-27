@@ -7,6 +7,9 @@
 //   - src-tauri/tauri.conf.json  (baked into the desktop build + release tags)
 //   - src-tauri/Cargo.toml       ([package] version)
 //   - extension/public/manifest.json (the Chrome Web Store version)
+//   - src-tauri/Cargo.lock       (the lock's own entry for the `wren` crate;
+//                                 left stale by hand in the v1.2.5 and v1.2.6
+//                                 release commits because this script skipped it)
 //
 // Modes:
 //   node scripts/sync-version.mjs           → CHECK: exit 1 on any mismatch.
@@ -75,10 +78,38 @@ function cargoTarget(relPath, label) {
   };
 }
 
+// ---- Cargo.lock (the `wren` crate's own [[package]] entry) ---------------
+
+function cargoLockTarget(relPath, label, crate) {
+  const path = resolve(root, relPath);
+  // A [[package]] block is `name = "…"` followed directly by `version = "…"`.
+  // Anchor on this crate's exact name so a dependency's version never matches.
+  const RE = new RegExp(`(\\[\\[package\\]\\]\\r?\\nname = "${crate}"\\r?\\nversion = ")[^"]*(")`);
+  return {
+    label,
+    path,
+    read() {
+      const m = readFileSync(path, 'utf8').match(RE);
+      if (!m) {
+        // Loud, not silent: a lock without the entry means the regex or the lock
+        // layout changed, and a skipped check would let drift ship again.
+        console.error(`[sync-version] ${label}: no [[package]] entry for "${crate}" found`);
+        return null;
+      }
+      return m[0].match(/"([^"]*)"$/)?.[1] ?? null;
+    },
+    write() {
+      const src = readFileSync(path, 'utf8');
+      writeFileSync(path, src.replace(RE, `$1${canonical}$2`));
+    },
+  };
+}
+
 const targets = [
   jsonTarget('src-tauri/tauri.conf.json', 'tauri.conf.json'),
   cargoTarget('src-tauri/Cargo.toml', 'Cargo.toml'),
   jsonTarget('extension/public/manifest.json', 'extension manifest'),
+  cargoLockTarget('src-tauri/Cargo.lock', 'Cargo.lock', 'wren'),
 ];
 
 let drift = false;
