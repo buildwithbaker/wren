@@ -317,28 +317,6 @@ function encodePng(width, height, rgba) {
   return Buffer.concat([sig, chunk('IHDR', ihdr), chunk('IDAT', idat), chunk('IEND', Buffer.alloc(0))]);
 }
 
-function encodeIco(entries) {
-  const dirSize = 6 + entries.length * 16;
-  let offset = dirSize;
-  const dir = Buffer.alloc(dirSize);
-  dir.writeUInt16LE(0, 0);
-  dir.writeUInt16LE(1, 2);
-  dir.writeUInt16LE(entries.length, 4);
-  for (let i = 0; i < entries.length; i++) {
-    const e = entries[i];
-    const off = 6 + i * 16;
-    dir[off + 0] = e.size === 256 ? 0 : e.size;
-    dir[off + 1] = e.size === 256 ? 0 : e.size;
-    dir[off + 2] = 0; dir[off + 3] = 0;
-    dir.writeUInt16LE(1, off + 4);
-    dir.writeUInt16LE(32, off + 6);
-    dir.writeUInt32LE(e.png.length, off + 8);
-    dir.writeUInt32LE(offset, off + 12);
-    offset += e.png.length;
-  }
-  return Buffer.concat([dir, ...entries.map((e) => e.png)]);
-}
-
 function ensureDir(p) { mkdirSync(p, { recursive: true }); }
 
 function writePng(path, width, height, rgba) {
@@ -372,14 +350,6 @@ function main() {
   const appleTouch180 = renderIcon(180, 'maskable');
   writePng(resolve(pub, 'icon-maskable-512.png'), 512, 512, maskable512);
   writePng(resolve(pub, 'apple-touch-icon-180.png'), 180, 180, appleTouch180);
-  const ico = encodeIco([
-    { size: 16, png: encodePng(16, 16, stdCache[16]) },
-    { size: 32, png: encodePng(32, 32, stdCache[32]) },
-    { size: 48, png: encodePng(48, 48, stdCache[48]) },
-  ]);
-  const icoPath = resolve(root, 'favicon.ico');
-  writeFileSync(icoPath, ico);
-  console.log(`  wrote ${icoPath.replace(root + '\\', '').replace(root + '/', '')} (16+32+48)`);
   const og = renderOgCard(1200, 630);
   writePng(resolve(pub, 'og-card.png'), 1200, 630, og);
   console.log('Icons done.');

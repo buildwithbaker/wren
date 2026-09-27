@@ -18,7 +18,7 @@
 // HARD RULE: an explicit stored "drive" is always honored verbatim — existing
 // Drive users are never downgraded to local.
 
-import { ADAPTER_TYPES, NoBackendConfiguredError } from './StorageAdapter.js';
+import { ADAPTER_TYPES } from './StorageAdapter.js';
 import { FileSystemAdapter } from './FileSystemAdapter.js';
 import { TauriFsAdapter } from './TauriFsAdapter.js';
 import { DriveAdapter } from './DriveAdapter.js';
@@ -96,8 +96,8 @@ export async function chooseFsAdapter() {
 /**
  * Return an initialized adapter matching the stored backend.
  *
- * Throws {@link NoBackendConfiguredError} if no backend is set. The caller
- * (app-controller boot) catches this and shows the storage-choice screen.
+ * resolveBackend() always returns a backend (local is the default), so there
+ * is no "no backend" case to throw on.
  *
  * For "drive" backend, this triggers DriveAdapter.initialize() which in turn
  * may invoke a silent token re-acquire. If silent fails, the adapter will
@@ -108,9 +108,6 @@ export async function chooseFsAdapter() {
  */
 export async function getActiveAdapter() {
   const backend = await resolveBackend();
-  if (backend === null) {
-    throw new NoBackendConfiguredError();
-  }
   if (backend === ADAPTER_TYPES.DRIVE) {
     const a = new DriveAdapter();
     await a.initialize();
