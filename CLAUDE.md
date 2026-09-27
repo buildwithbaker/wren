@@ -13,7 +13,11 @@ See @docs/internal/architecture.md for the deep architecture reference (file map
   https://wren-9p5.pages.dev is that project's own domain)
   auto-builds from main via Cloudflare's Git integration - build command
   `npm run build`, output dir `dist/`, configured in the Cloudflare dashboard
-  (NOT in this repo). There is no GitHub Actions deploy workflow. Lint is
+  (NOT in this repo). There is no GitHub Actions deploy workflow for the app.
+  The one Pages workflow, `.github/workflows/pages-retire.yml` (manual-only),
+  deploys `pages-retire/` - a permanent service-worker kill-switch for the
+  retired https://buildwithbaker.github.io/wren/ copy. Keep it live and keep
+  GitHub Pages enabled; never point it at the app build. Lint is
   `npm run lint` (eslint, flat config in `eslint.config.js`); CI runs
   `npm run lint --if-present`, which now executes it.
 

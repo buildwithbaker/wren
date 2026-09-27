@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Wren has moved</title>
+<link rel="canonical" href="https://wren.buildwithbaker.io/">
+<noscript><meta http-equiv="refresh" content="5; url=https://wren.buildwithbaker.io/"></noscript>
+<style>
+  /* Wren cream + terracotta. Contrast (WCAG AA): #2E2A24 on #FBF8F3 = 13.5:1;
+     #934523 link on #FBF8F3 = 6.4:1; #FFFFFF on #A8542C button = 5.3:1. */
+  :root { color-scheme: light; }
+  html, body { margin: 0; }
+  body {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 16px; box-sizing: border-box;
+    background: #EFE7DA; color: #2E2A24;
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main {
+    max-width: 32rem; width: 100%; padding: 2rem;
+    background: #FBF8F3; border: 1px solid #D9CDBB; border-radius: 12px;
+  }
+  h1 { margin: 0 0 .75rem; font-size: 1.5rem; }
+  p { margin: 0 0 1rem; }
+  a { color: #934523; }
+  .go {
+    display: inline-block; padding: .6rem 1.1rem; border-radius: 8px;
+    background: #A8542C; color: #FFFFFF; font-weight: 600; text-decoration: none;
+  }
+  .go:hover { background: #934523; }
+  .go:focus-visible, a:focus-visible { outline: 3px solid #2E2A24; outline-offset: 2px; }
+  .small { font-size: .9rem; margin: 1rem 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Wren has moved</h1>
+  <p>Wren has moved to <a href="https://wren.buildwithbaker.io/">wren.buildwithbaker.io</a>.
+     Your notes are still in the folder you chose - open Wren there and pick that folder again.</p>
+  <p><a class="go" href="https://wren.buildwithbaker.io/">Open Wren</a></p>
+  <p class="small" role="status">Taking you there in about 5 seconds.</p>
+</main>
+<script>
+  // Remove the old /wren/ install, then redirect. Cache Storage and service
+  // worker registrations are per ORIGIN and buildwithbaker.github.io hosts
+  // other apps, so touch ONLY Wren's /wren/ worker and 'wren-shell-*' caches.
+  (function () {
+    var TARGET = 'https://wren.buildwithbaker.io/';
+    var SCOPE = location.origin + '/wren/';
+    var cleanup = [];
+    if ('serviceWorker' in navigator) {
+      cleanup.push(navigator.serviceWorker.getRegistrations().then(function (regs) {
+        return Promise.all(regs.filter(function (r) { return r.scope.indexOf(SCOPE) === 0; })
+          .map(function (r) { return r.unregister(); }));
+      }));
+    }
+    if ('caches' in window) {
+      cleanup.push(caches.keys().then(function (keys) {
+        return Promise.all(keys.filter(function (k) { return k.indexOf('wren-shell-') === 0; })
+          .map(function (k) { return caches.delete(k); }));
+      }));
+    }
+    var started = Date.now();
+    Promise.all(cleanup).catch(function () {}).then(function () {
+      setTimeout(function () { location.replace(TARGET); }, Math.max(0, 5000 - (Date.now() - started)));
+    });
+  })();
+</script>
+</body>
+</html>
