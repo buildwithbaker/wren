@@ -52,6 +52,12 @@ table of the Build with Baker Repo Standard v2.0. Before creating any new file:
 - src-tauri/ -> the Tauri (Rust) desktop crate; everything Tauri-related lives
   under it.
 
+Repo-specific additions to the standard's permitted-root table:
+
+| Root entry | Why it is at root |
+|---|---|
+| `pages-retire/` | Permanent GitHub Pages kill-switch for the retired /wren/ copy - do not delete, do not disable Pages. Deployed only by the manual `.github/workflows/pages-retire.yml`. |
+
 ## Code style
 - ES modules only (import/export), never require()
 - 2-space indent
