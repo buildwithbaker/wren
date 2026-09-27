@@ -1,0 +1,39 @@
+# Deploys the pages-retire/ kill-switch to https://buildwithbaker.github.io/wren/.
+#
+# THIS DEPLOY IS PERMANENT AND INTENTIONAL. The kill-switch stays live forever:
+# old installs of the github.io build keep an active service worker at /wren/,
+# and that worker is only removed when its update check fetches this sw.js.
+# Do NOT disable GitHub Pages for this repo - a 404 on the worker's update
+# check does not reliably remove an installed worker.
+#
+# Manual-only (workflow_dispatch). Do not add push/schedule triggers and do not
+# re-enable an automatic Pages deploy of the app: Wren is served from
+# https://wren.buildwithbaker.io/ by Cloudflare Pages.
+name: Pages retire (kill-switch)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-retire
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: pages-retire
+      - id: deployment
+        uses: actions/deploy-pages@v5
