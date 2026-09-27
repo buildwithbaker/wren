@@ -9,6 +9,13 @@ updates:
     groups:
       tiptap:
         patterns: ["@tiptap/*"]
+    # Tauri upgrades are done by hand, JS + Rust together: the Tauri CLI wants
+    # each @tauri-apps/plugin-* on the same major.minor as its tauri-plugin-*
+    # crate in src-tauri/Cargo.lock, and CI never runs a Tauri build to catch
+    # a skew. Patch bumps stay automatic.
+    ignore:
+      - dependency-name: "@tauri-apps/*"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule: { interval: "weekly" }
