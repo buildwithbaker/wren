@@ -2262,7 +2262,7 @@ export function createApp({ root, enableServiceWorker = false }) {
     const current = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '';
 
     showToast('Checking for updates…');
-    let latest = '';
+    let latest;
     try {
       const res = await fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

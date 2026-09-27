@@ -79,7 +79,7 @@ export async function resolveBackend() {
  */
 export async function chooseFsAdapter() {
   if (isTauri()) {
-    let handle = null;
+    let handle;
     try {
       handle = await getStoredDirHandle();
     } catch {
