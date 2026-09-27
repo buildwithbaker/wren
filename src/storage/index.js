@@ -6,7 +6,6 @@ export {
   ADAPTER_TYPES,
   ConflictError,
   AdapterAuthError,
-  NoBackendConfiguredError,
 } from './StorageAdapter.js';
 export { FileSystemAdapter } from './FileSystemAdapter.js';
 export { TauriFsAdapter, WREN_NOTES_FOLDER } from './TauriFsAdapter.js';
