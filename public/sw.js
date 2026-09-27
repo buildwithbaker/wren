@@ -85,7 +85,11 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      // Cache Storage is per origin, not per app: only ever delete Wren's own
+      // caches, never another app's that happens to share this origin.
+      .then((keys) =>
+        Promise.all(keys.filter((k) => k.startsWith('wren-shell-') && k !== CACHE).map((k) => caches.delete(k)))
+      )
       .then(() => self.clients.claim())
   );
 });
