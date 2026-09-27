@@ -12,7 +12,7 @@ const VALID = new Set(['system', 'light', 'dark']);
 // + the footer's theme button), so an unguarded throw took the whole app down
 // before first paint (audit U21).
 export function getStoredTheme() {
-  let raw = null;
+  let raw;
   try {
     raw = localStorage.getItem(STORAGE_KEY);
   } catch {
