@@ -117,4 +117,29 @@ describe('FileSystemAdapter soft-delete to .trash/', () => {
     expect(suffixed).toBeTruthy();
     expect(trash._files[suffixed].content).toContain('precious body');
   });
+
+  it('returns the trash id, and restoreNote puts the note back with content intact', async () => {
+    const { trashId } = await adapter.deleteNote('keep.md');
+    expect(trashId).toBe('.trash/keep.md');
+
+    const restored = await adapter.restoreNote(trashId);
+    expect(restored.id).toBe('keep.md');
+    expect(root._files['keep.md'].content).toContain('precious body');
+    expect('keep.md' in root._subdirs['.trash']._files).toBe(false);
+    expect((await adapter.listNotes()).map((n) => n.id)).toEqual(['keep.md']);
+  });
+
+  it('restoreNote picks a " (N)" name if the original was reused meanwhile', async () => {
+    const { trashId } = await adapter.deleteNote('keep.md');
+    root._files['keep.md'] = { content: noteText({ title: 'New one', body: 'new body' }), mtime: 9 };
+
+    const restored = await adapter.restoreNote(trashId);
+    expect(restored.id).toMatch(/^keep \(\d+\)\.md$/);
+    expect(root._files[restored.id].content).toContain('precious body');
+    expect(root._files['keep.md'].content).toContain('new body');
+  });
+
+  it('restoreNote rejects an id outside .trash/', async () => {
+    await expect(adapter.restoreNote('keep.md')).rejects.toThrow(/\.trash\//);
+  });
 });

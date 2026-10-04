@@ -41,7 +41,9 @@ export function confirmDialog({ title, message, confirmLabel = 'Confirm', cancel
     document.body.appendChild(overlay);
     // Trap focus: make the rest of the page inert so Tab can't escape the modal.
     const unlockPage = lockPageExcept(overlay);
-    confirm.focus();
+    // WAI-ARIA APG alertdialog: start on the least destructive action, so a
+    // reflexive Enter on a destructive dialog cancels instead of confirming.
+    (danger ? cancel : confirm).focus();
 
     function cleanup(result) {
       document.removeEventListener('keydown', onKey);
@@ -62,8 +64,8 @@ export function confirmDialog({ title, message, confirmLabel = 'Confirm', cancel
       } else if (e.key === 'Enter') {
         // Enter must respect which control is focused. With the Cancel button
         // focused, Enter cancels (matching native button activation) — otherwise
-        // a focused Cancel + Enter would confirm a destructive delete. Confirm
-        // is focused by default, so the common case still confirms on Enter.
+        // a focused Cancel + Enter would confirm a destructive delete. Danger
+        // dialogs open on Cancel; the others open on Confirm.
         e.preventDefault();
         cleanup(document.activeElement === cancel ? false : true);
       }

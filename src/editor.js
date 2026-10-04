@@ -52,6 +52,7 @@ export function createEditor({ element, content = '', onUpdate, onSelectionUpdat
       attributes: {
         class: 'sc-prose',
         spellcheck: 'true',
+        'aria-label': 'Note body',
       },
     },
     onUpdate: ({ editor }) => onUpdate?.(editor),

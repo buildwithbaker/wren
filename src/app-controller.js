@@ -206,9 +206,10 @@ export function createApp({ root, enableServiceWorker = false }) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'sc-theme-toggle';
-    btn.setAttribute('aria-label', 'Change theme');
     const render = () => {
       const t = getStoredTheme();
+      // Name starts with the visible label so speech input ("click Light") works.
+      btn.setAttribute('aria-label', `${themeLabel(t)} theme (change)`);
       btn.innerHTML = `${themeIcon(t)}<span>${themeLabel(t)}</span>`;
       btn.title = `Theme: ${themeLabel(t)} (click to cycle)`;
     };
@@ -2025,8 +2026,11 @@ export function createApp({ root, enableServiceWorker = false }) {
       showDriveDisconnectedToast('Reconnect Drive to delete notes.');
       return;
     }
+    const deletedFrom = adapter;
+    let trashId;
     try {
-      await adapter.deleteNote(note.id);
+      const res = await deletedFrom.deleteNote(note.id);
+      trashId = res?.trashId || null;
     } catch (err) {
       if (routeAuthError(err)) return;
       console.error('Delete failed', err);
@@ -2039,6 +2043,46 @@ export function createApp({ root, enableServiceWorker = false }) {
     list.setActive(null);
     appEl.dataset.view = 'list';
     regenerateIndex();
+    if (trashId && typeof deletedFrom.restoreNote === 'function') {
+      showUndoDeleteToast(note, trashId, deletedFrom);
+    }
+  }
+
+  // "Moved to Trash · Undo" after a delete: restores the note from .trash/
+  // (or Drive's trash) for a few seconds, so a reflexive delete costs nothing.
+  function showUndoDeleteToast(note, trashId, deletedFrom) {
+    const toast = document.createElement('div');
+    toast.className = 'sc-toast';
+    const label = document.createElement('span');
+    label.textContent = `Moved “${note.title || 'Untitled'}” to Trash. `;
+    toast.appendChild(label);
+    const undo = document.createElement('button');
+    undo.type = 'button';
+    undo.className = 'sc-toast-action';
+    undo.textContent = 'Undo';
+    undo.addEventListener('click', async () => {
+      toast.remove();
+      // The backend may have been switched since the delete; the trash id only
+      // means something to the adapter that produced it.
+      if (adapter !== deletedFrom) {
+        showErrorToast('Could not undo: the storage location changed.');
+        return;
+      }
+      let restored;
+      try {
+        restored = await deletedFrom.restoreNote(trashId);
+      } catch (err) {
+        if (routeAuthError(err)) return;
+        console.error('Undo delete failed', err);
+        showErrorToast('Could not restore the note. It is still in Trash.');
+        return;
+      }
+      await loadNotes();
+      if (restored?.id) await openNote(restored.id);
+      showToast('Note restored.');
+    });
+    toast.appendChild(undo);
+    mountToast(toast, 8000);
   }
 
   /**

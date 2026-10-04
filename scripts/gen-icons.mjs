@@ -4,9 +4,11 @@
 // Geometry mirrors public/icon.svg: a flat terracotta rounded tile with a cream
 // "perched wren" mark (overlapping circles for head/shoulder/body + a cocked
 // tail polygon + a pointed beak), a tile-color wing groove carved into the
-// breast, and a single indigo eye. Two canvas variants:
+// breast, and a single indigo eye. Three canvas variants:
 //   - standard: 12.5% transparent padding, rounded tile (favicons, PWA "any")
-//   - maskable: full-bleed tile, no corner radius (Android adaptive + apple-touch)
+//   - maskable: full-bleed tile, no corner radius (apple-touch icon)
+//   - maskable-safe: maskable with the bird shrunk to fit the 40%-radius safe
+//     zone, for the manifest's purpose:"maskable" icon (Android adaptive)
 
 import { deflateSync } from 'node:zlib';
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -25,6 +27,9 @@ const EYE = [0x2b, 0x4a, 0x8b]; // #2B4A8B BwB indigo eye
 // --- geometry in 1024-unit tile space (mirrors public/icon.svg viewBox)
 const SVG_UNIT = 1024;
 const TILE_RADIUS_RATIO = 230 / 1024;
+// The tail tip reaches ~0.475 of the tile from centre; launchers may crop to a
+// circle of radius 0.40. Scaling the bird by 0.8 brings it to ~0.38.
+const MASKABLE_SAFE_GLYPH_SCALE = 0.8;
 
 // Cocked tail and pointed beak are drawn with a round-join stroke of the same
 // fill, which optically inflates the polygon; we reproduce that by treating a
@@ -144,20 +149,26 @@ function buildContext(size, variant) {
     tileR = 0;
   }
   const scale = tileW / SVG_UNIT;
-  const mapPoly = (poly) => poly.map(([px, py]) => [tileX + px * scale, tileY + py * scale]);
-  const mapCircle = (c) => [tileX + c[0] * scale, tileY + c[1] * scale, c[2] * scale];
+  // Glyph scale about the tile centre (1 except for the safe-zone maskable).
+  const g = variant === 'maskable-safe' ? MASKABLE_SAFE_GLYPH_SCALE : 1;
+  const half = SVG_UNIT / 2;
+  const mx = (px) => tileX + (half + (px - half) * g) * scale;
+  const my = (py) => tileY + (half + (py - half) * g) * scale;
+  const mapPoly = (poly) => poly.map(([px, py]) => [mx(px), my(py)]);
+  const mapCircle = (c) => [mx(c[0]), my(c[1]), c[2] * g * scale];
+  const gs = g * scale;
   return {
     tileX, tileY, tileW, tileH, tileR, variant,
     tail: mapPoly(TAIL_UNIT),
-    tailR: (TAIL_STROKE_UNIT * scale) / 2,
+    tailR: (TAIL_STROKE_UNIT * gs) / 2,
     beak: mapPoly(BEAK_UNIT),
-    beakR: (BEAK_STROKE_UNIT * scale) / 2,
+    beakR: (BEAK_STROKE_UNIT * gs) / 2,
     body: mapCircle(BODY_UNIT),
     shoulder: mapCircle(SHOULDER_UNIT),
     head: mapCircle(HEAD_UNIT),
     eye: mapCircle(EYE_UNIT),
     wing: mapPoly(WING_POLY_UNIT),
-    wingR: (WING_STROKE_UNIT * scale) / 2,
+    wingR: (WING_STROKE_UNIT * gs) / 2,
   };
 }
 
@@ -211,68 +222,6 @@ function renderIcon(size, variant, ss = 4) {
     }
   }
   return out;
-}
-
-function boxDownsampleBuffer(buf, hiW, hiH, ss) {
-  const w = hiW / ss;
-  const h = hiH / ss;
-  const out = new Uint8Array(w * h * 4);
-  const n = ss * ss;
-  for (let oy = 0; oy < h; oy++) {
-    for (let ox = 0; ox < w; ox++) {
-      let r = 0, g = 0, b = 0, a = 0;
-      for (let sy = 0; sy < ss; sy++) {
-        for (let sx = 0; sx < ss; sx++) {
-          const idx = ((oy * ss + sy) * hiW + (ox * ss + sx)) * 4;
-          r += buf[idx]; g += buf[idx + 1]; b += buf[idx + 2]; a += buf[idx + 3];
-        }
-      }
-      const o = (oy * w + ox) * 4;
-      out[o] = Math.round(r / n);
-      out[o + 1] = Math.round(g / n);
-      out[o + 2] = Math.round(b / n);
-      out[o + 3] = Math.round(a / n);
-    }
-  }
-  return out;
-}
-
-// Social card: flat terracotta field with the wren centered. The wren is drawn
-// as a maskable (full-bleed) square whose own background is the same flat
-// terracotta, so it composites seamlessly onto the card.
-function renderOgCard(w, h, ss = 3) {
-  const hiW = w * ss;
-  const hiH = h * ss;
-  const out = new Uint8Array(hiW * hiH * 4);
-  for (let i = 0; i < hiW * hiH; i++) {
-    const o = i * 4;
-    out[o] = TILE[0]; out[o + 1] = TILE[1]; out[o + 2] = TILE[2]; out[o + 3] = 255;
-  }
-  const S = Math.round(hiH * 0.78);
-  const ctx = buildContext(S, 'maskable');
-  const offX = Math.round((hiW - S) / 2);
-  const offY = Math.round((hiH - S) / 2);
-  const sub = 3;
-  for (let yy = 0; yy < S; yy++) {
-    for (let xx = 0; xx < S; xx++) {
-      let r = 0, g = 0, b = 0;
-      for (let sy = 0; sy < sub; sy++) {
-        for (let sx = 0; sx < sub; sx++) {
-          const c = samplePixel(xx + (sx + 0.5) / sub, yy + (sy + 0.5) / sub, ctx) || TILE;
-          r += c[0]; g += c[1]; b += c[2];
-        }
-      }
-      const n = sub * sub;
-      const px = offX + xx;
-      const py = offY + yy;
-      if (px < 0 || py < 0 || px >= hiW || py >= hiH) continue;
-      const o = (py * hiW + px) * 4;
-      out[o] = Math.round(r / n);
-      out[o + 1] = Math.round(g / n);
-      out[o + 2] = Math.round(b / n);
-    }
-  }
-  return boxDownsampleBuffer(out, hiW, hiH, ss);
 }
 
 const CRC_TABLE = (() => {
@@ -346,12 +295,12 @@ function main() {
   writePng(resolve(extPub, 'icon-16.png'), 16, 16, stdCache[16]);
   writePng(resolve(extPub, 'icon-48.png'), 48, 48, stdCache[48]);
   writePng(resolve(extPub, 'icon-128.png'), 128, 128, stdCache[128]);
-  const maskable512 = renderIcon(512, 'maskable');
+  const maskable512 = renderIcon(512, 'maskable-safe');
   const appleTouch180 = renderIcon(180, 'maskable');
   writePng(resolve(pub, 'icon-maskable-512.png'), 512, 512, maskable512);
   writePng(resolve(pub, 'apple-touch-icon-180.png'), 180, 180, appleTouch180);
-  const og = renderOgCard(1200, 630);
-  writePng(resolve(pub, 'og-card.png'), 1200, 630, og);
+  // public/og-card.png (the share card) carries text, so it is built by
+  // scripts/gen-og-card.py and committed; it is not regenerated here.
   console.log('Icons done.');
 }
 

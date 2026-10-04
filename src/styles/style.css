@@ -86,7 +86,10 @@
   --wr-border:        #E5DACA;
   --wr-border-strong: #CDBFA9;
   --wr-field-bg:      #F1E8DB;
-  --wr-paper-muted:   rgba(46, 42, 36, 0.55);
+  /* 0.74 (was 0.55): >= 4.5:1 on the selected-card and editor-header tints. */
+  --wr-paper-muted:   rgba(46, 42, 36, 0.74);
+  /* Text-field edges: >= 3:1 against the panel and note surfaces (SC 1.4.11). */
+  --wr-field-border:  #7A6D5D;
   /* Slate "ink" used for placeholders, hairline borders, and hover washes as
      rgba(var(--wr-ink-rgb), <alpha>). Kept as an RGB triplet so a single token
      flips the whole family in dark mode. Light value = the historical #2A3540,
@@ -137,7 +140,8 @@
     --wr-note-green: #1F2E22;
     --wr-note-rose: #3A2530;
     --wr-note-purple: #2A2238;
-    --wr-paper-muted: rgba(230, 235, 242, 0.55);
+    --wr-paper-muted: rgba(230, 235, 242, 0.64);
+    --wr-field-border: #8A7B67;
     /* Flip the slate-ink overlay family to light so placeholders, hairlines and
        hover washes are visible on dark paper/chrome (audit U7/U8/U9). */
     --wr-ink-rgb: 236, 230, 220;
@@ -179,7 +183,8 @@
   --wr-note-green: #1F2E22;
   --wr-note-rose: #3A2530;
   --wr-note-purple: #2A2238;
-  --wr-paper-muted: rgba(230, 235, 242, 0.55);
+  --wr-paper-muted: rgba(230, 235, 242, 0.64);
+  --wr-field-border: #8A7B67;
   /* Slate-ink overlay family flipped light for manual dark (see @media block). */
   --wr-ink-rgb: 236, 230, 220;
   /* Editor text palette lifted for manual dark (see @media block). */
@@ -367,7 +372,7 @@ button {
 .sc-search-input {
   width: 100%;
   padding: 8px 10px 8px 32px;
-  border: 1px solid var(--wr-border);
+  border: 1px solid var(--wr-field-border);
   border-radius: var(--wr-radius-sm);
   background: var(--wr-field-bg);
   color: var(--wr-panel-text);
@@ -681,7 +686,10 @@ button {
   color: rgba(var(--wr-ink-rgb), 0.4);
 }
 .sc-title-input:focus-visible {
+  /* Same accent ring as the tag input, so focus is visible beyond the caret. */
   outline: none;
+  border-radius: var(--wr-radius-sm);
+  box-shadow: 0 0 0 2px var(--wr-accent), 0 0 0 5px var(--wr-accent-ring);
 }
 .sc-editor-actions {
   display: flex;
@@ -1061,7 +1069,7 @@ button {
   padding: 3px 8px;
   color: var(--wr-ink);
   background: transparent;
-  border: 1px dashed var(--wr-border-strong);
+  border: 1px dashed var(--wr-field-border);
   border-radius: 999px;
   transition: border-color var(--wr-trans), box-shadow var(--wr-trans);
 }
@@ -1196,6 +1204,11 @@ button {
 }
 .sc-prose:focus {
   outline: none;
+}
+.sc-prose:focus-visible {
+  outline: 2px solid var(--wr-accent);
+  outline-offset: 6px;
+  border-radius: 2px;
 }
 .sc-prose > * + * {
   margin-top: 0.7em;
@@ -1724,6 +1737,13 @@ button {
   width: 14px;
   height: 14px;
 }
+/* On a phone the fixed toggle sat on top of the footer's "Build with Baker"
+   link. Reserve the toggle's width on the right of the footer row instead. */
+@media (max-width: 480px) {
+  .sc-footer {
+    padding-right: calc(100px + env(safe-area-inset-right));
+  }
+}
 
 /* =========================================================================
    PWA install button (corner-persistent, mirrors theme toggle position)
@@ -2142,7 +2162,7 @@ body.has-open-full-app .sc-brand {
 .sc-compact-btn.is-active {
   background: var(--wr-brown);
   border-color: var(--wr-brown);
-  color: #fff;
+  color: var(--wr-on-accent); /* dark ink in dark theme, as .sc-viewtoggle */
 }
 .sc-compact-btn svg {
   width: 14px;
@@ -2173,7 +2193,8 @@ body.has-open-full-app .sc-brand {
 }
 .sc-viewtoggle button.is-active {
   background: var(--wr-brown);
-  color: white;
+  /* White in light; dark ink on the lighter dark-theme accent (was 2.17:1). */
+  color: var(--wr-on-accent);
 }
 .sc-viewtoggle svg { width: 13px; height: 13px; }
 .sc-kanban {

@@ -18,6 +18,7 @@ let suggestListSeq = 0;
 export function createTagEditor({ onAdd, onRemove, getSuggestions } = {}) {
   const root = document.createElement('div');
   root.className = 'sc-tagrow';
+  root.setAttribute('role', 'group');
   root.setAttribute('aria-label', 'Note tags');
 
   const chips = document.createElement('div');

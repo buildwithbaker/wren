@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Page not found — Wren</title>
+<meta name="robots" content="noindex">
+<!-- Cloudflare Pages serves this file with a 404 status for any path that has
+     no matching file. Its presence also turns off Pages' SPA fallback, which
+     used to answer every unknown path with the app shell and a 200. -->
+<style>
+  :root {
+    --ink: #2E2A24;
+    --muted: #70675C;
+    --brown: #A8542C;
+    --indigo: #2B4A8B;
+    --bg: #FAF4EA;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    font-size: 16px;
+  }
+  .container { max-width: 720px; margin: 0 auto; padding: 48px 24px; }
+  h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; margin: 24px 0 8px; }
+  p { margin: 0 0 16px; }
+  .muted { color: var(--muted); }
+  a { color: var(--indigo); }
+  .home {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    background: var(--brown);
+    color: #fff;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .home:hover { background: #934523; }
+  .home:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
+</style>
+<link rel="stylesheet" href="/site-nav.css">
+</head>
+<body>
+<nav class="site-nav" aria-label="Primary">
+  <a class="site-nav-brand" href="/"><img src="/icon.svg" alt="" width="28" height="28"><span>Wren</span></a>
+  <div class="site-nav-links">
+    <a href="/download">Download</a>
+    <a href="/guide">Guide</a>
+    <a href="/privacy">Privacy</a>
+  </div>
+</nav>
+<hr class="site-nav-divider">
+<main class="container">
+  <h1>Page not found</h1>
+  <p class="muted">There is nothing at this address. The link may be mistyped or out of date.</p>
+  <p><a class="home" href="/">Open Wren</a></p>
+</main>
+</body>
+</html>

@@ -49,7 +49,13 @@
  * @property {(noteId: string, content: string, expectedRevision?: string) => Promise<{revision: string}>} writeNote
  *   If expectedRevision is provided and does not match the backend's current
  *   revision, the adapter must throw ConflictError without writing.
- * @property {(noteId: string) => Promise<void>} deleteNote
+ * @property {(noteId: string) => Promise<{trashId: string}|void>} deleteNote
+ *   Soft-deletes a top-level note and resolves to `{ trashId }` (the
+ *   `.trash/<name>` id on folder backends, the unchanged file id on Drive).
+ *   Inbox/archive ids are hard-removed and resolve to nothing.
+ * @property {(trashId: string) => Promise<{id: string, revision: string}>} [restoreNote]
+ *   Undo a soft delete using the `trashId` from deleteNote. Returns the
+ *   restored note's id (a " (N)" suffix if the name was reused meanwhile).
  * @property {(noteId: string, desiredName: string) => Promise<{id: string, revision: string, name: string}>} [renameNote]
  *   Rename the backend file to `desiredName`, resolving collisions with a
  *   " (N)" suffix. Drive-only: the noteId (opaque file ID) is unchanged. FS
