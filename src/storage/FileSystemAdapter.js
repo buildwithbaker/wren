@@ -310,8 +310,40 @@ export class FileSystemAdapter {
       // Top-level note: SOFT-delete into .trash/ (recoverable by a manual file
       // move) rather than hard-removing. The main-app delete used to call
       // removeEntry directly, so a mis-fired confirm permanently destroyed the
-      // note; now it's recoverable.
-      await this._moveToTrash(this._dirHandle, noteId);
+      // note; now it's recoverable. The trash id lets the app offer Undo.
+      return { trashId: await this._moveToTrash(this._dirHandle, noteId) };
+    });
+  }
+
+  /**
+   * Undo a soft delete: move `.trash/<name>` back to the notes-folder root
+   * (" (N)" suffix if the name has been reused meanwhile). Write-new-then-
+   * delete-old, like _moveToTrash.
+   *
+   * @param {string} trashId - the `.trash/<name>` id returned by deleteNote
+   * @returns {Promise<{id: string, revision: string}>}
+   */
+  async restoreNote(trashId) {
+    this._assertReady();
+    const prefix = `${TRASH_DIR}/`;
+    if (typeof trashId !== 'string' || !trashId.startsWith(prefix)) {
+      throw new Error(`restoreNote requires a ${prefix} id, got "${trashId}"`);
+    }
+    return this._guarded(async () => {
+      const baseName = trashId.slice(prefix.length);
+      const trashDir = await this._dirHandle.getDirectoryHandle(TRASH_DIR);
+      const srcHandle = await trashDir.getFileHandle(baseName);
+      const content = await (await srcHandle.getFile()).text();
+
+      const destName = await uniqueNoteName(baseName, (name) => this._fileExists(name));
+      const destHandle = await this._dirHandle.getFileHandle(destName, { create: true });
+      const writable = await destHandle.createWritable();
+      await writable.write(content);
+      await writable.close();
+      await trashDir.removeEntry(baseName);
+
+      const after = await destHandle.getFile();
+      return { id: destName, revision: String(after.lastModified) };
     });
   }
 

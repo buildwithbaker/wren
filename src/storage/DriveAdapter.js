@@ -718,6 +718,29 @@ export class DriveAdapter {
         body: JSON.stringify({ trashed: true }),
       }
     );
+    // Drive file ids survive trashing, so the id itself is the undo handle.
+    return { trashId: noteId };
+  }
+
+  /**
+   * Undo a soft delete: PATCH trashed=false. The file returns to its original
+   * parent with the same id.
+   *
+   * @param {string} trashId - the file id returned by deleteNote
+   * @returns {Promise<{id: string, revision: string}>}
+   */
+  async restoreNote(trashId) {
+    this._assertReady();
+    const resp = await this._driveFetch(
+      `${DRIVE_API}/files/${encodeURIComponent(trashId)}?fields=id,headRevisionId`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trashed: false }),
+      }
+    );
+    const meta = await resp.json();
+    return { id: meta.id || trashId, revision: meta.headRevisionId || '' };
   }
 
   /**

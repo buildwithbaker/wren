@@ -263,7 +263,29 @@ export class TauriFsAdapter {
     // removing, mirroring FileSystemAdapter so a mis-fired confirm doesn't
     // permanently destroy the note.
     assertBareName(noteId, 'note id');
-    await this._moveToTrash(joinPath(this._base, noteId), noteId);
+    return { trashId: await this._moveToTrash(joinPath(this._base, noteId), noteId) };
+  }
+
+  /**
+   * Undo a soft delete: move `.trash/<name>` back to the notes-folder root,
+   * with a " (N)" suffix if the name has been reused. Mirrors FileSystemAdapter.
+   *
+   * @param {string} trashId - the `.trash/<name>` id returned by deleteNote
+   * @returns {Promise<{id: string, revision: string}>}
+   */
+  async restoreNote(trashId) {
+    this._assertReady();
+    const prefix = `${TRASH_DIR}/`;
+    if (typeof trashId !== 'string' || !trashId.startsWith(prefix)) {
+      throw new Error(`restoreNote requires a ${prefix} id, got "${trashId}"`);
+    }
+    const baseName = trashId.slice(prefix.length);
+    assertBareName(baseName, 'trash note id');
+    const { stat } = await fsApi();
+    const destName = await uniqueNoteName(baseName, (name) => this._rootExists(name));
+    const destAbs = joinPath(this._base, destName);
+    await this._moveFile(joinPath(this._base, TRASH_DIR, baseName), destAbs);
+    return { id: destName, revision: revOf(await stat(destAbs)) };
   }
 
   /**

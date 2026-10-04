@@ -38,6 +38,13 @@ describe('confirmDialog keyboard behavior', () => {
     await expect(p).resolves.toBe(true);
   });
 
+  it('a danger dialog opens with Cancel focused, so a reflexive Enter cancels', async () => {
+    const p = confirmDialog({ title: 'Delete note?', message: 'x', confirmLabel: 'Delete', danger: true });
+    expect(document.activeElement.textContent).toBe('Cancel');
+    pressKey('Enter');
+    await expect(p).resolves.toBe(false);
+  });
+
   it('Escape always cancels', async () => {
     const p = confirmDialog({ title: 'Delete note?', message: 'x' });
     pressKey('Escape');
