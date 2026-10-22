@@ -103,6 +103,56 @@ export function geometryEquals(a, b) {
 }
 
 /**
+ * Convert a Tauri window's PHYSICAL position/size into the LOGICAL geometry we
+ * store and hand back to `new WebviewWindow({ x, y, width, height })`. Pure.
+ *
+ * Which pair round-trips (@tauri-apps/api 2.11 docs + WebviewWindowOptions):
+ *   - x / y are "in logical pixels" and place the window's OUTER top-left, the
+ *     same point `outerPosition()` reports (relative to the desktop, physical).
+ *     `innerPosition()` is the client-area origin and would drift by the frame
+ *     / title-bar offset on every save -> restore cycle.
+ *   - width / height are the initial INNER (client) size in logical pixels, so
+ *     the matching source is `innerSize()`. For a frameless sticky outer and
+ *     inner sizes coincide; reading inner keeps the round trip exact either way.
+ * `window.screenX/Y/outerWidth/outerHeight` are NOT used on Tauri: they come
+ * from the embedded webview, not from the native window Tauri positions.
+ *
+ * Logical = physical / scaleFactor. A missing / non-positive scaleFactor is
+ * treated as 1.
+ *
+ * @param {{ position:{x:number,y:number}, size:{width:number,height:number}, scaleFactor:number }} p
+ * @returns {{x:number,y:number,w:number,h:number}|null} null when the result is invalid
+ */
+export function physicalToLogicalGeometry({ position, size, scaleFactor }) {
+  const f = Number.isFinite(scaleFactor) && scaleFactor > 0 ? scaleFactor : 1;
+  if (!position || !size) return null;
+  const g = {
+    x: position.x / f,
+    y: position.y / f,
+    w: size.width / f,
+    h: size.height / f,
+  };
+  return isValidGeometry(g) ? g : null;
+}
+
+/**
+ * Read the current geometry of a Tauri window-like object (anything with
+ * outerPosition / innerSize / scaleFactor, e.g. getCurrentWindow()) as stored
+ * logical geometry. Takes the window as an argument so it needs no Tauri import
+ * and is unit-testable with a mock. Resolves null when the geometry is invalid.
+ *
+ * @param {{ outerPosition():Promise<{x:number,y:number}>, innerSize():Promise<{width:number,height:number}>, scaleFactor():Promise<number> }} win
+ */
+export async function readTauriGeometry(win) {
+  const [position, size, scaleFactor] = await Promise.all([
+    win.outerPosition(),
+    win.innerSize(),
+    win.scaleFactor(),
+  ]);
+  return physicalToLogicalGeometry({ position, size, scaleFactor });
+}
+
+/**
  * Read a sticky's remembered geometry from localStorage, or null. Never throws
  * (disabled/quota'd storage degrades to "no memory").
  */
