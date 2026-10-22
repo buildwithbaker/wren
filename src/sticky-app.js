@@ -39,7 +39,7 @@ import {
 import { createNoteEditor } from './ui/note-editor.js';
 import { createBroadcast } from './sync/broadcast.js';
 import { writeConflictCopy } from './sync/conflictDetection.js';
-import { loadGeometry, saveGeometry, geometryEquals } from './sticky/geometry.js';
+import { loadGeometry, saveGeometry, geometryEquals, readTauriGeometry } from './sticky/geometry.js';
 import { addToRegistry, removeFromRegistry } from './sticky/registry.js';
 import { parseStickyParams } from './sticky/opener.js';
 import { buildStickyTitleBar } from './sticky/titlebar.js';
@@ -82,6 +82,11 @@ export function createStickyApp({ root }) {
   let broadcast = null;
   let geomTimer = null;
   let lastGeom = null;
+  // Latest geometry read from the native Tauri window (logical px). Refreshed by
+  // the poll and on move/resize events so pagehide can persist synchronously.
+  let nativeGeom = null;
+  let nativeGeomBusy = false;
+  let nativeGeomDirty = false;
   let registered = false;
 
   boot();
@@ -290,6 +295,7 @@ export function createStickyApp({ root }) {
     registered = true;
     lastGeom = loadGeometry(note.wrenId, storageId);
     startGeomPoll();
+    listenForNativeGeometry();
     window.addEventListener('pagehide', onPageHide);
     listenForQuitFlush();
   }
@@ -480,19 +486,65 @@ export function createStickyApp({ root }) {
 
   /* ---- Geometry + registry --------------------------------------------- */
 
+  // Browser popup: the window's own screen coordinates round-trip through
+  // window.open(left/top/width/height). Tauri: those webview globals do NOT match
+  // the native window position WebviewWindow({x,y}) restores to (a reopened
+  // sticky drifted ~a title bar), so read the native window instead (cached in
+  // nativeGeom; see refreshNativeGeometry).
   function currentGeometry() {
+    if (isTauri()) return nativeGeom;
     return { x: window.screenX, y: window.screenY, w: window.outerWidth, h: window.outerHeight };
+  }
+
+  // Read the native window's logical geometry into nativeGeom. Coalesces bursts
+  // (a drag fires many move events): one read in flight, one queued re-read.
+  async function refreshNativeGeometry() {
+    if (!isTauri()) return;
+    if (nativeGeomBusy) {
+      nativeGeomDirty = true;
+      return;
+    }
+    nativeGeomBusy = true;
+    try {
+      do {
+        nativeGeomDirty = false;
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        const g = await readTauriGeometry(getCurrentWindow());
+        if (g) nativeGeom = g;
+      } while (nativeGeomDirty);
+    } catch (err) {
+      console.warn('Sticky geometry read failed', err);
+    } finally {
+      nativeGeomBusy = false;
+    }
+    persistGeometry();
+  }
+
+  // Desktop only: keep nativeGeom fresh the moment the window moves or resizes,
+  // so closing right after a drag still remembers where it ended up.
+  async function listenForNativeGeometry() {
+    if (!isTauri()) return;
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      const win = getCurrentWindow();
+      await win.onMoved(refreshNativeGeometry);
+      await win.onResized(refreshNativeGeometry);
+    } catch (err) {
+      console.warn('Sticky geometry listeners failed', err);
+    }
+    refreshNativeGeometry();
   }
 
   function persistGeometry() {
     const geom = currentGeometry();
+    if (!geom) return;
     if (lastGeom && geometryEquals(lastGeom, geom)) return;
     saveGeometry(wrenId, storageId, geom);
     lastGeom = geom;
   }
 
   function startGeomPoll() {
-    geomTimer = setInterval(persistGeometry, GEOM_POLL_MS);
+    geomTimer = setInterval(isTauri() ? refreshNativeGeometry : persistGeometry, GEOM_POLL_MS);
   }
 
   function onPageHide() {

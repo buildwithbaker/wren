@@ -9,6 +9,8 @@ import {
   parseGeometry,
   serializeGeometry,
   geometryEquals,
+  physicalToLogicalGeometry,
+  readTauriGeometry,
 } from '../src/sticky/geometry.js';
 import { parseRegistry } from '../src/sticky/registry.js';
 import {
@@ -133,5 +135,129 @@ describe('opener — pure URL / name / feature builders', () => {
     expect(buildStickyFeatures({ x: 10.6, y: 20.2, w: 320, h: 360 })).toBe(
       'popup=yes,width=320,height=360,left=11,top=20'
     );
+  });
+});
+
+// --- Tauri native-window geometry (sticky reopen drift, 2026-10-22) ---------
+//
+// A mock native window: built from the LOGICAL options that WebviewWindow takes
+// (x, y, width, height), it stores PHYSICAL pixels (logical * scale, rounded
+// like a real window manager does) and reports them the way Tauri's
+// outerPosition / innerSize / scaleFactor do.
+function mockNativeWindow({ x, y, width, height }, scale) {
+  const px = { x: Math.round(x * scale), y: Math.round(y * scale) };
+  const sz = { width: Math.round(width * scale), height: Math.round(height * scale) };
+  return {
+    outerPosition: async () => px,
+    innerSize: async () => sz,
+    scaleFactor: async () => scale,
+  };
+}
+
+describe('physicalToLogicalGeometry', () => {
+  it('is the identity at scale 1', () => {
+    expect(
+      physicalToLogicalGeometry({
+        position: { x: 120, y: 80 },
+        size: { width: 432, height: 486 },
+        scaleFactor: 1,
+      })
+    ).toEqual({ x: 120, y: 80, w: 432, h: 486 });
+  });
+
+  it.each([1.25, 1.5, 2.0])('divides physical pixels by the scale factor (%s)', (scale) => {
+    const g = physicalToLogicalGeometry({
+      position: { x: 300 * scale, y: 200 * scale },
+      size: { width: 432 * scale, height: 486 * scale },
+      scaleFactor: scale,
+    });
+    expect(g.x).toBeCloseTo(300, 6);
+    expect(g.y).toBeCloseTo(200, 6);
+    expect(g.w).toBeCloseTo(432, 6);
+    expect(g.h).toBeCloseTo(486, 6);
+  });
+
+  it('keeps negative positions (monitor left of / above the primary)', () => {
+    const g = physicalToLogicalGeometry({
+      position: { x: -1920, y: -40 },
+      size: { width: 400, height: 500 },
+      scaleFactor: 1,
+    });
+    expect(g).toEqual({ x: -1920, y: -40, w: 400, h: 500 });
+  });
+
+  it('treats a missing or non-positive scale factor as 1', () => {
+    for (const scaleFactor of [undefined, 0, -2, NaN]) {
+      expect(
+        physicalToLogicalGeometry({
+          position: { x: 10, y: 20 },
+          size: { width: 300, height: 400 },
+          scaleFactor,
+        })
+      ).toEqual({ x: 10, y: 20, w: 300, h: 400 });
+    }
+  });
+
+  it('returns null for an unusable size instead of a garbage geometry', () => {
+    expect(
+      physicalToLogicalGeometry({ position: { x: 0, y: 0 }, size: { width: 0, height: 0 }, scaleFactor: 1 })
+    ).toBeNull();
+    expect(physicalToLogicalGeometry({ position: null, size: null, scaleFactor: 1 })).toBeNull();
+  });
+});
+
+describe('sticky save -> restore round trip (Tauri)', () => {
+  // Save the window's state exactly as the sticky does (read -> serialize ->
+  // localStorage string -> parse), then restore through WebviewWindow options.
+  async function cycle(win) {
+    const logical = await readTauriGeometry(win);
+    return parseGeometry(serializeGeometry(logical));
+  }
+
+  it.each([1.0, 1.25, 1.5, 2.0])('reopens at the same x/y/w/h at scale %s', async (scale) => {
+    const start = { x: 340, y: 215, width: 432, height: 486 };
+    let win = mockNativeWindow(start, scale);
+    // Ten save/restore cycles: nothing may creep.
+    for (let i = 0; i < 10; i++) {
+      const saved = await cycle(win);
+      expect(saved).toEqual({ x: 340, y: 215, w: 432, h: 486 });
+      win = mockNativeWindow({ x: saved.x, y: saved.y, width: saved.w, height: saved.h }, scale);
+    }
+  });
+
+  it('returns null from readTauriGeometry when the window reports nothing usable', async () => {
+    const win = {
+      outerPosition: async () => ({ x: 0, y: 0 }),
+      innerSize: async () => ({ width: 0, height: 0 }),
+      scaleFactor: async () => 1,
+    };
+    expect(await readTauriGeometry(win)).toBeNull();
+  });
+
+  // Model of the OLD behaviour: the webview's window.screenY sits one chrome
+  // offset below the native window's outer origin, but the stored value was fed
+  // straight back in as the outer position. Every cycle therefore drifted by the
+  // offset. This pins the model, NOT the real WebView2 numbers (still to be
+  // confirmed on a desktop smoke test).
+  it('models why saving window.screenX/Y drifted, and that outerPosition does not', async () => {
+    const CHROME = 31; // ~ a title bar's height in logical px
+    let outerY = 200;
+    for (let i = 0; i < 3; i++) {
+      const screenY = outerY + CHROME; // what the webview reported
+      outerY = screenY; // restored as the OUTER position
+    }
+    expect(outerY).toBe(200 + 3 * CHROME); // drifted
+
+    let win = mockNativeWindow({ x: 100, y: 200, width: 400, height: 500 }, 1.5);
+    for (let i = 0; i < 3; i++) {
+      const saved = await cycle(win);
+      win = mockNativeWindow({ x: saved.x, y: saved.y, width: saved.w, height: saved.h }, 1.5);
+    }
+    expect((await readTauriGeometry(win)).y).toBe(200); // stable
+  });
+
+  it('still loads geometry saved by earlier versions (same stored shape)', () => {
+    const legacy = '{"x":512,"y":144,"w":432,"h":486}';
+    expect(parseGeometry(legacy)).toEqual({ x: 512, y: 144, w: 432, h: 486 });
   });
 });
