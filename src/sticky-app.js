@@ -103,11 +103,6 @@ export function createStickyApp({ root }) {
       return;
     }
 
-    if (backend === null) {
-      renderMessage(root, 'Open Wren and choose where your notes live first.', { openWren: true });
-      return;
-    }
-
     if (backend === ADAPTER_TYPES.FS) {
       let fs;
       try {
