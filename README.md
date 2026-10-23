@@ -17,7 +17,7 @@ Ships in three forms that read/write the same folder:
 > stays in the repo and stays in the build - parking it is a distribution
 > decision, not a deprecation.
 
-Built with [Vite](https://vitejs.dev/) and [Tiptap v2](https://tiptap.dev/) (bundled locally — MV3 forbids CDN/inline scripts).
+Built with [Vite](https://vitejs.dev/) and [Tiptap v3](https://tiptap.dev/) (bundled locally — MV3 forbids CDN/inline scripts).
 
 > **Internals:** see [docs/internal/architecture.md](docs/internal/architecture.md) for the full architecture reference — file map, boot flow, storage layer, extension points, and gotchas.
 
@@ -33,7 +33,7 @@ Built with [Vite](https://vitejs.dev/) and [Tiptap v2](https://tiptap.dev/) (bun
 
 ## Setup
 
-Requires Node 20 (see `.nvmrc`).
+Requires Node 22 (see `.nvmrc`).
 
 ```bash
 npm install
