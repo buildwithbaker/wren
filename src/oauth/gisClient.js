@@ -13,10 +13,11 @@
 // Decision provenance: KB Module 05, P1.1 (Token Model), P1.2 (memory-only),
 // P1.7 (CSP includes accounts.google.com), P2c.1 (popup-blocker backstop).
 
-// OAuth Client ID for Wren. Web application, Authorized JavaScript origins:
-//   http://localhost:5173, http://localhost, https://wren.buildwithbaker.io
-//   (primary production origin), https://wren-ckn.pages.dev (the underlying
-//   Cloudflare Pages project domain — still registered and resolving).
+// OAuth Client ID for Wren. Web application. Authorized JavaScript origins
+// (verified in the Google Cloud console 2026-10-23): http://localhost:5173,
+//   http://localhost, https://wren.buildwithbaker.io (primary production
+//   origin), https://wren-9p5.pages.dev (the production Pages project's own
+//   domain). Authorized redirect URI: https://wren.buildwithbaker.io
 // Created in Google Cloud project "Wren" on 2026-05-26.
 const DRIVE_CLIENT_ID =
   '1032576056803-k8kd3hb2lnl4u6qs6416q9rfdhhce9kk.apps.googleusercontent.com';

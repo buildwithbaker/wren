@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.2.7",
   "type": "module",
-  "description": "Wren - local-first sticky notes PWA + Chrome extension. Notes stored as .md files on disk.",
+  "description": "Wren - local-first sticky notes as a PWA and a Windows desktop app (a Chrome extension build is kept but not published). Notes stored as .md files on disk.",
   "author": "Adam Baker / Build with Baker",
   "license": "MIT",
   "engines": {

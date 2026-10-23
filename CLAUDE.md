@@ -80,15 +80,16 @@ SignPath application answers, and the go-live checklist live in
   control that sub-path, and you can't rely on a Service-Worker-Allowed header
   to widen its scope.
 - The OAuth Client ID in src/oauth/gisClient.js is a PUBLIC web client ID and is
-  safe in version control. Its Authorized JavaScript origins are registered in
-  Google Cloud (project "Wren"): http://localhost:5173, http://localhost,
-  https://wren.buildwithbaker.io (primary production origin), and
-  https://wren-ckn.pages.dev - which is the OLD Pages project's domain. The
-  project moved to "wren-9p5" on 2026-08-05; https://wren-9p5.pages.dev is NOT
-  yet registered, so Drive sign-in fails on preview URLs until it is. Production
-  is unaffected, because the custom domain did not change. Do not add a new
-  origin or change the flow without updating that registration, or OAuth login
-  breaks in that environment.
+  safe in version control. Verified in the Google Cloud console on 2026-10-23
+  (project "Wren", OAuth client "Wren Web Client"):
+  - Authorized JavaScript origins, exactly four: http://localhost:5173,
+    http://localhost, https://wren.buildwithbaker.io (primary production
+    origin), https://wren-9p5.pages.dev (the production Pages project's own
+    domain).
+  - Authorized redirect URIs, exactly one: https://wren.buildwithbaker.io
+  - The retired https://wren-ckn.pages.dev is in neither list.
+  Do not add a new origin or change the flow without updating that
+  registration, or OAuth login breaks in that environment.
   There is no client SECRET in this repo (GIS Token Model is public-client only)
   - if one ever appears, stop and rotate it.
 - src/oauth/gisClient.js DRIVE_SCOPE is drive.file (non-sensitive). Widening the
