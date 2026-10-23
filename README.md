@@ -60,13 +60,15 @@ be registered production origins. OAuth fails from any origin not on that list.
 ## Build
 
 ```bash
-npm run build        # generates icons, then builds both targets
+npm run build        # checks the version files agree, generates icons, then builds the web bundle and the extension
 ```
 
 Outputs:
 
-- `dist/` — the PWA (deploy as a static site)
-- `dist-extension/` — load-unpacked in Chrome, or zip for the Chrome Web Store
+- `dist/` — the PWA (deploy as a static site). The desktop app wraps this same bundle.
+- `dist-extension/` — the parked Chrome extension: load it unpacked in Chrome (it is not published to the Chrome Web Store)
+
+The Windows installer is not made by `npm run build`; the Tauri build (`npm run tauri build`, or the Release workflow on a `v*` tag) runs it and then packages `dist/`.
 
 ## Notes format
 

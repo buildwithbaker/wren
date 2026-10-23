@@ -3,10 +3,12 @@
 // extension popup (single-panel; the <=640px layout in style.css kicks in
 // automatically at the popup's 400px width). Entry points pass a mount root.
 //
-// Phase 2b.1: CRUD goes through a StorageAdapter (FileSystem or Drive) rather
-// than directly to notes-store.js. The adapter API speaks raw .md text;
-// app-controller bridges that to the parsed-note shape the UI consumes.
-// Multi-device sync (pull-on-resume, conflict detection) is Phase 2b.2.
+// CRUD goes through a StorageAdapter (FileSystem, native Tauri folder, or Drive)
+// rather than directly to notes-store.js. The adapter API speaks raw .md text;
+// app-controller bridges that to the parsed-note shape the UI consumes. Local
+// storage is the default; Drive is experimental. Writes are conditional (a
+// concurrent change becomes a conflict copy), but there is no Drive sync runner
+// or pull-on-resume from other devices yet (see docs/internal/STORAGE.md).
 
 import {
   isSupported,
@@ -346,7 +348,6 @@ export function createApp({ root, enableServiceWorker = false }) {
     // Resolve the configured backend. Unset installs default to local ("fs");
     // an explicit stored "drive" is honored (existing Drive users keep Drive).
     const backend = await resolveBackend();
-    if (backend === null) return renderStorageChoice();
 
     if (backend === ADAPTER_TYPES.FS) {
       // Pick the fs-family adapter: native Tauri folder for a fresh desktop

@@ -1,5 +1,7 @@
 # Wren Storage Layer (Phase 1)
 
+> **Historical phase log.** This file records how the storage layer was built, phase by phase, and is **not** kept current. The current state lives in [`architecture.md`](architecture.md) (sections 4 and 6). In particular: local storage is the default and Drive is experimental, and `NoBackendConfiguredError`, mentioned below, was removed in #120.
+
 Built 2026-05-27 as Phase 1 of cross-device Drive sync. Phase 1 is the
 infrastructure pass: the storage layer is importable and testable but **not
 wired into the UI** yet. Phase 2b will swap app-controller.js to import
