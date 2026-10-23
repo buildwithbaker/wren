@@ -9,6 +9,7 @@ import { formatModified } from './format.js';
 import { noteMatchesQuery } from './note-search.js';
 import { isAiNote, buildAiBadge } from './ai-badge.js';
 import { buildDueChip } from './due-chip.js';
+import { createCardReconciler } from './card-reconciler.js';
 import { SORT_OPTIONS, loadSortBy, saveSortBy, sortNotes } from './note-sort.js';
 
 const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
@@ -131,19 +132,24 @@ export function createNotesList({
     return noteMatchesQuery(note, query);
   }
 
+  // Keyed reuse of card elements (see card-reconciler.js): a save re-renders
+  // only the card that changed instead of rebuilding every card.
+  const cards = createCardReconciler(scroll, { build: (note) => renderCard(note) });
+
   function render() {
     renderInbox();
     renderFilter();
-    scroll.replaceChildren();
     // Sort applied AFTER tag-filter + search so the visible set is ordered;
     // both List and Compact use sortNotes() for a consistent order.
     const filtered = sortNotes(notes.filter(matches), sortBy);
 
     if (notes.length === 0) {
+      cards.clear();
       scroll.appendChild(emptyState('No notes yet', 'Create your first note to get started.'));
       return;
     }
     if (filtered.length === 0) {
+      cards.clear();
       if (filterTags.length > 0) {
         scroll.appendChild(filterEmptyState());
       } else {
@@ -152,9 +158,7 @@ export function createNotesList({
       return;
     }
 
-    for (const note of filtered) {
-      scroll.appendChild(renderCard(note));
-    }
+    cards.sync(filtered, (el, note) => el.classList.toggle('is-active', note.id === activeId));
   }
 
   // ---- Inbox (_inbox/) — AI write-back staging (phase 4) --------------------
