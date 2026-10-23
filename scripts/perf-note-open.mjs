@@ -57,9 +57,24 @@ function instrument(path, text) {
     );
     t = t.replace(
       /await flush\(\);\s+teardownEditor\(\);/,
-      `{const t=performance.now();await flush();${PUSH}(['flush',performance.now()-t]);}\n    teardownEditor();`
+      `{const t=performance.now();await flush();${PUSH}(['flush',performance.now()-t]);const p=performance.now();void document.body.offsetHeight;${PUSH}(['  layout probe after flush (offsetHeight)',performance.now()-p]);}\n    teardownEditor();`
     );
     return t;
+  }
+  // render() of the three list surfaces + Kanban's refresh(): one timed wrapper each.
+  if (/\/src\/ui\/(notes-list|compact-view)\.js/.test(path)) {
+    const label = /compact-view/.test(path) ? 'compact render' : 'list render';
+    return text.replace(
+      /function render\(\) \{/,
+      `function render(){const t=performance.now();try{return __renderImpl()}finally{${PUSH}(['${label}',performance.now()-t])}}
+function __renderImpl() {`
+    );
+  }
+  if (/\/src\/ui\/kanban-view\.js/.test(path)) {
+    return text.replace(
+      'refresh: () => render({ rebuildToolbar: !addingTag }),',
+      `refresh: () => { const t=performance.now(); try { return render({ rebuildToolbar: !addingTag }); } finally { ${PUSH}(['kanban refresh',performance.now()-t]); } },`
+    );
   }
   if (/\/src\/app-controller\.js/.test(path)) {
     const at = text.indexOf('async function openNote(noteId');
@@ -196,6 +211,15 @@ function report(label, runs) {
 const browser = await chromium.launch({ channel, headless: true });
 const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
 await context.addInitScript(() => {
+  window.__lt = [];
+  try {
+    new PerformanceObserver((l) => l.getEntries().forEach((e) => window.__lt.push(e.duration))).observe({
+      type: 'longtask',
+      buffered: true,
+    });
+  } catch {
+    /* Long Tasks API unavailable */
+  }
   window.showDirectoryPicker = async () => {
     const root = await navigator.storage.getDirectory();
     return root.getDirectoryHandle('wren-notes', { create: true });
@@ -229,7 +253,7 @@ const ids = [];
 // Deterministic pseudo-random order over the small notes.
 let seed = 12345;
 const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
-while (ids.length < SWITCHES + 3) {
+while (ids.length < Math.max(SWITCHES, 20) + 3) {
   const n = Math.floor(rnd() * NOTE_COUNT);
   if (!ids.length || ids[ids.length - 1] !== n) ids.push(n);
 }
@@ -272,6 +296,66 @@ for (let k = 0; k < 15; k++) {
   if (k >= 2) dirty.push(r);
 }
 report('switch away from a note with a pending edit (flush writes the file)', dirty);
+
+// --- post-save list update ---------------------------------------------------
+// Edit one note and let the debounced autosave fire (no switch). Reports the
+// list re-render the save triggers and any long tasks (>50 ms) in the window.
+const stageRows = (label, samples) => {
+  const names = new Set();
+  samples.forEach((r) => Object.keys(r.stages).forEach((k) => names.add(k)));
+  console.log(`
+## ${label}  (n=${samples.length})`);
+  console.log('stage'.padEnd(40) + '    p50 ms    p95 ms');
+  for (const n of names) {
+    const vals = samples.map((r) => r.stages[n]).filter((v) => v !== undefined);
+    if (vals.length) console.log(n.padEnd(40) + f(pct(vals, 50)) + '   ' + f(pct(vals, 95)));
+  }
+  const lts = samples.flatMap((r) => r.lt || []);
+  if (samples.some((r) => r.lt)) console.log(`long tasks >50 ms: count ${lts.length}, longest ${lts.length ? Math.max(...lts).toFixed(0) : 0} ms`);
+};
+const saves = [];
+for (let k = 0; k < SWITCHES; k++) {
+  await page.evaluate(open, spec(ids[k]));
+  await page.evaluate(() => { window.__perf = []; window.__lt = []; });
+  await page.click('.sc-editor-body .ProseMirror', { timeout: 5000 });
+  await page.keyboard.type('x');
+  await page.waitForTimeout(900); // 500 ms debounce + save + re-render
+  saves.push(await page.evaluate(() => ({ stages: Object.fromEntries(window.__perf), lt: [...window.__lt] })));
+}
+stageRows('one post-save list update (edit, wait for autosave)', saves);
+
+// --- typing for 10 s with autosave firing ----------------------------------
+await page.evaluate(open, spec(ids[0]));
+await page.click('.sc-editor-body .ProseMirror', { timeout: 5000 });
+await page.evaluate(() => { window.__perf = []; window.__lt = []; });
+const typingStart = Date.now();
+let bursts = 0;
+while (Date.now() - typingStart < 10000) {
+  await page.keyboard.type('word ', { delay: 60 }); // ~300 ms of typing
+  await page.waitForTimeout(650); // pause > the 500 ms debounce, so a save fires
+  bursts++;
+}
+await page.waitForTimeout(800);
+const typing = await page.evaluate(() => ({ lt: [...window.__lt] }));
+console.log(
+  `
+## typing for 10 s (${bursts} type-pause bursts, one autosave each)
+long tasks >50 ms: count ${typing.lt.length}, longest ${typing.lt.length ? Math.max(...typing.lt).toFixed(0) : 0} ms`
+);
+
+// --- Kanban refresh + compact render at 500 notes --------------------------
+const views = [];
+for (let k = 0; k < 10; k++) {
+  for (const sel of ['.sc-viewtoggle button[data-mode="kanban"]', '.sc-compact-btn']) {
+    await page.evaluate(() => { window.__perf = []; });
+    await page.locator(sel).first().evaluate((b) => b.click());
+    await page.waitForTimeout(400);
+    views.push({ stages: await page.evaluate(() => Object.fromEntries(window.__perf)) });
+    await page.locator('.sc-viewtoggle button[data-mode="list"]').first().evaluate((b) => b.click());
+    await page.waitForTimeout(200);
+  }
+}
+stageRows('Kanban / Compact view switch (each switch re-renders that surface)', views);
 
 if (errors.length) console.log('\nconsole/page errors:\n' + [...new Set(errors)].slice(0, 10).join('\n'));
 await browser.close();
