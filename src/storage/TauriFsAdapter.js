@@ -130,16 +130,6 @@ function revOf(info) {
 }
 
 /**
- * Native-filesystem-backed adapter (Tauri desktop only).
- *
- * noteId === filename (top-level) or `_inbox/<filename>` / `_archive/<filename>`
- * for subfolder-scoped ids. Revision is the file's mtime in milliseconds,
- * serialized to a string for cross-backend symmetry with Drive's
- * headRevisionId.
- *
- * @implements {import('./StorageAdapter.js').StorageAdapter}
- */
-/**
  * True when <Documents>/Wren Notes already exists. Read-only: unlike
  * TauriFsAdapter.initialize() it never creates the folder, so it can gate an
  * offer to switch to the native folder without side effects.
@@ -150,6 +140,16 @@ export async function nativeNotesFolderExists() {
   return exists(joinPath(await documentDir(), WREN_NOTES_FOLDER));
 }
 
+/**
+ * Native-filesystem-backed adapter (Tauri desktop only).
+ *
+ * noteId === filename (top-level) or `_inbox/<filename>` / `_archive/<filename>`
+ * for subfolder-scoped ids. Revision is the file's mtime in milliseconds,
+ * serialized to a string for cross-backend symmetry with Drive's
+ * headRevisionId.
+ *
+ * @implements {import('./StorageAdapter.js').StorageAdapter}
+ */
 export class TauriFsAdapter {
   constructor() {
     /** Absolute path to the notes folder, set in initialize(). */
