@@ -22,6 +22,7 @@ import {
   ConflictError,
   resolveBackend,
   chooseFsAdapter,
+  probeFsAdapter,
 } from './storage/index.js';
 import {
   initTokenClient,
@@ -119,6 +120,20 @@ export function createStickyApp({ root }) {
         return;
       }
       if (await fs.isReady()) {
+        // Dead-handle check (permission 'granted' but folder gone) - see boot()
+        // in app-controller.js. A sticky can't host the reconnect screen, so
+        // show the real error and point at the main app.
+        try {
+          await probeFsAdapter(fs);
+        } catch (err) {
+          console.error('Sticky boot: saved notes folder is not reachable', err);
+          renderMessage(
+            root,
+            `Can’t open your notes folder (${err?.name || 'Error'}: ${err?.message || err}). Open Wren to fix it.`,
+            { openWren: true }
+          );
+          return;
+        }
         adapter = fs;
         return openNoteFlow();
       }

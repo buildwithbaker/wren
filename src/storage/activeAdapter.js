@@ -20,10 +20,10 @@
 
 import { ADAPTER_TYPES } from './StorageAdapter.js';
 import { FileSystemAdapter } from './FileSystemAdapter.js';
-import { TauriFsAdapter } from './TauriFsAdapter.js';
+import { TauriFsAdapter, nativeNotesFolderExists } from './TauriFsAdapter.js';
 import { DriveAdapter } from './DriveAdapter.js';
 import { getStoredBackend, setStoredBackend } from './backendPreference.js';
-import { getStoredDirHandle } from '../notes-store.js';
+import { getStoredDirHandle, clearStoredDirHandle } from '../notes-store.js';
 import { isTauri } from '../platform.js';
 
 /**
@@ -91,6 +91,45 @@ export async function chooseFsAdapter() {
     if (handle === null) return new TauriFsAdapter();
   }
   return new FileSystemAdapter();
+}
+
+/**
+ * Confirm a freshly initialized fs adapter can actually reach its folder.
+ * isReady() passes for a dead FS-Access handle (permission 'granted', folder
+ * gone), so every boot path that goes on to render the app calls this first.
+ * Adapters without a probe() (native, Drive) have nothing to prove. Rejects
+ * with the underlying error so the UI can show it.
+ */
+export async function probeFsAdapter(fs) {
+  if (typeof fs?.probe === 'function') await fs.probe();
+}
+
+/**
+ * Tauri only: does <Documents>/Wren Notes exist? Gates the reconnect screen's
+ * "Use Documents\Wren Notes" button. Never throws.
+ */
+export async function nativeFolderAvailable() {
+  if (!isTauri()) return false;
+  try {
+    return await nativeNotesFolderExists();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The explicit-click path off a dead FS-Access handle: boot the native adapter
+ * first (so a failure leaves the saved handle untouched), THEN clear the dead
+ * notesDir key so later boots stop choosing FileSystemAdapter. Only ever call
+ * this from a user click - never switch automatically.
+ *
+ * @returns {Promise<TauriFsAdapter>} the initialized native adapter
+ */
+export async function switchToNativeFolder() {
+  const native = new TauriFsAdapter();
+  await native.initialize();
+  await clearStoredDirHandle();
+  return native;
 }
 
 /**

@@ -15,4 +15,11 @@ export {
   setStoredBackend,
   clearStoredBackend,
 } from './backendPreference.js';
-export { resolveBackend, getActiveAdapter, chooseFsAdapter } from './activeAdapter.js';
+export {
+  resolveBackend,
+  getActiveAdapter,
+  chooseFsAdapter,
+  probeFsAdapter,
+  nativeFolderAvailable,
+  switchToNativeFolder,
+} from './activeAdapter.js';

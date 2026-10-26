@@ -29,6 +29,9 @@ import {
   DriveAdapter,
   resolveBackend,
   chooseFsAdapter,
+  probeFsAdapter,
+  nativeFolderAvailable,
+  switchToNativeFolder,
   setStoredBackend,
   clearStoredBackend,
 } from './storage/index.js';
@@ -370,6 +373,15 @@ export function createApp({ root, enableServiceWorker = false }) {
         return renderStorageChoice();
       }
       if (await fs.isReady()) {
+        // isReady() only checks permission. A stored handle whose folder is
+        // gone still reads 'granted' but fails every operation, so prove the
+        // folder is reachable before rendering the app over it.
+        try {
+          await probeFsAdapter(fs);
+        } catch (err) {
+          console.error('Saved notes folder is not reachable at boot', err);
+          return renderFsReconnect(fs, { probeError: err });
+        }
         adapter = fs;
         await renderApp();
         return;
@@ -603,18 +615,32 @@ export function createApp({ root, enableServiceWorker = false }) {
     return btn;
   }
 
-  function renderFsReconnect(fs, { readFailed = false } = {}) {
-    currentScreen = () => renderFsReconnect(fs, { readFailed });
+  function renderFsReconnect(fs, { readFailed = false, probeError = null } = {}) {
+    currentScreen = () => renderFsReconnect(fs, { readFailed, probeError });
     const card = document.createElement('div');
     card.className = 'sc-screen-card';
-    const heading = readFailed ? 'Couldn’t read your notes folder' : 'Reconnect your notes folder';
-    const copy = readFailed
-      ? 'Wren couldn’t read your saved folder just now — a temporary storage hiccup, not lost notes. Try again, or reconnect below. Don’t pick a new folder unless you actually want to switch.'
-      : 'Your browser needs you to confirm access to your notes folder again.';
+    const heading = probeError
+      ? 'Can’t open your notes folder'
+      : readFailed
+        ? 'Couldn’t read your notes folder'
+        : 'Reconnect your notes folder';
+    const copy = probeError
+      ? 'Wren has a saved notes folder, but it can’t be opened right now. Your notes are not deleted. The folder may have been moved, renamed or deleted since you chose it.'
+      : readFailed
+        ? 'Wren couldn’t read your saved folder just now — a temporary storage hiccup, not lost notes. Try again, or reconnect below. Don’t pick a new folder unless you actually want to switch.'
+        : 'Your browser needs you to confirm access to your notes folder again.';
     card.innerHTML = `
       <img src="./icon.svg" alt="Wren" />
       <h1>${heading}</h1>
       <p>${copy}</p>`;
+    if (probeError) {
+      // The real error, via textContent (error text is not trusted markup).
+      const detail = document.createElement('p');
+      detail.className = 'sc-hint';
+      detail.setAttribute('data-fs-probe-error', '');
+      detail.textContent = `${probeError?.name || 'Error'}: ${probeError?.message || String(probeError)}`;
+      card.appendChild(detail);
+    }
 
     const installed = isInstalled();
     const installCta = installed ? null : buildReconnectInstallCta();
@@ -640,9 +666,9 @@ export function createApp({ root, enableServiceWorker = false }) {
     // permission re-grant; reuse the primary button for it.
     const grant = document.createElement('button');
     grant.className = installCta ? 'sc-btn sc-btn--ghost' : 'sc-btn sc-btn--primary';
-    grant.textContent = readFailed ? 'Try again' : 'Grant access';
+    grant.textContent = readFailed || probeError ? 'Try again' : 'Grant access';
     grant.addEventListener('click', async () => {
-      if (readFailed) {
+      if (readFailed || probeError) {
         await boot();
         return;
       }
@@ -674,6 +700,30 @@ export function createApp({ root, enableServiceWorker = false }) {
     if (installCta) card.append(installCta, grant, choose);
     else card.append(grant, choose);
     screenShell(card);
+
+    // Desktop only, and only when the native folder is really there: offer an
+    // explicit switch off the dead handle. Never automatic - the click is what
+    // clears the saved handle and boots the native adapter.
+    if (probeError) {
+      nativeFolderAvailable().then((available) => {
+        if (!available || !card.isConnected) return;
+        const useNative = document.createElement('button');
+        useNative.className = 'sc-btn sc-btn--primary';
+        useNative.style.marginLeft = '8px';
+        useNative.setAttribute('data-use-native-folder', '');
+        useNative.textContent = 'Use Documents\\Wren Notes';
+        useNative.addEventListener('click', async () => {
+          try {
+            adapter = await switchToNativeFolder();
+            await renderApp();
+          } catch (err) {
+            console.error('Switching to the Documents folder failed', err);
+            showErrorToast('Could not open the Documents\\Wren Notes folder.');
+          }
+        });
+        card.appendChild(useNative);
+      });
+    }
   }
 
   function renderDriveSignIn({ reason = 'fresh', error } = {}) {
