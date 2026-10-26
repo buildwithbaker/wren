@@ -53,6 +53,28 @@ function stampServiceWorkerVersion(version) {
   };
 }
 
+// Desktop (Tauri) only: the webview applies BOTH the tauri.conf.json CSP and the
+// <meta> CSP in index.html, and a request must pass both. tauri.conf.json already
+// allows `ipc: http://ipc.localhost` in connect-src, but the meta policy (shared
+// with the PWA) did not, so every desktop boot logged a CSP block on
+// http://ipc.localhost/plugin%3Aevent%7Clisten and fell back to postMessage IPC.
+// The Tauri CLI sets TAURI_ENV_PLATFORM for beforeBuildCommand/beforeDevCommand;
+// a plain `npm run build` (Cloudflare Pages, CI) does not, so the PWA's index.html
+// - and its CSP - is byte-identical to before.
+function tauriCspPlugin() {
+  return {
+    name: 'wren-tauri-csp',
+    transformIndexHtml(html) {
+      if (!process.env.TAURI_ENV_PLATFORM) return html;
+      const needle = "connect-src 'self' ";
+      if (!html.includes(needle)) {
+        throw new Error('wren-tauri-csp: connect-src not found in index.html CSP meta');
+      }
+      return html.replace(needle, needle + 'ipc: http://ipc.localhost ');
+    },
+  };
+}
+
 // PWA build. Outputs the deployable app shell to dist/.
 export default defineConfig({
   root: __dirname,
@@ -66,7 +88,7 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(APP_VERSION),
   },
-  plugins: [coopHeadersPlugin(), stampServiceWorkerVersion(APP_VERSION)],
+  plugins: [coopHeadersPlugin(), stampServiceWorkerVersion(APP_VERSION), tauriCspPlugin()],
   // When running inside `tauri dev`, Vite watches the project root. Without this
   // ignore it tries to watch src-tauri/target/*.dll while cargo is writing them
   // and crashes with EBUSY on Windows. Harmless for plain `npm run dev`.

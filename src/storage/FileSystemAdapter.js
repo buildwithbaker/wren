@@ -107,6 +107,25 @@ export class FileSystemAdapter {
     return perm === 'granted';
   }
 
+  /**
+   * Prove the held handle still points at a real folder. isReady() only checks
+   * the permission state, and a handle whose folder was moved/deleted/recreated
+   * still answers 'granted' while every operation on it throws NotFoundError
+   * (v1.2.7: the app rendered "No notes yet" over a dead handle). Takes the
+   * first step of entries() - cheap, and it fails exactly when the handle is
+   * dead. Rejects with the real DOMException; the caller decides what to show.
+   */
+  async probe() {
+    this._assertReady();
+    const entries = await this._dirHandle.entries();
+    const iter = entries[Symbol.asyncIterator]?.() ?? entries;
+    try {
+      await iter.next();
+    } finally {
+      await iter.return?.();
+    }
+  }
+
   backendId() {
     return ADAPTER_TYPES.FS;
   }

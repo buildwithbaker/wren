@@ -130,6 +130,17 @@ function revOf(info) {
 }
 
 /**
+ * True when <Documents>/Wren Notes already exists. Read-only: unlike
+ * TauriFsAdapter.initialize() it never creates the folder, so it can gate an
+ * offer to switch to the native folder without side effects.
+ */
+export async function nativeNotesFolderExists() {
+  const { documentDir } = await pathApi();
+  const { exists } = await fsApi();
+  return exists(joinPath(await documentDir(), WREN_NOTES_FOLDER));
+}
+
+/**
  * Native-filesystem-backed adapter (Tauri desktop only).
  *
  * noteId === filename (top-level) or `_inbox/<filename>` / `_archive/<filename>`
