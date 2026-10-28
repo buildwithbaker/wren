@@ -642,8 +642,11 @@ export function createApp({ root, enableServiceWorker = false }) {
       card.appendChild(detail);
     }
 
+    // A dead folder (probeError) is not a permission problem: the "choose Allow
+    // on every visit" / install-to-persist guidance and the Install CTA would
+    // send the user down the wrong path, so that screen gets neither.
     const installed = isInstalled();
-    const installCta = installed ? null : buildReconnectInstallCta();
+    const installCta = installed || probeError ? null : buildReconnectInstallCta();
 
     // Guidance — this screen previously gave none (audit S6). Installed users get
     // told how to stop the prompt for good; browser-tab users are nudged to
@@ -660,7 +663,7 @@ export function createApp({ root, enableServiceWorker = false }) {
       tip.textContent =
         'Tip: install Wren from your browser menu and your folder permission persists across sessions.';
     }
-    card.appendChild(tip);
+    if (!probeError) card.appendChild(tip);
 
     // On a read failure the recovery is a retry (re-read IndexedDB), not a
     // permission re-grant; reuse the primary button for it.
