@@ -10,6 +10,7 @@ import { noteMatchesQuery } from './note-search.js';
 import { isAiNote, buildAiBadge } from './ai-badge.js';
 import { buildDueChip } from './due-chip.js';
 import { createCardReconciler } from './card-reconciler.js';
+import { buildLoadErrorState } from './load-error.js';
 import { SORT_OPTIONS, loadSortBy, saveSortBy, sortNotes } from './note-sort.js';
 
 const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
@@ -146,7 +147,13 @@ export function createNotesList({
 
     if (loadError) {
       cards.clear();
-      scroll.appendChild(errorState(loadError));
+      scroll.appendChild(
+        buildLoadErrorState(loadError, {
+          className: 'sc-list-empty',
+          headingClass: 'sc-list-empty-h',
+          bodyClass: 'sc-list-empty-b',
+        })
+      );
       return;
     }
     if (notes.length === 0) {
@@ -449,28 +456,6 @@ export function createNotesList({
       onSelect?.(note.id);
     });
     return card;
-  }
-
-  // The notes could not be LOADED (as opposed to there being none). Real error
-  // text via textContent, plus a Retry that re-runs the load.
-  function errorState({ error, onRetry }) {
-    const el = document.createElement('div');
-    el.className = 'sc-list-empty sc-list-error';
-    el.setAttribute('role', 'alert');
-    const h = document.createElement('p');
-    h.className = 'sc-list-empty-h';
-    h.textContent = 'Couldn’t load your notes';
-    const p = document.createElement('p');
-    p.className = 'sc-list-empty-b';
-    p.setAttribute('data-load-error', '');
-    p.textContent = `${error?.name || 'Error'}: ${error?.message || String(error)}`;
-    const retry = document.createElement('button');
-    retry.type = 'button';
-    retry.className = 'sc-btn sc-btn--primary sc-load-retry';
-    retry.textContent = 'Retry';
-    retry.addEventListener('click', () => onRetry?.());
-    el.append(h, p, retry);
-    return el;
   }
 
   function emptyState(heading, body) {

@@ -1404,12 +1404,14 @@ export function createApp({ root, enableServiceWorker = false }) {
       console.error('Failed to list notes', err);
       notes = [];
       list.setLoadError(err, loadNotes);
+      kanbanView?.setLoadError(err, loadNotes);
       compactView?.setLoadError(err, loadNotes);
       showErrorToast(`Couldn’t load your notes (${err?.name || 'Error'}).`);
       await loadInboxNotes();
       await loadArchiveNotes();
       return;
     }
+    kanbanView?.setLoadError(null);
     list.setNotes(notes);
     compactView?.setNotes(notes);
     // Load staged inbox notes alongside the main list (best-effort — a failure
