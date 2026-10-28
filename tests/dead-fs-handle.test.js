@@ -198,3 +198,51 @@ describe('boot() with a healthy FS-Access handle (never-relocate preserved)', ()
     expect(document.querySelector('[data-fs-probe-error]')).toBeNull();
   });
 });
+
+// X2.3 - the dead-folder screen is not a permission problem, so it must not
+// carry the "Allow on every visit" / install tip or the Install CTA; the
+// readFailed and permission-lapsed screens keep theirs.
+describe('renderFsReconnect: tip and install CTA by screen', () => {
+  async function withInstallPrompt(app) {
+    const ev = new Event('beforeinstallprompt', { cancelable: true });
+    ev.prompt = async () => {};
+    ev.userChoice = Promise.resolve({ outcome: 'dismissed' });
+    window.dispatchEvent(ev);
+    // "Try again" re-runs boot(), re-rendering the same screen with the prompt set.
+    const retry = await app.waitFor(() => [...document.querySelectorAll('button')].find((b) => b.textContent === 'Try again'));
+    retry?.click();
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  const hasInstallCta = () =>
+    [...document.querySelectorAll('button')].some((b) => b.textContent === 'Install Wren');
+
+  it('probeError: no tip and no install CTA, even when install is available', async () => {
+    const app = await mountApp({ adapter: deadHandleAdapter() });
+    await withInstallPrompt(app);
+    expect(document.querySelector('[data-fs-probe-error]')).not.toBeNull();
+    expect(document.querySelector('.sc-hint[data-fs-probe-error]')).not.toBeNull();
+    // The only .sc-hint is the error detail itself.
+    expect(document.querySelectorAll('.sc-screen-card .sc-hint')).toHaveLength(1);
+    expect(document.body.textContent).not.toMatch(/Allow on every visit|install Wren/i);
+    expect(hasInstallCta()).toBe(false);
+  });
+
+  it('readFailed: keeps its tip and install CTA', async () => {
+    const adapter = createFakeAdapter([]);
+    adapter.isReady = async () => false;
+    vi.spyOn(notesStore, 'getStoredDirHandle').mockRejectedValue(new Error('idb down'));
+    const app = await mountApp({ adapter });
+    await withInstallPrompt(app);
+    expect(document.querySelector('.sc-screen-card h1').textContent).toContain('Couldn’t read');
+    expect(document.querySelector('.sc-screen-card .sc-hint').textContent).toMatch(/install/i);
+    expect(hasInstallCta()).toBe(true);
+  });
+
+  it('permission lapsed: keeps its tip', async () => {
+    const adapter = createFakeAdapter([]);
+    adapter.isReady = async () => false; // helper's getStoredDirHandle returns a handle
+    await mountApp({ adapter });
+    expect(document.querySelector('.sc-screen-card h1').textContent).toContain('Reconnect');
+    expect(document.querySelector('.sc-screen-card .sc-hint')).not.toBeNull();
+  });
+});

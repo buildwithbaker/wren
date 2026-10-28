@@ -27,6 +27,7 @@ export function createNotesList({
   onInboxDiscard,
 } = {}) {
   let notes = [];
+  let loadError = null;
   let inboxNotes = []; // staged _inbox/ notes (AI phase 4), kept separate
   let activeId = null;
   let query = '';
@@ -143,6 +144,11 @@ export function createNotesList({
     // both List and Compact use sortNotes() for a consistent order.
     const filtered = sortNotes(notes.filter(matches), sortBy);
 
+    if (loadError) {
+      cards.clear();
+      scroll.appendChild(errorState(loadError));
+      return;
+    }
     if (notes.length === 0) {
       cards.clear();
       scroll.appendChild(emptyState('No notes yet', 'Create your first note to get started.'));
@@ -445,6 +451,28 @@ export function createNotesList({
     return card;
   }
 
+  // The notes could not be LOADED (as opposed to there being none). Real error
+  // text via textContent, plus a Retry that re-runs the load.
+  function errorState({ error, onRetry }) {
+    const el = document.createElement('div');
+    el.className = 'sc-list-empty sc-list-error';
+    el.setAttribute('role', 'alert');
+    const h = document.createElement('p');
+    h.className = 'sc-list-empty-h';
+    h.textContent = 'Couldn’t load your notes';
+    const p = document.createElement('p');
+    p.className = 'sc-list-empty-b';
+    p.setAttribute('data-load-error', '');
+    p.textContent = `${error?.name || 'Error'}: ${error?.message || String(error)}`;
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'sc-btn sc-btn--primary sc-load-retry';
+    retry.textContent = 'Retry';
+    retry.addEventListener('click', () => onRetry?.());
+    el.append(h, p, retry);
+    return el;
+  }
+
   function emptyState(heading, body) {
     const el = document.createElement('div');
     el.className = 'sc-list-empty';
@@ -462,6 +490,13 @@ export function createNotesList({
     element: root,
     setNotes(next) {
       notes = next || [];
+      loadError = null;
+      render();
+    },
+    /** Show a load-failure state instead of "No notes yet" (null clears it). */
+    setLoadError(error, onRetry) {
+      loadError = error ? { error, onRetry } : null;
+      if (loadError) notes = [];
       render();
     },
     setInboxNotes(next) {

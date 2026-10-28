@@ -530,15 +530,14 @@ export class TauriFsAdapter {
    * Scan a directory for note `.md` files (top-level only — readDir is not
    * recursive), parse each, and return metadata newest-first. `decorate` maps
    * (name, parsed, baseMeta) → the final entry so callers can add id/inbox/etc.
+   *
+   * A readDir failure REJECTS with the original error: returning [] there made a
+   * broken folder look like an empty one ("No notes yet"). A single unreadable or
+   * unparseable file is still skipped, with a warning naming it.
    */
   async _listMd(absDir, decorate) {
     const { readDir, readTextFile, stat } = await fsApi();
-    let entries;
-    try {
-      entries = await readDir(absDir);
-    } catch {
-      return [];
-    }
+    const entries = await readDir(absDir);
     const out = [];
     for (const entry of entries) {
       if (!entry.isFile) continue;
@@ -564,8 +563,9 @@ export class TauriFsAdapter {
           revision: revOf(info),
         };
         out.push(decorate(entry.name, parsed, base));
-      } catch {
-        // Skip unreadable files (matches FileSystemAdapter).
+      } catch (err) {
+        // Skip the one bad file (matches FileSystemAdapter) but say so.
+        console.warn(`Skipping unreadable note "${entry.name}" in ${absDir}`, err);
       }
     }
     out.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
@@ -600,13 +600,14 @@ export class TauriFsAdapter {
     return joinPath(this._base, noteId);
   }
 
+  /**
+   * exists()'s answer, verbatim. An error REJECTS: callers feed this to
+   * uniqueNoteName, and treating an error as "name is free" could overwrite an
+   * existing note.
+   */
   async _existsAbs(abs) {
     const { exists } = await fsApi();
-    try {
-      return await exists(abs);
-    } catch {
-      return false;
-    }
+    return exists(abs);
   }
 
   /** Existence check for a bare filename in the notes-folder root. */
