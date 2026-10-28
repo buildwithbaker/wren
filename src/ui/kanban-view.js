@@ -14,6 +14,7 @@ import { getAllNamespaces, groupNotesByNamespace, isValidTag } from '@/tags/tag-
 import { buildTagChips } from './tag-chips.js';
 import { isAiNote, buildAiBadge } from './ai-badge.js';
 import { buildDueChip } from './due-chip.js';
+import { buildLoadErrorState } from './load-error.js';
 
 const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
 const GROUPBY_KEY = 'wren.kanbanGroupBy';
@@ -27,6 +28,8 @@ const GROUPBY_KEY = 'wren.kanbanGroupBy';
  */
 export function createKanbanView({ getNotes, onNoteOpen, onMoveNote }) {
   let groupBy = loadGroupBy();
+  // Set while the notes failed to LOAD: the board shows the error state instead.
+  let loadError = null;
   // Manually-added empty columns, keyed by namespace → Set of values. Session-
   // only (not persisted): "+ New Tag" creates an empty, droppable column so a
   // user can stage a new tag value and drag cards into it. A column disappears
@@ -211,6 +214,14 @@ export function createKanbanView({ getNotes, onNoteOpen, onMoveNote }) {
     closeMoveMenu();
     if (rebuildToolbar) renderToolbar(namespaces, activeNs);
     columnsWrap.replaceChildren();
+
+    // A failed LOAD is not an empty board: show the shared error state + Retry.
+    if (loadError) {
+      columnsWrap.appendChild(
+        buildLoadErrorState(loadError, { className: 'sc-kanban-empty' })
+      );
+      return;
+    }
 
     if (!activeNs) {
       if (notes.length === 0) {
@@ -504,6 +515,12 @@ export function createKanbanView({ getNotes, onNoteOpen, onMoveNote }) {
     // External refresh: re-render the columns, but leave an open "+ New Tag"
     // input in place so a note created/saved elsewhere can't wipe it mid-type.
     refresh: () => render({ rebuildToolbar: !addingTag }),
+    /** Show the load-failure state instead of the board (null clears it). */
+    setLoadError(error, onRetry) {
+      const hadError = !!loadError;
+      loadError = error ? { error, onRetry } : null;
+      if (loadError || hadError) render({ rebuildToolbar: !addingTag });
+    },
     destroy() {
       closeMoveMenu();
       root.replaceChildren();

@@ -20,6 +20,7 @@ import { loadSortBy, sortNotes } from './note-sort.js';
 import { createPinButton } from './pin-button.js';
 import { isAiNote, buildAiBadge } from './ai-badge.js';
 import { buildDueChip } from './due-chip.js';
+import { buildLoadErrorState } from './load-error.js';
 
 const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
 
@@ -102,7 +103,13 @@ export function createCompactView({ onSelect, onNew, onExpand } = {}) {
     scroll.replaceChildren();
 
     if (loadError) {
-      scroll.appendChild(errorState(loadError));
+      scroll.appendChild(
+        buildLoadErrorState(loadError, {
+          className: 'sc-compact-empty',
+          headingClass: 'sc-compact-empty-h',
+          bodyClass: 'sc-compact-empty-b',
+        })
+      );
       return;
     }
     if (notes.length === 0) {
@@ -161,27 +168,6 @@ export function createCompactView({ onSelect, onNew, onExpand } = {}) {
 
     card.addEventListener('click', () => onSelect?.(note.id));
     return card;
-  }
-
-  // The notes could not be LOADED (as opposed to there being none).
-  function errorState({ error, onRetry }) {
-    const el = document.createElement('div');
-    el.className = 'sc-compact-empty sc-list-error';
-    el.setAttribute('role', 'alert');
-    const h = document.createElement('p');
-    h.className = 'sc-compact-empty-h';
-    h.textContent = 'Couldn’t load your notes';
-    const p = document.createElement('p');
-    p.className = 'sc-compact-empty-b';
-    p.setAttribute('data-load-error', '');
-    p.textContent = `${error?.name || 'Error'}: ${error?.message || String(error)}`;
-    const retry = document.createElement('button');
-    retry.type = 'button';
-    retry.className = 'sc-btn sc-btn--primary sc-load-retry';
-    retry.textContent = 'Retry';
-    retry.addEventListener('click', () => onRetry?.());
-    el.append(h, p, retry);
-    return el;
   }
 
   function emptyState(heading, body) {

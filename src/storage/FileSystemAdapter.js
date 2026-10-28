@@ -57,6 +57,27 @@ function archiveBaseName(id) {
  *
  * @implements {import('./StorageAdapter.js').StorageAdapter}
  */
+/**
+ * Is `name` already taken in `dirHandle`? The one existence check behind every
+ * uniqueNoteName() call in this adapter. It must be exact, because a wrong
+ * "free" answer makes a create/trash/archive overwrite an existing file:
+ *   - found                  -> true  (taken)
+ *   - NotFoundError          -> false (free)
+ *   - TypeMismatchError      -> true  (the name is taken by a DIRECTORY)
+ *   - anything else          -> rethrow (permission lapse, I/O error, ...) so the
+ *     operation rejects and writes nothing
+ */
+async function nameTaken(dirHandle, name) {
+  try {
+    await dirHandle.getFileHandle(name);
+    return true;
+  } catch (err) {
+    if (err?.name === 'NotFoundError') return false;
+    if (err?.name === 'TypeMismatchError') return true;
+    throw err;
+  }
+}
+
 export class FileSystemAdapter {
   constructor() {
     /** @type {FileSystemDirectoryHandle|null} */
@@ -213,8 +234,10 @@ export class FileSystemAdapter {
           // Drive uses headRevisionId. Both are opaque to the sync layer.
           revision: String(file.lastModified),
         });
-      } catch {
-        // Skip unreadable files - this matches the existing notes-store.listNotes behavior.
+      } catch (err) {
+        // Skip the one bad file (matches the existing notes-store.listNotes
+        // behavior) but say so.
+        console.warn(`Skipping unreadable note "${entry.name}"`, err);
       }
     }
     // Newest first, like the existing module.
@@ -376,14 +399,7 @@ export class FileSystemAdapter {
     const srcHandle = await srcDirHandle.getFileHandle(name);
     const content = await (await srcHandle.getFile()).text();
     const trashDir = await this._dirHandle.getDirectoryHandle(TRASH_DIR, { create: true });
-    const destName = await uniqueNoteName(name, async (n) => {
-      try {
-        await trashDir.getFileHandle(n);
-        return true;
-      } catch {
-        return false;
-      }
-    });
+    const destName = await uniqueNoteName(name, (n) => nameTaken(trashDir, n));
     const destHandle = await trashDir.getFileHandle(destName, { create: true });
     const writable = await destHandle.createWritable();
     await writable.write(content);
@@ -468,8 +484,8 @@ export class FileSystemAdapter {
           lastEdited: parsed.lastEdited || '',
           revision: String(file.lastModified),
         });
-      } catch {
-        // Skip unreadable staged files.
+      } catch (err) {
+        console.warn(`Skipping unreadable inbox note "${entry.name}"`, err);
       }
     }
     out.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
@@ -586,8 +602,8 @@ export class FileSystemAdapter {
           lastEdited: parsed.lastEdited || '',
           revision: String(file.lastModified),
         });
-      } catch {
-        // Skip unreadable archived files.
+      } catch (err) {
+        console.warn(`Skipping unreadable archived note "${entry.name}"`, err);
       }
     }
     out.sort((a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0));
@@ -614,14 +630,7 @@ export class FileSystemAdapter {
       const content = await (await srcHandle.getFile()).text();
 
       const archiveDir = await this._dirHandle.getDirectoryHandle(ARCHIVE_DIR, { create: true });
-      const destName = await uniqueNoteName(noteId, async (name) => {
-        try {
-          await archiveDir.getFileHandle(name);
-          return true;
-        } catch {
-          return false;
-        }
-      });
+      const destName = await uniqueNoteName(noteId, (name) => nameTaken(archiveDir, name));
       const destHandle = await archiveDir.getFileHandle(destName, { create: true });
       const writable = await destHandle.createWritable();
       await writable.write(content);
@@ -696,8 +705,12 @@ export class FileSystemAdapter {
       const fileHandle = await this._dirHandle.getFileHandle(name);
       const file = await fileHandle.getFile();
       return await file.text();
-    } catch {
-      // NotFoundError (or any read failure) -> treat as absent.
+    } catch (err) {
+      // Absent is normal (first run) and silent. Any other failure is reported
+      // but still reads as absent: managed files are Wren-owned and regenerable.
+      if (err?.name !== 'NotFoundError') {
+        console.warn(`readManagedFile("${name}") failed`, err);
+      }
       return null;
     }
   }
@@ -765,13 +778,8 @@ export class FileSystemAdapter {
     });
   }
 
-  async _fileExists(name) {
-    try {
-      await this._dirHandle.getFileHandle(name);
-      return true;
-    } catch {
-      return false;
-    }
+  _fileExists(name) {
+    return nameTaken(this._dirHandle, name);
   }
 
   // ---- Internal ----------------------------------------------------------

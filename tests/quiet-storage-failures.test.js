@@ -181,3 +181,37 @@ describe('TauriFsAdapter silent catches', () => {
     });
   });
 });
+
+// X2.6 - Kanban must be as loud as the list when the load fails, using the same
+// shared error-state builder (src/ui/load-error.js).
+describe('Kanban load failure', () => {
+  function failingAdapter() {
+    const a = createFakeAdapter([NOTE]);
+    const realList = a.listNotes;
+    a._failList = true;
+    a.listNotes = vi.fn(async () => {
+      if (a._failList) throw ioError();
+      return realList();
+    });
+    return a;
+  }
+
+  it('shows the error state and Retry instead of its empty text; Retry recovers the board', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const adapter = failingAdapter();
+    const app = await mountApp({ adapter });
+    await app.waitFor(() => document.querySelector('.sc-list-error'));
+    app.setView('kanban');
+    const err = await app.waitFor(() => document.querySelector('.sc-kanban-empty.sc-list-error'));
+    expect(err).not.toBeNull();
+    expect(err.querySelector('[data-load-error]').textContent).toBe(
+      'IoError: The system cannot find the path specified. (os error 3)'
+    );
+    expect(document.body.textContent).not.toContain('No notes yet');
+    adapter._failList = false;
+    err.querySelector('.sc-load-retry').click();
+    const card = await app.waitFor(() => app.card(NOTE.id));
+    expect(card).not.toBeNull();
+    expect(document.querySelector('.sc-list-error')).toBeNull();
+  });
+});
