@@ -33,6 +33,7 @@ const COLOR_BG = Object.fromEntries(CARD_COLORS.map((c) => [c.id, c.bg]));
  */
 export function createCompactView({ onSelect, onNew, onExpand } = {}) {
   let notes = [];
+  let loadError = null;
   let query = '';
 
   const root = document.createElement('div');
@@ -100,6 +101,10 @@ export function createCompactView({ onSelect, onNew, onExpand } = {}) {
   function render() {
     scroll.replaceChildren();
 
+    if (loadError) {
+      scroll.appendChild(errorState(loadError));
+      return;
+    }
     if (notes.length === 0) {
       scroll.appendChild(emptyState('No notes yet', 'Create your first note to get started.'));
       return;
@@ -158,6 +163,27 @@ export function createCompactView({ onSelect, onNew, onExpand } = {}) {
     return card;
   }
 
+  // The notes could not be LOADED (as opposed to there being none).
+  function errorState({ error, onRetry }) {
+    const el = document.createElement('div');
+    el.className = 'sc-compact-empty sc-list-error';
+    el.setAttribute('role', 'alert');
+    const h = document.createElement('p');
+    h.className = 'sc-compact-empty-h';
+    h.textContent = 'Couldn’t load your notes';
+    const p = document.createElement('p');
+    p.className = 'sc-compact-empty-b';
+    p.setAttribute('data-load-error', '');
+    p.textContent = `${error?.name || 'Error'}: ${error?.message || String(error)}`;
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'sc-btn sc-btn--primary sc-load-retry';
+    retry.textContent = 'Retry';
+    retry.addEventListener('click', () => onRetry?.());
+    el.append(h, p, retry);
+    return el;
+  }
+
   function emptyState(heading, body) {
     const el = document.createElement('div');
     el.className = 'sc-compact-empty';
@@ -173,8 +199,14 @@ export function createCompactView({ onSelect, onNew, onExpand } = {}) {
 
   return {
     element: root,
+    setLoadError(error, onRetry) {
+      loadError = error ? { error, onRetry } : null;
+      if (loadError) notes = [];
+      render();
+    },
     setNotes(next) {
       notes = next || [];
+      loadError = null;
       // Reflect the current pin state — it may have been toggled from the
       // Expanded view's pin button while this view was hidden.
       pin?.sync();

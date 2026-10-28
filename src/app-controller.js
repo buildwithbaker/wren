@@ -1395,8 +1395,17 @@ export function createApp({ root, enableServiceWorker = false }) {
         showDriveDisconnected();
         return;
       }
+      // A failed LOAD must not read as "no notes": show the real error with a
+      // Retry in the list (and Compact), plus a toast. Inbox/archive loading
+      // below stays best-effort.
       console.error('Failed to list notes', err);
       notes = [];
+      list.setLoadError(err, loadNotes);
+      compactView?.setLoadError(err, loadNotes);
+      showErrorToast(`Couldn’t load your notes (${err?.name || 'Error'}).`);
+      await loadInboxNotes();
+      await loadArchiveNotes();
+      return;
     }
     list.setNotes(notes);
     compactView?.setNotes(notes);
